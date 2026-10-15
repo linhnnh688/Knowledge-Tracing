@@ -514,10 +514,11 @@ class DKT(nn.Module):
         feat = torch.where(features != -1, features, self.feature_dim * torch.ones_like(features, device=features.device))
         features = F.embedding(feat, feat_one_hot)
 
-        feature_lens = torch.ne(questions, -1).sum(dim=1)  # padding value = -1
+        feature_lens = torch.ne(questions, -1).sum(dim=1).cpu()  # padding value = -1
+        feature_lens = torch.clamp(feature_lens, min=1)
         x_packed = pack_padded_sequence(features, feature_lens, batch_first=True, enforce_sorted=False)
         output_packed, _ = self.rnn(x_packed)  # [batch, seq_len, hidden_dim]
-        output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=True)  # [batch, seq_len, hidden_dim]
+        output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=True, total_length=features.shape[1])  # [batch, seq_len, hidden_dim]
         yt = self.f_out(output_padded)  # [batch, seq_len, output_dim]
         yt = torch.sigmoid(yt)
         yt = yt[:, :-1, :]  # [batch, seq_len - 1, output_dim]
