@@ -39,11 +39,11 @@ lịch sử làm bài
 | --- | --- | --- |
 | Nhánh | **A. Đúng/sai** | Bắt buộc để khởi động; dữ liệu ASSISTments/Junyi sẵn; không cần nội dung phương án |
 | Mục tiêu điểm | **Cấp 1 + 2 + 3** (trần 10) | Cấp 4 (+1) chỉ làm nếu còn thời gian |
-| Dữ liệu công khai | **ASSISTments 2009** và **Junyi Academy** | ASSIST09 dễ chạy cấp 1; Junyi có quan hệ tiên quyết — đúng tinh thần đồ thị; GRKT đã báo cáo trên cả hai |
+| Dữ liệu công khai | **ASSISTments 2009** và **Junyi Academy** | ASSIST09 đã hoàn thành cấp 1; Junyi có quan hệ tiên quyết — đúng tinh thần đồ thị; GRKT đã báo cáo trên cả hai |
 | Phương pháp 2024+ (cấp 2) | **GRKT** (KDD 2024) | Có mã nguồn; trạng thái mastery tường minh; 3 giai đoạn retrieval / strengthening / learning-forgetting; giải thích tự nhiên hơn PSI-KT |
 | Phương án dự phòng cấp 2 | PSI-KT (ICLR 2024) | Nếu GRKT khó tái lập; mạnh về đồ thị tiên quyết và diễn giải Bayesian |
-| Baseline không đồ thị | **DKT** (bắt buộc tối thiểu) + **simpleKT** nếu kịp | DKT dễ implement; simpleKT là baseline ICLR 2023 mạnh hơn |
-| Mô hình đồ thị cấp 1 | **GAT + GRU** (tự implement) và/hoặc **GKT** | GAT cho attention trên cạnh → bằng chứng xAI; GKT là mô hình KT-đồ thị kinh điển |
+| Baseline không đồ thị | **DKT** (chuẩn đối sánh bắt buộc) | DKT (LSTM) nhận chuỗi tương tác, đối sánh trực tiếp với mô hình đồ thị |
+| Mô hình đồ thị cấp 1 | **GKT** (Nakagawa et al., WI 2019) | Mô hình KT-đồ thị kinh điển, chuẩn hóa các dạng đồ thị: Transition, Dense, Identity, Zero |
 
 **Không làm (trừ khi cấp 4):** nhánh B (dự đoán phương án), EdNet đầy đủ, hệ thống LMS/web hoàn chỉnh.
 
@@ -74,22 +74,24 @@ Quy trình bám **pyKT** (`pykt-toolkit`):
 
 Q-matrix \(Q \in \{0,1\}^{|questions| \times |KC|}\): nếu câu hỏi có nhiều skill thì lấy trung bình / attention trên các KC liên quan khi dự đoán.
 
-### 3.3. Cấp độ 1 — Dự đoán bước tiếp theo
+### 3.3. Cấp độ 1 — Dự đoán bước tiếp theo (Đã hoàn thành thực nghiệm)
 
-**Baseline không đồ thị — DKT**
+**Baseline không đồ thị — DKT (Deep Knowledge Tracing - Piech et al., NeurIPS 2015)**
+- Nhận chuỗi tương tác khái niệm kèm kết quả \((c_1, r_1), \ldots, (c_t, r_t)\).
+- LSTM cập nhật vector ẩn trạng thái người học qua thời gian; lớp Linear chiếu ra xác suất làm đúng khái niệm tiếp theo \(P(r_{t} = 1 \mid c_t)\).
+- Loss: NLLLoss / BCE trên các bước có nhãn thực tế.
 
-- Embedding cặp \((q, r)\) hoặc \((kc, r)\).
-- LSTM/GRU trên chuỗi; đầu ra: \(P(\text{đúng} \mid q_t)\).
-- Loss: Binary Cross-Entropy trên các bước có nhãn.
-
-**Mô hình đồ thị — GAT-KT (đề xuất chính)**
-
-1. Khởi tạo embedding đỉnh KC: \(h_c^{(0)}\).
-2. \(L\) lớp GAT: mỗi KC nhận thông tin từ láng giềng (tiên quyết / đồng xuất hiện). Attention \(\alpha_{ij}\) là tín hiệu giải thích cấp 1.
-3. Trạng thái người học \(s_t\): GRU nhận \([h_{q_t}; e_{r_t}]\) (biểu diễn câu hỏi = tổng/attention các KC của câu đó, cộng embedding đúng/sai).
-4. Điểm dự đoán: \(\hat{y}*t = \sigma(s*{t-1}^\top W h_{q_t} + b)\) — **dùng \(s_{t-1}\)** chứ không phải \(s_t\) để không rò nhãn hiện tại.
-
-Có thể thêm GKT nếu thời gian cho phép (cập nhật trực tiếp “ô” KC trên đồ thị sau mỗi lần trả lời).
+**Mô hình đồ thị — GKT (Graph-based Knowledge Tracing - Nakagawa et al., WI 2019)**
+- Mỗi KC \(c\) có một vector trạng thái ẩn riêng \(h_c^t \in \mathbb{R}^{d}\) trong ma trận trạng thái người học.
+- **Lan truyền đồ thị (GNN):** Khi người học tương tác với KC \(c\), hàm \(\mathcal{F}_{\text{self}}\) và \(\mathcal{F}_{\text{neighbor}}\) lan truyền thông tin sang các KC láng giềng kề cận trên ma trận kề \(A\).
+- **Cập nhật thời gian:** Sử dụng Erase-Add Gate kết hợp GRUCell để cập nhật trạng thái của tất cả các KC, phản ánh mức độ thành thạo theo thời gian.
+- **Khảo sát cấu trúc đồ thị & Ablation:**
+  1. `Transition Graph`: Đồ thị chuyển tiếp xác suất trích xuất strictly từ tập train (chống rò rỉ).
+  2. `Dense Graph`: Đồ thị liên thông toàn bộ (fully-connected graph baseline).
+  3. `Identity Graph (Ablation)`: Ma trận đơn vị (không lan truyền sang láng giềng).
+  4. `Zero Graph (Ablation)`: Ma trận 0 (ngắt hoàn toàn liên kết đồ thị).
+- **Đánh giá đa seed:** Chạy 3 seed ngẫu nhiên (`[42, 123, 456]`) báo cáo \(\text{AUC} \pm \text{Std}\) và \(\text{Acc} \pm \text{Std}\).
+- **Giải thích xAI (Nhiệm vụ 3 mức cơ bản):** Trích xuất 5 case đúng + 5 case sai kèm lịch sử tương tác và liên kết láng giềng đồ thị (`cases.md`).
 
 ### 3.4. Cấp độ 2 — Mô tả năng lực + GRKT
 
@@ -169,63 +171,62 @@ Mọi mô hình, cùng split, ≥ 3 seed.
 
 ---
 
-## 5. Kiến trúc thư mục đề xuất
+## 5. Kiến trúc thư mục thực tế
 
 ```
 Knowledge-Tracing/
-├── KE_HOACH.md
-├── README.md                 # hướng dẫn chạy lại
-├── requirements.txt
-├── configs/                  # seed, hyperparam, đường dẫn split
-├── data/
-│   ├── raw/                  # không commit dữ liệu lớn
-│   ├── processed/
-│   └── splits/               # train_users.json, ...
-├── src/
-│   ├── preprocess.py         # pyKT-style
-│   ├── graph.py              # Q-matrix, adjacency từ train
-│   ├── datasets.py
-│   ├── models/
-│   │   ├── dkt.py
-│   │   ├── gat_kt.py
-│   │   └── grkt/             # port / wrapper mã gốc
-│   ├── train.py
-│   ├── evaluate.py
-│   ├── metrics_trajectory.py
-│   └── explain.py            # attention, occlusion
-├── notebooks/
-│   ├── 01_eda.ipynb
-│   ├── 02_case_study.ipynb   # 5+5 / 10 case
-│   └── 03_dashboard.ipynb
-├── experiments/              # log AUC, ablation
-└── quiz/                     # đề, Q-matrix, dữ liệu nhóm
+├── KE_HOACH.md                   # Kế hoạch và nhật ký tiến độ đồ án
+├── README.md                     # Hướng dẫn chạy lại và mô tả đồ án
+├── kaggle_level1.ipynb           # Notebook điều phối toàn diện Cấp độ 1 (Kaggle GPU)
+├── kaggle-gkt.ipynb              # Notebook thử nghiệm GKT độc lập đã chạy thành công
+├── GKT/                          # Mã nguồn mô hình GKT & DKT chuẩn hóa
+│   ├── data/
+│   │   ├── assistment_test15.csv # Tập thử nghiệm nhanh (Sanity check)
+│   │   └── skill_builder_data.csv# Dataset ASSISTments 2009 đầy đủ (>525k dòng)
+│   ├── models.py                 # Kiến trúc GKT, DKT, VAE
+│   ├── processing.py             # Nạp dữ liệu, sinh đồ thị Transition/Dense/Identity/Zero
+│   ├── metrics.py                # KTLoss, ROC-AUC, Accuracy
+│   ├── layers.py                 # MLP, EraseAddGate
+│   └── utils.py                  # Dataloader, pad_collate
+├── level1/                       # Package điều phối Cấp độ 1
+│   ├── pipeline.py               # run_experiment, train_one, save_split
+│   ├── explain.py                # collect_cases (5 đúng + 5 sai), format_cases
+│   ├── paths.py                  # Quản lý đường dẫn tự động
+│   ├── gikt.py                   # Mô hình mở rộng GIKT (Question-Skill Bipartite)
+│   └── gikt_data.py
+└── outputs/level1/               # Artifacts sinh ra sau khi chạy
+    ├── split.json                # Minh chứng chia tập chống rò rỉ dữ liệu
+    ├── metrics.csv               # Bảng số liệu tổng hợp Test AUC, Acc, Loss
+    ├── multiseed_metrics.csv     # Bảng số liệu Mean ± Std qua 3 seed
+    ├── cases.md                  # Báo cáo chi tiết 10 case study xAI
+    └── *.pt                      # Checkpoints mô hình đã lưu
 ```
-
-Stack gợi ý: Python, PyTorch, PyTorch Geometric, pandas, scikit-learn, matplotlib/plotly; dashboard: Streamlit hoặc notebook.
 
 ---
 
-## 6. Kế hoạch thực hiện
+## 6. Kế hoạch thực hiện & Nhật ký tiến độ thực tế
 
-Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**. Điều chỉnh mốc theo lịch nộp Moodle.
+Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**.
 
-### Giai đoạn 0 — Khởi động (tuần 1)
+### Giai đoạn 0 — Khởi động (tuần 1) — [ĐÃ HOÀN THÀNH]
 
-- [ ] Đọc DKT, GKT, GRKT (arxiv 2406.12896), skim pyKT.
-- [ ] Chốt split protocol và bảng phân công.
-- [ ] Tải ASSIST09 + Junyi; chạy thống kê: số user, câu, KC, độ dài chuỗi, độ lệch nhãn.
-- [ ] Môi trường conda/venv + `requirements.txt`.
+- [x] Đọc DKT, GKT, GRKT (arxiv 2406.12896), pyKT.
+- [x] Chốt split protocol theo người học (User-wise split) và cấu trúc thư mục repo.
+- [x] Tải và chuẩn bị dữ liệu ASSISTments 2009 (`skill_builder_data.csv` và `assistment_test15.csv`); hoàn tất EDA (phân phối tương tác, tỷ lệ đúng/sai).
+- [x] Thiết lập môi trường chạy trên Kaggle GPU (Tesla T4 / P100) và Git auto-sync.
 
-### Giai đoạn 1 — Cấp độ 1 (tuần 2–4) → trần 7.0
+### Giai đoạn 1 — Cấp độ 1 (tuần 2–4) → trần 7.0 — [ĐÃ HOÀN THÀNH]
 
-- [ ] Pipeline preprocess + user-wise split cố định.
-- [ ] Xây đồ thị ASSIST (co-occurrence) và Junyi (prerequisite).
-- [ ] Train DKT trên ASSIST09; kiểm tra không leak (sanity: shuffle nhãn → AUC ~ 0.5).
-- [ ] Implement GAT-KT; train ASSIST09 rồi Junyi.
-- [ ] Ablation no-edge / identity; bảng AUC/ACC/BCE, 3 seed.
-- [ ] Chọn 5 case đúng + 5 case sai; viết evidence lịch sử + KC.
+- [x] **Pipeline chống rò rỉ dữ liệu:** Tạo split cố định theo user (`split.json`), sinh đồ thị Transition chỉ từ tập train (`train_dataset.indices`).
+- [x] **Xây dựng đồ thị:** Transition Graph (xác suất chuyển tiếp KC), Dense Graph (liên thông đầy đủ).
+- [x] **Baseline không đồ thị:** Huấn luyện và đánh giá DKT (LSTM) trên cùng tập split với GKT.
+- [x] **Mô hình đồ thị chính:** Huấn luyện GKT-Transition trên Kaggle GPU, đạt hiệu năng vượt trội so với DKT.
+- [x] **Khảo sát cấu trúc đồ thị & Ablation:** Huấn luyện GKT-Dense, GKT-Identity (ma trận đơn vị), GKT-Zero (ma trận không) để chứng minh đóng góp của cấu trúc đồ thị.
+- [x] **Đánh giá đa seed (Multi-seed):** Module chạy 3 seed ngẫu nhiên (`[42, 123, 456]`) tính Mean ± Std cho DKT và GKT-Transition (`multiseed_metrics.csv`).
+- [x] **Giải thích xAI cơ bản (Nhiệm vụ 3):** Trích xuất tự động 5 case đúng + 5 case sai kèm lịch sử tương tác và liên kết láng giềng đồ thị (`cases.md`).
+- [x] **Trực quan hóa & Xuất Artifacts:** Biểu đồ Learning Curves (Loss & AUC theo epoch), biểu đồ cột so sánh Test AUC/Acc, xuất `level1_metrics.csv` và checkpoint `.pt`.
 
-**Cột mốc:** notebook chạy được 1 user, in \(P(\text{đúng})\) và so sánh DKT vs GAT-KT.
+**Cột mốc hoàn thành:** Notebook [kaggle_level1.ipynb](file:///d:/workspace/Knowledge-Tracing/kaggle_level1.ipynb) và [kaggle-gkt.ipynb](file:///d:/workspace/Knowledge-Tracing/kaggle-gkt.ipynb) đã chạy trơn tru, xuất toàn bộ kết quả Cấp độ 1.
 
 ### Giai đoạn 2 — Cấp độ 2 (tuần 5–7) → trần 8.5
 
@@ -278,12 +279,13 @@ Mọi người vẫn train/eval được mô hình của mình trên cùng data 
 
 ## 8. Sản phẩm nộp (checklist đề)
 
-- [ ] Mã preprocess, graph, train, eval + environment + README chạy lại
-- [ ] File split hoặc seed + mã tạo split; đoạn văn chống rò rỉ
-- [ ] Báo cáo 12–18 trang, slide, bảng phân công
-- [ ] Notebook/dashboard: user, \(P(\text{đúng})\), lịch sử, mastery, evidence
-- [ ] 5 đúng + 5 sai chi tiết; cấp 3: 10 case đồ thị
-- [ ] Demo live + video ≤ 5 phút
+- [x] **Mã nguồn Cấp độ 1:** pipeline preprocess, graph construction, train, eval, mô hình DKT & GKT (`GKT/`, `level1/`).
+- [x] **Chống rò rỉ dữ liệu:** File `split.json` chia tập theo user; đồ thị chỉ xây từ tập train; tài liệu giải trình chống rò rỉ.
+- [x] **Nhiệm vụ 3 mức cơ bản (5 đúng + 5 sai):** Báo cáo chi tiết 10 case study có bằng chứng lịch sử và láng giềng đồ thị (`cases.md`).
+- [x] **Notebook thực nghiệm Cấp độ 1:** `kaggle_level1.ipynb` và `kaggle-gkt.ipynb` chạy hoàn tất trên Kaggle GPU.
+- [ ] **Cấp độ 2 (Mastery Trajectory):** Tái lập GRKT, xuất vector thành thạo theo thời gian và đo 2 tiêu chí quỹ đạo.
+- [ ] **Cấp độ 3 (xAI mở rộng & Quiz):** 10 case đồ thị nâng cao, quiz thu thập thực tế, giao diện dashboard.
+- [ ] **Báo cáo & Thuyết minh:** Báo cáo 12–18 trang, slide trình bày và video demo ≤ 5 phút.
 
 ---
 
@@ -301,4 +303,5 @@ Mọi người vẫn train/eval được mô hình của mình trên cùng data 
 
 ## 10. Kết luận ngắn
 
-Làm **nhánh đúng/sai**, hai dataset **ASSIST09 + Junyi**, mô hình **DKT vs GAT-KT vs GRKT**, đồ thị KC xây đúng từ train, đo AUC kèm **ablation cạnh** và **hai chỉ số quỹ đạo**, rồi đóng gói bằng **10 case xAI** và **quiz nhỏ**. Đường đi này khớp lần lượt cấp 1 → 2 → 3 của đề, tận dụng đúng điểm mạnh của học máy đồ thị: không chỉ đoán đúng/sai mà còn nói được người học đang yếu khái niệm nào và vì sao mô hình nghĩ vậy.
+Làm **nhánh đúng/sai**, hai dataset **ASSIST09 + Junyi**, mô hình **DKT vs GKT (Cấp độ 1) và GRKT (Cấp độ 2)**, đồ thị KC xây đúng từ train, đo AUC kèm **ablation đồ thị (Dense, Identity, Zero)** và **đánh giá đa seed**, rồi mở rộng bằng **quỹ đạo mastery, 10 case xAI** và **quiz nhỏ**. Đường đi này khớp lần lượt cấp 1 → 2 → 3 của đề, tận dụng đúng điểm mạnh của học máy đồ thị: không chỉ đoán đúng/sai mà còn mô tả được năng lực người học và giải thích được nguyên nhân đưa ra dự đoán.
+

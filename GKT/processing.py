@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, TensorDataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
-from utils import build_dense_graph, build_identity_graph, build_zero_graph
+from utils import build_dense_graph, build_identity_graph, build_zero_graph, build_shuffled_graph
 
 # Graph-based Knowledge Tracing: Modeling Student Proficiency Using Graph Neural Network.
 # For more information, please refer to https://dl.acm.org/doi/10.1145/3350546.3352513
@@ -152,9 +152,13 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
             graph = build_identity_graph(concept_num)
         elif graph_type == 'Zero':
             graph = build_zero_graph(concept_num)
+        elif graph_type == 'Shuffled':
+            # Edge-shuffle ablation: same non-zero pattern as Transition (from train only) but destinations shuffled
+            base = build_transition_graph(question_list, seq_len_list, train_dataset.indices, student_num, concept_num)
+            graph = build_shuffled_graph(base.numpy(), seed=seed)
         elif graph_type == 'DKT':
             graph = build_dkt_graph(dkt_graph_path, concept_num)
-        static_types = ['Dense', 'Transition', 'DKT', 'Identity', 'Zero']
+        static_types = ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'Shuffled']
         if use_cuda and graph_type in static_types and graph is not None:
             graph = graph.cuda()
     return concept_num, graph, train_data_loader, valid_data_loader, test_data_loader

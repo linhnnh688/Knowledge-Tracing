@@ -26,6 +26,35 @@ def build_zero_graph(node_num):
     return torch.zeros(node_num, node_num, dtype=torch.float32)
 
 
+def build_shuffled_graph(node_num, seed=42):
+    """Ablation: random edges with the same sparsity as Transition but structure destroyed.
+
+    Accepts either a node_num (creates a random sparse graph) or an existing
+    adjacency matrix (tensor/ndarray) whose non-zero pattern is preserved but
+    destinations are shuffled.
+    """
+    rng = np.random.RandomState(seed)
+    if isinstance(node_num, (int, np.integer)):
+        # ~10% density random graph, row-normalized, zero diagonal
+        graph = (rng.rand(node_num, node_num) < 0.1).astype(np.float64)
+        np.fill_diagonal(graph, 0)
+    else:
+        graph = np.array(node_num, dtype=np.float64)
+        n = graph.shape[0]
+        rows, cols = np.nonzero(graph)
+        vals = graph[rows, cols].copy()
+        # Keep the same out-degree per source row, shuffle destination columns
+        new_cols = rng.permutation(cols)
+        graph = np.zeros_like(graph)
+        graph[rows, new_cols] = vals
+        np.fill_diagonal(graph, 0)
+        rowsum = graph.sum(1, keepdims=True)
+        rowsum[rowsum == 0] = 1.0
+        graph = graph / rowsum
+    graph = torch.from_numpy(graph).float()
+    return graph
+
+
 def sample_gumbel(shape, eps=1e-10):
     """
     NOTE: Stolen from https://github.com/ethanfetaya/NRI/blob/master/utils.py

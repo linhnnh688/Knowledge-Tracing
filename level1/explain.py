@@ -14,6 +14,15 @@ def skill_lookup_from_loader(loader):
     return getattr(ds, "skill_lookup", {}) or {}
 
 
+def user_ids_from_loader(loader):
+    """Map each batch position to the underlying user_id (loader must be non-shuffled, e.g. test_loader)."""
+    ds = loader.dataset
+    if hasattr(ds, "indices") and hasattr(ds.dataset, "user_ids"):
+        base_ids = ds.dataset.user_ids
+        return [base_ids[i] for i in ds.indices]
+    return list(range(len(ds)))
+
+
 def _skill_name(lookup, skill_id):
     if lookup and skill_id in lookup:
         return f"{skill_id}:{lookup[skill_id]}"
@@ -49,6 +58,8 @@ def collect_cases(
         device = next(model.parameters()).device
     model.eval()
     buckets = {"correct": [], "incorrect": []}
+    user_ids = user_ids_from_loader(loader)
+    batch_offset = 0
     with torch.no_grad():
         for batch in loader:
             if model_type == "GIKT":
@@ -70,6 +81,7 @@ def collect_cases(
                 mask = mask & (q_seq[:, 1:] != -1)
             bsz, tlen = pred.shape
             for b in range(bsz):
+                uid = user_ids[batch_offset + b] if batch_offset + b < len(user_ids) else None
                 for t in range(tlen):
                     if not bool(mask[b, t]):
                         continue
@@ -95,6 +107,8 @@ def collect_cases(
                             }
                         )
                     rec = {
+                        "user_id": uid,
+                        "t": t + 1,
                         "skill": skill,
                         "skill_name": _skill_name(skill_lookup, skill),
                         "y_true": y,
@@ -106,6 +120,7 @@ def collect_cases(
                     }
                     key = "correct" if ok else "incorrect"
                     buckets[key].append(rec)
+            batch_offset += bsz
 
     for key in buckets:
         buckets[key].sort(key=lambda r: r["confidence"], reverse=True)
@@ -119,7 +134,7 @@ def format_cases(buckets, graph_note="transition graph (train only)") -> str:
         lines.append(f"## {len(rows)} {label} predictions")
         for i, rec in enumerate(rows, 1):
             lines.append(
-                f"\n### {label} #{i}  skill={rec['skill_name']}  "
+                f"\n### {label} #{i}  user={rec.get('user_id')}  t={rec.get('t')}  skill={rec['skill_name']}  "
                 f"y={rec['y_true']}  p={rec['y_prob']:.3f}  pred={rec['y_pred']}"
             )
             hist_txt = ", ".join(

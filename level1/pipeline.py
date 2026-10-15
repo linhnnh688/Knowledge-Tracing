@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.optim as optim
+from sklearn.metrics import roc_auc_score
 from torch.nn.utils import clip_grad_norm_
 
 from .gikt import GIKT
@@ -151,25 +152,40 @@ def _forward(model, model_type, batch, device):
 def _epoch_loop(model, loader, model_type, device, kt_loss, optimizer=None):
     train = optimizer is not None
     model.train(train)
-    losses, aucs, accs = [], [], []
+    losses = []
+    all_preds, all_labels = [], []
     context = torch.enable_grad() if train else torch.no_grad()
     with context:
         for batch in loader:
             pred, answers = _forward(model, model_type, batch, device)
-            loss, auc, acc = kt_loss(pred, answers)
+            loss, _, _ = kt_loss(pred, answers)
             if train:
                 optimizer.zero_grad()
                 loss.backward()
                 clip_grad_norm_(model.parameters(), 10.0)
                 optimizer.step()
             losses.append(float(loss.detach().cpu()))
-            if auc != -1:
-                aucs.append(auc)
-                accs.append(acc)
+            real = answers[:, 1:]
+            mask = real != -1
+            if model_type == "GIKT":
+                questions = batch[0].to(device)
+                mask = mask & (questions[:, 1:] > 0)
+            else:
+                mask = mask & (batch[1].to(device)[:, 1:] != -1)
+            all_preds.append(pred[mask].detach().cpu().numpy())
+            all_labels.append(real[mask].detach().cpu().numpy())
+    # Global AUC / Accuracy over the whole loader (not mean of per-batch AUCs)
+    y_pred = np.concatenate(all_preds) if all_preds else np.array([])
+    y_true = np.concatenate(all_labels) if all_labels else np.array([])
+    if y_true.size > 0 and len(np.unique(y_true)) > 1:
+        auc = float(roc_auc_score(y_true, y_pred))
+        acc = float(((y_pred >= 0.5) == y_true).mean())
+    else:
+        auc, acc = -1.0, -1.0
     return {
         "loss": float(np.mean(losses) if losses else 0.0),
-        "auc": float(np.mean(aucs) if aucs else 0.0),
-        "acc": float(np.mean(accs) if accs else 0.0),
+        "auc": auc,
+        "acc": acc,
     }
 
 

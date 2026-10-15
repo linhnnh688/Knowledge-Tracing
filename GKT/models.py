@@ -27,9 +27,9 @@ class GKT(nn.Module):
         self.res_len = 2 if binary else 12
         self.has_cuda = has_cuda
 
-        assert graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'PAM', 'MHA', 'VAE']
+        assert graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'Shuffled', 'PAM', 'MHA', 'VAE']
         self.graph_type = graph_type
-        if graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero']:
+        if graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'Shuffled']:
             assert edge_type_num == 2
             assert graph is not None and graph_model is None
             self.graph = nn.Parameter(graph)  # [concept_num, concept_num]
@@ -60,7 +60,7 @@ class GKT(nn.Module):
         mlp_input_dim = hidden_dim + embedding_dim
         self.f_self = MLP(mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias)
         self.f_neighbor_list = nn.ModuleList()
-        if graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'PAM']:
+        if graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'Shuffled', 'PAM']:
             # f_in and f_out functions
             self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
             self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
@@ -134,7 +134,7 @@ class GKT(nn.Module):
         neigh_ht = torch.cat((expanded_self_ht, masked_tmp_ht), dim=-1)  #[mask_num, concept_num, 2 * (hidden_dim + embedding_dim)]
         concept_embedding, rec_embedding, z_prob = None, None, None
 
-        if self.graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'PAM']:
+        if self.graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'Shuffled', 'PAM']:
             adj = self.graph[masked_qt.long(), :].unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
             reverse_adj = self.graph[:, masked_qt.long()].transpose(0, 1).unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
             # self.f_neighbor_list[0](neigh_ht) shape: [mask_num, concept_num, hidden_dim]
@@ -277,11 +277,13 @@ class GKT(nn.Module):
         sp_rec_t = sp_rec_t.to(device=masked_qt.device)
         return sp_send, sp_rec, sp_send_t, sp_rec_t
 
-    def forward(self, features, questions):
+    def forward(self, features, questions, return_state=False):
         r"""
         Parameters:
             features: input one-hot matrix
             questions: question index matrix
+            return_state: if True, also return the list of hidden knowledge states h_t
+                (one entry per timestamp, each of shape [batch_size, concept_num, hidden_dim])
         seq_len dimension needs padding, because different students may have learning sequences with different lengths.
         Shape:
             features: [batch_size, seq_len]
@@ -292,6 +294,7 @@ class GKT(nn.Module):
             concept_embedding: input of VAE (optional)
             rec_embedding: reconstructed input of VAE (optional)
             z_prob: probability distribution of latent variable z in VAE (optional)
+            states: list of h_t snapshots (optional, only when return_state=True)
         """
         batch_size, seq_len = features.shape
         ht = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim), device=features.device))
@@ -299,6 +302,7 @@ class GKT(nn.Module):
         ec_list = []  # concept embedding list in VAE
         rec_list = []  # reconstructed embedding list in VAE
         z_prob_list = []  # probability distribution of latent variable z in VAE
+        states = [] if return_state else None
         for i in range(seq_len):
             xt = features[:, i]  # [batch_size]
             qt = questions[:, i]  # [batch_size]
@@ -306,6 +310,8 @@ class GKT(nn.Module):
             tmp_ht = self._aggregate(xt, qt, ht, batch_size)  # [batch_size, concept_num, hidden_dim + embedding_dim]
             h_next, concept_embedding, rec_embedding, z_prob = self._update(tmp_ht, ht, qt)  # [batch_size, concept_num, hidden_dim]
             ht[qt_mask] = h_next[qt_mask]  # update new ht
+            if return_state:
+                states.append(h_next.detach())
             yt = self._predict(h_next, qt)  # [batch_size, concept_num]
             if i < seq_len - 1:
                 pred = self._get_next_pred(yt, questions[:, i + 1])
@@ -314,6 +320,8 @@ class GKT(nn.Module):
             rec_list.append(rec_embedding)
             z_prob_list.append(z_prob)
         pred_res = torch.stack(pred_list, dim=1)  # [batch_size, seq_len - 1]
+        if return_state:
+            return pred_res, ec_list, rec_list, z_prob_list, states
         return pred_res, ec_list, rec_list, z_prob_list
 
 
