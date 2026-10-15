@@ -14,8 +14,6 @@ import torch.optim as optim
 from sklearn.metrics import roc_auc_score
 from torch.nn.utils import clip_grad_norm_
 
-from .gikt import GIKT
-from .gikt_data import identity_neighbors, load_gikt_dataset
 from .paths import ensure_gkt_on_path, repo_root
 
 
@@ -134,12 +132,6 @@ def build_model(model_type, concept_num, graph=None, graph_type="Transition", hi
 
 
 def _forward(model, model_type, batch, device):
-    if model_type == "GIKT":
-        questions, _, answers = batch
-        questions = questions.to(device)
-        answers = answers.to(device)
-        pred = model(questions, answers)
-        return pred, answers
     features, questions, answers = batch
     features = features.to(device)
     questions = questions.to(device)
@@ -335,83 +327,10 @@ def run_experiment(
     return result
 
 
-def run_gikt_experiment(
-    data_file,
-    train_user_ids,
-    val_user_ids,
-    test_user_ids,
-    epochs=20,
-    batch_size=32,
-    lr=1e-3,
-    emb_dim=64,
-    hidden_dim=64,
-    n_hop=2,
-    seed=42,
-    max_seq_len=200,
-    ablation_empty_graph=False,
-    save_dir=None,
-    device=None,
-):
-    set_seed(seed)
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    packed = load_gikt_dataset(
-        resolve_data_file(data_file),
-        train_user_ids,
-        val_user_ids,
-        test_user_ids,
-        batch_size=batch_size,
-        max_seq_len=max_seq_len,
-        seed=seed,
+def run_gikt_experiment(*args, **kwargs):
+    raise NotImplementedError(
+        "GIKT đã được loại bỏ khỏi pipeline. Hệ thống tập trung chuẩn hóa hoàn toàn trên nền tảng GKT & DKT."
     )
-    q_nei, s_nei = packed["q_neighbors"], packed["s_neighbors"]
-    if ablation_empty_graph:
-        q_nei, s_nei = identity_neighbors(packed["num_questions"], packed["num_skills"], q_nei.size(1), s_nei.size(1))
-    model = GIKT(
-        packed["num_questions"],
-        packed["num_skills"],
-        q_nei.to(device),
-        s_nei.to(device),
-        emb_dim=emb_dim,
-        hidden_dim=hidden_dim,
-        n_hop=n_hop,
-    ).to(device)
-    history, best_val_auc = train_one(
-        model,
-        packed["loaders"]["train"],
-        packed["loaders"]["val"],
-        model_type="GIKT",
-        epochs=epochs,
-        lr=lr,
-        device=device,
-    )
-    test_metrics = evaluate(model, packed["loaders"]["test"], model_type="GIKT", device=device)
-    name = "GIKT-empty" if ablation_empty_graph else "GIKT"
-    result = {
-        "name": name,
-        "model_type": "GIKT",
-        "graph_type": "Empty" if ablation_empty_graph else "QuestionSkill",
-        "best_val_auc": best_val_auc,
-        "test_loss": test_metrics["loss"],
-        "test_auc": test_metrics["auc"],
-        "test_acc": test_metrics["acc"],
-        "history": history,
-        "seed": seed,
-        "model": model,
-        "bundle": packed,
-    }
-    print(f">>> {name} test AUC={result['test_auc']:.4f} Acc={result['test_acc']:.4f}")
-    if save_dir:
-        save_dir = Path(save_dir)
-        save_dir.mkdir(parents=True, exist_ok=True)
-        ckpt = save_dir / f"{name}.pt"
-        torch.save(model.state_dict(), ckpt)
-        result["ckpt"] = str(ckpt)
-    result["model"] = model.cpu()
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    return result
 
 
 def run_level1(
@@ -423,11 +342,10 @@ def run_level1(
     emb_dim=32,
     seed=42,
     max_seq_len=200,
-    run_gikt=True,
     save_dir=None,
     device=None,
 ):
-    """Train DKT, GKT-Transition, GKT identity/zero ablations, and optional GIKT."""
+    """Train DKT, GKT-Transition, GKT graph variants & ablations (Dense, Identity, Zero)."""
     if save_dir is None:
         save_dir = repo_root() / "outputs" / "level1"
     save_dir = Path(save_dir)
@@ -465,7 +383,7 @@ def run_level1(
             device=device,
         )
     )
-    for graph_type in ["Transition", "Identity", "Zero"]:
+    for graph_type in ["Transition", "Dense", "Identity", "Zero"]:
         bundle = load_kt_data(
             data_file,
             batch_size=batch_size,
@@ -489,43 +407,6 @@ def run_level1(
                 max_seq_len=max_seq_len,
                 save_dir=save_dir,
                 bundle=bundle,
-                device=device,
-            )
-        )
-
-    if run_gikt:
-        results.append(
-            run_gikt_experiment(
-                data_file,
-                split["train_users"],
-                split["val_users"],
-                split["test_users"],
-                epochs=epochs,
-                batch_size=batch_size,
-                lr=lr,
-                emb_dim=emb_dim,
-                hidden_dim=hid_dim,
-                seed=seed,
-                max_seq_len=max_seq_len,
-                save_dir=save_dir,
-                device=device,
-            )
-        )
-        results.append(
-            run_gikt_experiment(
-                data_file,
-                split["train_users"],
-                split["val_users"],
-                split["test_users"],
-                epochs=epochs,
-                batch_size=batch_size,
-                lr=lr,
-                emb_dim=emb_dim,
-                hidden_dim=hid_dim,
-                seed=seed,
-                max_seq_len=max_seq_len,
-                ablation_empty_graph=True,
-                save_dir=save_dir,
                 device=device,
             )
         )

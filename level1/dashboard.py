@@ -45,30 +45,18 @@ def export_learner_view(
     batch_offset = 0
     with torch.no_grad():
         for batch in loader:
-            if model_type == "GIKT":
-                questions, skills, answers = batch
-                questions = questions.to(device)
-                answers = answers.to(device)
-                pred = model(questions, answers)
-                q_seq = questions
+            features, questions, answers = [x.to(device) for x in batch]
+            if model_type == "GKT" and getattr(model, "graph_type", None) is not None:
+                out = model(features, questions, return_state=True)
+                pred = out[0]
+                states = out[4]
+            else:
+                out = model(features, questions)
+                pred = out[0] if isinstance(out, tuple) else out
                 states = None
-            else:
-                features, questions, answers = [x.to(device) for x in batch]
-                if model_type == "GKT" and getattr(model, "graph_type", None) is not None:
-                    out = model(features, questions, return_state=True)
-                    pred = out[0]
-                    states = out[4]
-                else:
-                    out = model(features, questions)
-                    pred = out[0] if isinstance(out, tuple) else out
-                    states = None
-                q_seq = questions
+            q_seq = questions
             real = answers[:, 1:]
-            mask = real != -1
-            if model_type == "GIKT":
-                mask = mask & (q_seq[:, 1:] > 0)
-            else:
-                mask = mask & (q_seq[:, 1:] != -1)
+            mask = (real != -1) & (q_seq[:, 1:] != -1)
             bsz, tlen = pred.shape
             for b in range(bsz):
                 uid = user_ids[batch_offset + b] if batch_offset + b < len(user_ids) else None

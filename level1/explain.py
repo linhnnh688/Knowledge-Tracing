@@ -62,23 +62,12 @@ def collect_cases(
     batch_offset = 0
     with torch.no_grad():
         for batch in loader:
-            if model_type == "GIKT":
-                questions, skills, answers = batch
-                questions = questions.to(device)
-                answers = answers.to(device)
-                pred = model(questions, answers)
-                q_seq = questions
-            else:
-                features, questions, answers = [x.to(device) for x in batch]
-                out = model(features, questions)
-                pred = out[0] if isinstance(out, tuple) else out
-                q_seq = questions
+            features, questions, answers = [x.to(device) for x in batch]
+            out = model(features, questions)
+            pred = out[0] if isinstance(out, tuple) else out
+            q_seq = questions
             real = answers[:, 1:]
-            mask = real != -1
-            if model_type == "GIKT":
-                mask = mask & (q_seq[:, 1:] > 0)
-            else:
-                mask = mask & (q_seq[:, 1:] != -1)
+            mask = (real != -1) & (q_seq[:, 1:] != -1)
             bsz, tlen = pred.shape
             for b in range(bsz):
                 uid = user_ids[batch_offset + b] if batch_offset + b < len(user_ids) else None
@@ -94,9 +83,7 @@ def collect_cases(
                     start = max(0, t + 1 - history_k)
                     for h in range(start, t + 1):
                         sid = int(q_seq[b, h].cpu())
-                        if model_type == "GIKT" and sid <= 0:
-                            continue
-                        if model_type != "GIKT" and sid < 0:
+                        if sid < 0:
                             continue
                         hist.append(
                             {
@@ -116,7 +103,7 @@ def collect_cases(
                         "y_pred": pred_bin,
                         "confidence": abs(yhat - 0.5),
                         "history": hist,
-                        "neighbors": _neighbors(graph, skill) if model_type != "GIKT" else [],
+                        "neighbors": _neighbors(graph, skill),
                     }
                     key = "correct" if ok else "incorrect"
                     buckets[key].append(rec)
