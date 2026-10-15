@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, TensorDataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
-from utils import build_dense_graph
+from utils import build_dense_graph, build_identity_graph, build_zero_graph
 
 # Graph-based Knowledge Tracing: Modeling Student Proficiency Using Graph Neural Network.
 # For more information, please refer to https://dl.acm.org/doi/10.1145/3350546.3352513
@@ -38,7 +38,7 @@ def pad_collate(batch):
     return feature_pad, question_pad, answer_pad
 
 
-def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_ratio=0.7, val_ratio=0.2, shuffle=True, model_type='GKT', use_binary=True, res_len=2, use_cuda=True):
+def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_ratio=0.7, val_ratio=0.2, shuffle=True, model_type='GKT', use_binary=True, res_len=2, use_cuda=True, seed=42, max_seq_len=200, min_seq_len=3):
     r"""
     Parameters:
         file_path: input file path of knowledge tracing data
@@ -46,9 +46,12 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
         graph_type: the type of the concept graph
         shuffle: whether to shuffle the dataset or not
         use_cuda: whether to use GPU to accelerate training speed
+        seed: RNG seed for the user-wise train/val/test split
+        max_seq_len: truncate each student sequence to this length (0 = no truncate)
+        min_seq_len: drop students with fewer interactions than this
     Return:
         concept_num: the number of all concepts(or questions)
-        graph: the static graph is graph type is in ['Dense', 'Transition', 'DKT'], otherwise graph is None
+        graph: the static graph is graph type is in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero'], otherwise graph is None
         train_data_loader: data loader of the training dataset
         valid_data_loader: data loader of the validation dataset
         test_data_loader: data loader of the test dataset
@@ -68,8 +71,8 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     # Step 1.1 - Remove questions without skill
     df.dropna(subset=['skill_id'], inplace=True)
 
-    # Step 1.2 - Remove users with a single answer
-    df = df.groupby('user_id').filter(lambda q: len(q) > 1).copy()
+    # Step 1.2 - Remove users with too few answers
+    df = df.groupby('user_id').filter(lambda q: len(q) >= min_seq_len).copy()
 
     # Step 2 - Enumerate skill id
     df['skill'], _ = pd.factorize(df['skill_id'], sort=True)  # we can also use problem_id to represent exercises
@@ -87,16 +90,31 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     question_list = []
     answer_list = []
     seq_len_list = []
+    user_id_list = []
+    skill_name_list = []
 
-    def get_data(series):
-        feature_list.append(series['skill_with_answer'].tolist())
-        question_list.append(series['skill'].tolist())
-        answer_list.append(series['correct'].eq(1).astype('int').tolist())
-        seq_len_list.append(series['correct'].shape[0])
+    def get_data(user_id, series):
+        feats = series['skill_with_answer'].tolist()
+        qs = series['skill'].tolist()
+        ans = series['correct'].eq(1).astype('int').tolist()
+        if max_seq_len and len(feats) > max_seq_len:
+            feats = feats[:max_seq_len]
+            qs = qs[:max_seq_len]
+            ans = ans[:max_seq_len]
+        feature_list.append(feats)
+        question_list.append(qs)
+        answer_list.append(ans)
+        seq_len_list.append(len(ans))
+        try:
+            user_id_list.append(int(user_id))
+        except (TypeError, ValueError):
+            user_id_list.append(user_id)
+        if 'skill_name' in series.columns:
+            skill_name_list.append(series['skill_name'].tolist()[:len(ans)])
 
-    df.groupby('user_id').apply(get_data)
-    max_seq_len = np.max(seq_len_list)
-    print('max seq_len: ', max_seq_len)
+    for user_id, series in df.groupby('user_id', sort=False):
+        get_data(user_id, series)
+    print('max seq_len: ', int(np.max(seq_len_list)))
     student_num = len(seq_len_list)
     print('student num: ', student_num)
     feature_dim = int(df['skill_with_answer'].max() + 1)
@@ -109,15 +127,20 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
     # assert feature_dim == res_len * question_dim
 
     kt_dataset = KTDataset(feature_list, question_list, answer_list)
+    kt_dataset.user_ids = user_id_list
+    kt_dataset.skill_lookup = _skill_lookup(df)
     train_size = int(train_ratio * student_num)
     val_size = int(val_ratio * student_num)
     test_size = student_num - train_size - val_size
-    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(kt_dataset, [train_size, val_size, test_size])
+    split_gen = torch.Generator().manual_seed(seed)
+    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
+        kt_dataset, [train_size, val_size, test_size], generator=split_gen
+    )
     print('train_size: ', train_size, 'val_size: ', val_size, 'test_size: ', test_size)
 
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
-    valid_data_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
-    test_data_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
+    valid_data_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=pad_collate)
+    test_data_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=pad_collate)
 
     graph = None
     if model_type == 'GKT':
@@ -125,11 +148,25 @@ def load_dataset(file_path, batch_size, graph_type, dkt_graph_path=None, train_r
             graph = build_dense_graph(concept_num)
         elif graph_type == 'Transition':
             graph = build_transition_graph(question_list, seq_len_list, train_dataset.indices, student_num, concept_num)
+        elif graph_type == 'Identity':
+            graph = build_identity_graph(concept_num)
+        elif graph_type == 'Zero':
+            graph = build_zero_graph(concept_num)
         elif graph_type == 'DKT':
             graph = build_dkt_graph(dkt_graph_path, concept_num)
-        if use_cuda and graph_type in ['Dense', 'Transition', 'DKT']:
+        static_types = ['Dense', 'Transition', 'DKT', 'Identity', 'Zero']
+        if use_cuda and graph_type in static_types and graph is not None:
             graph = graph.cuda()
     return concept_num, graph, train_data_loader, valid_data_loader, test_data_loader
+
+
+def _skill_lookup(df):
+    lookup = {}
+    if 'skill_name' not in df.columns:
+        return lookup
+    for _, row in df[['skill', 'skill_id', 'skill_name']].drop_duplicates('skill').iterrows():
+        lookup[int(row['skill'])] = str(row['skill_name'])
+    return lookup
 
 
 def build_transition_graph(question_list, seq_len_list, indices, student_num, concept_num):

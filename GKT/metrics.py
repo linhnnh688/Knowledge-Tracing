@@ -28,7 +28,8 @@ class KTLoss(nn.Module):
         # real_answers shape: [batch_size, seq_len - 1]
         # Here we can directly use nn.BCELoss, but this loss doesn't have ignore_index function
         answer_mask = torch.ne(real_answers, -1)
-        pred_one, pred_zero = pred_answers, 1.0 - pred_answers  # [batch_size, seq_len - 1]
+        pred_one = pred_answers.clamp(1e-6, 1.0 - 1e-6)
+        pred_zero = 1.0 - pred_one  # [batch_size, seq_len - 1]
 
         # calculate auc and accuracy metrics
         try:

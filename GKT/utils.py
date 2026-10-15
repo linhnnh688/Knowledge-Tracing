@@ -16,6 +16,16 @@ def build_dense_graph(node_num):
     return graph
 
 
+def build_identity_graph(node_num):
+    """Ablation: no relational edges, only self-loops."""
+    return torch.eye(node_num, dtype=torch.float32)
+
+
+def build_zero_graph(node_num):
+    """Ablation: drop every edge (including self-loops)."""
+    return torch.zeros(node_num, node_num, dtype=torch.float32)
+
+
 def sample_gumbel(shape, eps=1e-10):
     """
     NOTE: Stolen from https://github.com/ethanfetaya/NRI/blob/master/utils.py

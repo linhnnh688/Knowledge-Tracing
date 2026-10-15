@@ -36,7 +36,7 @@ lịch sử làm bài
 ## 2. Lựa chọn phạm vi
 
 | Quyết định | Lựa chọn | Lý do |
-|---|---|---|
+| --- | --- | --- |
 | Nhánh | **A. Đúng/sai** | Bắt buộc để khởi động; dữ liệu ASSISTments/Junyi sẵn; không cần nội dung phương án |
 | Mục tiêu điểm | **Cấp 1 + 2 + 3** (trần 10) | Cấp 4 (+1) chỉ làm nếu còn thời gian |
 | Dữ liệu công khai | **ASSISTments 2009** và **Junyi Academy** | ASSIST09 dễ chạy cấp 1; Junyi có quan hệ tiên quyết — đúng tinh thần đồ thị; GRKT đã báo cáo trên cả hai |
@@ -87,7 +87,7 @@ Q-matrix \(Q \in \{0,1\}^{|questions| \times |KC|}\): nếu câu hỏi có nhi�
 1. Khởi tạo embedding đỉnh KC: \(h_c^{(0)}\).
 2. \(L\) lớp GAT: mỗi KC nhận thông tin từ láng giềng (tiên quyết / đồng xuất hiện). Attention \(\alpha_{ij}\) là tín hiệu giải thích cấp 1.
 3. Trạng thái người học \(s_t\): GRU nhận \([h_{q_t}; e_{r_t}]\) (biểu diễn câu hỏi = tổng/attention các KC của câu đó, cộng embedding đúng/sai).
-4. Điểm dự đoán: \(\hat{y}_t = \sigma(s_{t-1}^\top W h_{q_t} + b)\) — **dùng \(s_{t-1}\)** chứ không phải \(s_t\) để không rò nhãn hiện tại.
+4. Điểm dự đoán: \(\hat{y}*t = \sigma(s*{t-1}^\top W h_{q_t} + b)\) — **dùng \(s_{t-1}\)** chứ không phải \(s_t\) để không rò nhãn hiện tại.
 
 Có thể thêm GKT nếu thời gian cho phép (cập nhật trực tiếp “ô” KC trên đồ thị sau mỗi lần trả lời).
 
@@ -110,7 +110,7 @@ Ba giai đoạn trên đồ thị KC (tóm tắt):
 **Hai tiêu chí hợp lý của quỹ đạo (bắt buộc đo, chọn ≥ 2):**
 
 | Tiêu chí | Cách đo (gợi ý) |
-|---|---|
+| --- | --- |
 | **Hướng nhất quán** | Khi user trả lời đúng câu gắn KC \(c\), \(\Delta m_c \ge -\varepsilon\) (không tụt mastery một cách bất hợp lý). Tỷ lệ vi phạm trên tập test. |
 | **Tính cục bộ** | Một lần trả lời KC \(c\) không làm \(\lvert\Delta m_{c'}\rvert\) lớn với \(c'\) không kề và không cùng câu hỏi. Trung bình \(\lvert\Delta m\rvert\) ngoài 1-hop vs trong 1-hop. |
 | **Nhất quán tiên quyết** (Junyi) | Mastery KC con không vượt xa KC tiên quyết một cách có hệ thống (nếu đồ thị có hướng). |
@@ -229,7 +229,7 @@ Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**. Điều chỉnh 
 
 ### Giai đoạn 2 — Cấp độ 2 (tuần 5–7) → trần 8.5
 
-- [ ] Tái lập GRKT (code: https://github.com/JJCui96/GRKT); map vào split của nhóm (không dùng split mặc định khác nếu muốn so sánh công bằng — hoặc báo cáo cả hai và giải thích).
+- [ ] Tái lập GRKT (code: <https://github.com/JJCui96/GRKT>); map vào split của nhóm (không dùng split mặc định khác nếu muốn so sánh công bằng — hoặc báo cáo cả hai và giải thích).
 - [ ] Đánh giá GRKT trên **cả hai** dataset, cùng chỉ số với cấp 1.
 - [ ] Export mastery \(m_{u,c,t}\); vẽ quỹ đạo.
 - [ ] Implement 2 metric quỹ đạo; so sánh 3 mô hình.
@@ -254,7 +254,7 @@ Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**. Điều chỉnh 
 ### Phân công gợi ý (4 người)
 
 | Thành viên | Trọng tâm | Phải giải thích được khi vấn đáp |
-|---|---|---|
+| --- | --- | --- |
 | A | Preprocess, split, đồ thị, chống leak | pyKT, vì sao graph chỉ từ train |
 | B | DKT + GAT-KT + ablation | công thức dự đoán, chỗ không dùng \(r_t\) |
 | C | GRKT + metric quỹ đạo | 3 giai đoạn, mastery |
@@ -267,7 +267,7 @@ Mọi người vẫn train/eval được mô hình của mình trên cùng data 
 ## 7. Rủi ro và cách xử lý
 
 | Rủi ro | Xử lý |
-|---|---|
+| --- | --- |
 | GRKT khó chạy / OOM | Giảm max-seq, subsample ASSIST; fallback PSI-KT hoặc DGEKT |
 | AUC GAT ≈ DKT | Kiểm tra leak; tăng chất lượng cạnh (Junyi pred); báo cáo trung thực + nhấn quỹ đạo/xAI |
 | Quiz không đủ 400 tương tác | Thêm người / cho làm 2 phiên; không bịa nhãn |
@@ -290,12 +290,12 @@ Mọi người vẫn train/eval được mô hình của mình trên cùng data 
 ## 9. Tài liệu neo
 
 - Đề: `Project02_Knowledge_Tracing.pdf`
-- pyKT: https://github.com/pykt-team/pykt-toolkit
+- pyKT: <https://github.com/pykt-team/pykt-toolkit>
 - DKT: Piech et al., NeurIPS 2015
 - GKT: Nakagawa et al., WI 2019
 - simpleKT: Liu et al., ICLR 2023
-- **GRKT:** Cui et al., KDD 2024 — https://arxiv.org/abs/2406.12896 — https://github.com/JJCui96/GRKT
-- PSI-KT (dự phòng): ICLR 2024 — https://github.com/mlcolab/psi-kt
+- **GRKT:** Cui et al., KDD 2024 — <https://arxiv.org/abs/2406.12896> — <https://github.com/JJCui96/GRKT>
+- PSI-KT (dự phòng): ICLR 2024 — <https://github.com/mlcolab/psi-kt>
 
 ---
 
