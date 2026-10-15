@@ -218,6 +218,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Experiment outputs
-outputs/
+# outputs/
 GKT/data/assistments_2009_2010.csv
 GKT/data/assistments_2009_2010.csv
