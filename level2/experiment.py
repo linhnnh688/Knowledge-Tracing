@@ -50,6 +50,9 @@ from .trajectory import (
     trajectory_metrics_table,
 )
 
+#: Bốn biến thể đồ thị GRKT hỗ trợ. Ablation cấu trúc đồ thị là yêu cầu Cấp độ 1 (đã có số
+#: liệu trong outputs/level1), nên mặc định của run_dataset chỉ train ``("train",)`` — mỗi biến
+#: thể là một lần train GRKT riêng, bật đủ bốn biến thể tốn gấp ~4 thời lượng GPU.
 GRAPH_VARIANTS: Sequence[str] = ("train", "dense", "zero", "shuffled")
 
 #: Đường nền so sánh với GRKT — đúng bộ mô hình Cấp độ 1 đã có checkpoint trên ASSISTments.
@@ -112,7 +115,7 @@ def run_dataset(
     split_seed: int = 42,
     train_ratio: float = 0.6,
     val_ratio: float = 0.2,
-    variants: Sequence[str] = GRAPH_VARIANTS,
+    variants: Sequence[str] = ("train",),
     run_baselines: bool = True,
     baseline_ckpt_dir=None,
     baseline_epochs: Optional[int] = None,
@@ -120,7 +123,7 @@ def run_dataset(
     record_trajectory: bool = True,
     trajectory_users: int = 150,
     trajectory_batch: int = 16,
-    run_calibration: bool = True,
+    run_calibration: bool = False,
     run_multi_seed: bool = False,
     seeds: Sequence[int] = (42, 123, 456),
     resume_grkt_ckpt: bool = False,
@@ -128,6 +131,13 @@ def run_dataset(
     verbose: bool = True,
 ) -> Dict[str, object]:
     """Chạy toàn bộ pipeline Cấp độ 2 trên một tập dữ liệu; trả về dict chứa bảng + đường dẫn.
+
+    Mặc định chỉ làm đúng những gì yêu cầu Cấp độ 2 nêu: train GRKT trên đồ thị ``train``,
+    đánh giá trên cùng split với đường nền Cấp độ 1, và ghi quỹ đạo m(u,c,t) kèm tiêu chí hợp
+    lý. Ba thứ ngoài phạm vi đó phải bật thủ công — ``variants=GRAPH_VARIANTS`` cho ablation
+    cấu trúc đồ thị (yêu cầu Cấp độ 1, mỗi biến thể thêm một lần train), ``run_calibration``
+    cho ECE/Brier (đề bài chỉ cần MỘT phân tích nâng cao) và ``run_multi_seed`` (mỗi seed một
+    lần train; DKT/GKT đã có 3 seed ở Cấp độ 1 trên cùng split).
 
     ``raw_path`` chỉ nên truyền khi chạy ĐÚNG MỘT tập dữ liệu (nó áp cho mọi tập trong vòng
     lặp của :func:`run_level2`). Với Junyi trên Kaggle thì không cần: ``ensure_canonical`` tự

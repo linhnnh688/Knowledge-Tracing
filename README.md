@@ -122,11 +122,15 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
 3. `QUICK_RUN=True`: tập `assist2009_smoke` (15 người học, dùng lại file smoke test của
    Cấp độ 1), 2 epoch, chỉ đồ thị `train` — kiểm tra mã trong vài phút, **không dùng số liệu
    cho báo cáo**. `MAX_USERS` chỉ có tác dụng với Junyi (tập phải chuẩn hoá từ file gốc).
-4. `QUICK_RUN=False`: `assist2009` đầy đủ + `junyi` (cap 4000 người), 4 biến thể đồ thị,
-   đa seed `[42, 123, 456]`, `MAX_SEQ_LEN=200` (đúng cấu hình Cấp độ 1 để checkpoint DKT/GKT
-   nạp lại được đánh giá trên cùng cửa sổ). GRKT nặng hơn GKT nhiều lần; nếu hết giờ, giảm
-   `EPOCHS` và `VARIANTS` trước khi giảm `MAX_SEQ_LEN`, và **không** đổi `SPLIT_SEED`
-   (seed split phải giữ 42 để cùng một split với Cấp độ 1).
+4. `QUICK_RUN=False`: `assist2009` đầy đủ + `junyi` (cap 4000 người), GRKT với đồ thị `train`,
+   quỹ đạo mastery + tiêu chí hợp lý, `MAX_SEQ_LEN=200` (đúng cấu hình Cấp độ 1 để checkpoint
+   DKT/GKT nạp lại được đánh giá trên cùng cửa sổ). Ba công tắc ngoài phạm vi yêu cầu Cấp độ 2
+   — `RUN_GRAPH_ABLATIONS`, `RUN_CALIBRATION`, `RUN_MULTI_SEED` — **mặc định `False`**: ablation
+   cấu trúc đồ thị và đa seed là yêu cầu Cấp độ 1 (đã có số liệu), còn đề bài chỉ yêu cầu chọn
+   **một** phân tích nâng cao và nhóm chọn quỹ đạo mastery. Bật lại khi session còn thời lượng
+   (mỗi biến thể đồ thị là một lần train GRKT riêng, tốn gấp ~4 thời gian). GRKT nặng hơn GKT
+   nhiều lần; nếu hết giờ, giảm `EPOCHS` trước khi giảm `MAX_SEQ_LEN`, và **không** đổi
+   `SPLIT_SEED` (seed split phải giữ 42 để cùng một split với Cấp độ 1).
 5. **Junyi cần nhiều RAM hơn ASSIST.** File gốc `Log_Problem.csv` có hàng chục triệu dòng, nên
    `_canonicalize_junyi` chỉ đọc các cột khớp `JUNYI.columns` (log in ra "đọc N/M cột").
    `MAX_USERS` lấy mẫu SAU khi đã nạp file nên **không** giảm RAM lúc đọc; nếu notebook vẫn bị
@@ -134,9 +138,10 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
 6. Sản phẩm ghi dưới `/kaggle/working/level2_out/<dataset>/`: `split.json`,
    `leak_report.txt`, `graphs_train_only.npz`, `level2_metrics.csv`,
    `trajectories/{traj_*.npz, mastery_*.csv, heatmap_*.png, curves_*.png}`,
-   `trajectory_metrics.csv`, `calibration.csv`, `reliability.png`,
-   `multiseed_metrics.csv`, `summary.json`, `GRKT-<graph>.pt`; nối nhiều dataset ở
-   `level2_all_datasets.csv`.
+   `trajectory_metrics.csv`, `summary.json`, `GRKT-<graph>.pt`; nối nhiều dataset ở
+   `level2_all_datasets.csv`. Cấu hình mặc định không sinh `calibration.csv`, `reliability.png`
+   và `multiseed_metrics.csv` (hai bước cuối tắt) — chỉ có khi bật `RUN_CALIBRATION` /
+   `RUN_MULTI_SEED`.
 7. **Cell §8.5** gói cả cây `level2_out/` thành `/kaggle/working/level2_output.zip` để tải về
    một lần từ tab Output (Kaggle xoá `/kaggle/working` khi session kết thúc). Mặc định bỏ
    `junyi_canonical.csv` (tái sinh được) và file > `MAX_MB=150`; đặt `KEEP_CKPTS=False` nếu chỉ

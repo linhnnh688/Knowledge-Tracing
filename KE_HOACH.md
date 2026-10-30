@@ -251,9 +251,13 @@ cuối cùng chỉ tồn tại sau khi chạy Kaggle** (máy dev không có môi
       `consistency_strengthen` (kiểm chứng cài đặt), `consistency_spread` (tiêu chí thật:
       hướng lan truyền sang láng giềng 1-hop), `locality` (độ cục bộ của cập nhật),
       `forget_slope` (Δm giữa hai bước theo Δt tại KC không bị chạm) + `stage_attribution`.
-      Bảng so sánh giữa 4 biến thể đồ thị `train/dense/zero/shuffled`.
-- [x] Phân tích nâng cao: **ECE + ACE + Brier + reliability diagram** cho DKT, GKT và GRKT
-      (`level2/calibration.py`), và so sánh quỹ đạo có/không đồ thị ( cùng bảng trên).
+      Mặc định chỉ đo trên đồ thị `train` (`RUN_GRAPH_ABLATIONS=False`); bảng so sánh giữa 4
+      biến thể `train/dense/zero/shuffled` bật lên khi cần cột so sánh chéo.
+- [x] Phân tích nâng cao đã chọn cho cấp 2: **quỹ đạo mastery + ≥2 tiêu chí hợp lý** ở trên
+      (đề bài chỉ yêu cầu chọn MỘT). ECE + ACE + Brier + reliability diagram cho DKT, GKT và
+      GRKT vẫn có sẵn trong `level2/calibration.py`, chạy bằng `RUN_CALIBRATION=True`;
+      đa seed riêng cho GRKT chạy bằng `RUN_MULTI_SEED=True` (mặc định tắt vì 3 seed của
+      DKT/GKT đã có ở cấp 1 trên đúng split này).
 - [ ] Điền số liệu vào báo cáo sau khi chạy `kaggle_level2.ipynb` (`QUICK_RUN=False`).
 
 #### Khai báo chỉnh sửa mã nguồn mở GRKT (bắt buộc cho mục "khai báo AI/mã nguồn mở")
@@ -315,7 +319,7 @@ dòng, và timestamp được đổi qua `parsed - pd.Timestamp(0, tz="UTC")` th
 | 4 | Chống rò rỉ: split theo người seed 42, label shift-1, đặc trưng không dùng \(r_t\), một split cho mọi mô hình + mọi seed, `ALLOWED_DATASETS` chặn `assist09.bin` | 1.5 tr. | `level1/pipeline.py`, `level2/experiment.py` |
 | 5 | Mô hình: DKT, GKT (công thức aggregate/update), GRKT (retrieval/strengthening/learning-forgetting) + bảng 7 chỗ đã sửa so với upstream | 3 tr. | `GKT/models.py:18-317`, notebook level2 §1, `KE_HOACH.md` mục khai báo |
 | 6 | Kết quả Cấp độ 1: bảng 1 seed + bảng 3 seed mean±std; ablation 5 biến thể; **ba kết luận trung thực** (DKT thắng; +0.0089 ≈ 1.8σ; Shuffled ≈ Transition ⇒ cấu trúc cạnh không chứng minh được bằng AUC) | 2.5 tr. | `README.md` § *Kết quả Cấp độ 1* (đúng số đã commit) |
-| 7 | Kết quả Cấp độ 2: bảng DKT/GKT/GRKT trên 2 tập; ablation `train/dense/zero/shuffled`; `consistency_spread`/`locality`/`forget_slope`; heatmap + đường mastery; ECE/Brier | 3 tr. | `[CHỜ]` `outputs/level2/*` sau lần chạy `QUICK_RUN=False` |
+| 7 | Kết quả Cấp độ 2: bảng DKT/GKT-Transition/GKT-Zero/GRKT trên **2 tập** (`assist2009`, `junyi`) với cùng split và cùng chỉ số; số liệu đối chiếu AUC đường nền với Cấp độ 1; 4 tiêu chí hợp lý của quỹ đạo `consistency_strengthen`/`consistency_spread`/`locality`/`forget_slope`; heatmap + đường mastery. Ablation 4 biến thể `train/dense/zero/shuffled` và ECE/Brier là phần **tùy chọn** (mặc định tắt, chỉ có số liệu nếu bật `RUN_GRAPH_ABLATIONS`/`RUN_CALIBRATION`) | 3 tr. | `[CHỜ]` `outputs/level2/*` sau lần chạy `QUICK_RUN=False` |
 | 8 | xAI: 2–3 case trong `cases.md` kèm số phản chứng (đổi kết quả 1 bước → Δp) và ablation `A:=0` từng case; dashboard `learner_view.json` | 1.5 tr. | `outputs/level1/cases.md` (bản chạy lại sau commit `cbf8ce5`) |
 | 9 | Hạn chế & hướng cải tiến (học cấu trúc cạnh, time-decay, fidelity) — nối sang cấp 3/4 | 1 tr. | `KE_HOACH.md` §3.5–3.6 |
 | 10 | Phụ lục: cách chạy lại, môi trường Kaggle, bảng phân công, khai báo AI/mã nguồn mở | — | `README.md`, mục khai báo ở §Giai đoạn 2 |
