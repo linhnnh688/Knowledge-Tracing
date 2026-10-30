@@ -305,6 +305,21 @@ dòng, và timestamp được đổi qua `parsed - pd.Timestamp(0, tz="UTC")` th
 - [ ] Chạy lại 1 experiment nhỏ từ README (để vấn đáp).
 - [ ] Nếu dư sức: cấp 4 time-decay + ablation 2 dataset.
 
+#### Đề cương báo cáo 12–18 trang (mỗi mục kèm nguồn số liệu/file đã có sẵn)
+
+| § | Nội dung | Độ dài | Lấy từ đâu |
+|---|---|---|---|
+| 1 | Bài toán đúng/sai, vì sao cần đồ thị, phạm vi nhóm chọn (cấp 1 + 2) | 1 tr. | `YEU_CAU.md` §1–3 |
+| 2 | Dữ liệu: ASSISTments 2009 (+ Junyi cho cấp 2), EDA số lượt/người học, phân bố khái niệm | 1.5 tr. | cell EDA hai notebook, `skill_builder_data.csv` |
+| 3 | Tiền xử lý & xây đồ thị: `skill_with_answer = 2·skill + correct`, chuỗi theo người, Transition graph **chỉ từ train** (`GKT/processing.py:172-197`), `rel_map`/`pre_map` của GRKT (`level2/grkt_data.build_relevance_maps`) | 2 tr. | `README.md` §Định vị pyKT |
+| 4 | Chống rò rỉ: split theo người seed 42, label shift-1, đặc trưng không dùng \(r_t\), một split cho mọi mô hình + mọi seed, `ALLOWED_DATASETS` chặn `assist09.bin` | 1.5 tr. | `level1/pipeline.py`, `level2/experiment.py` |
+| 5 | Mô hình: DKT, GKT (công thức aggregate/update), GRKT (retrieval/strengthening/learning-forgetting) + bảng 7 chỗ đã sửa so với upstream | 3 tr. | `GKT/models.py:18-317`, notebook level2 §1, `KE_HOACH.md` mục khai báo |
+| 6 | Kết quả Cấp độ 1: bảng 1 seed + bảng 3 seed mean±std; ablation 5 biến thể; **ba kết luận trung thực** (DKT thắng; +0.0089 ≈ 1.8σ; Shuffled ≈ Transition ⇒ cấu trúc cạnh không chứng minh được bằng AUC) | 2.5 tr. | `README.md` § *Kết quả Cấp độ 1* (đúng số đã commit) |
+| 7 | Kết quả Cấp độ 2: bảng DKT/GKT/GRKT trên 2 tập; ablation `train/dense/zero/shuffled`; `consistency_spread`/`locality`/`forget_slope`; heatmap + đường mastery; ECE/Brier | 3 tr. | `[CHỜ]` `outputs/level2/*` sau lần chạy `QUICK_RUN=False` |
+| 8 | xAI: 2–3 case trong `cases.md` kèm số phản chứng (đổi kết quả 1 bước → Δp) và ablation `A:=0` từng case; dashboard `learner_view.json` | 1.5 tr. | `outputs/level1/cases.md` (bản chạy lại sau commit `cbf8ce5`) |
+| 9 | Hạn chế & hướng cải tiến (học cấu trúc cạnh, time-decay, fidelity) — nối sang cấp 3/4 | 1 tr. | `KE_HOACH.md` §3.5–3.6 |
+| 10 | Phụ lục: cách chạy lại, môi trường Kaggle, bảng phân công, khai báo AI/mã nguồn mở | — | `README.md`, mục khai báo ở §Giai đoạn 2 |
+
 ### Phân công gợi ý (4 người)
 
 | Thành viên | Trọng tâm | Phải giải thích được khi vấn đáp |
