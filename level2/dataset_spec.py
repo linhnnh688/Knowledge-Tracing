@@ -105,20 +105,29 @@ JUNYI = DatasetSpec(
     min_interactions=10,
     max_users=4000,
     columns={
+        # Tên cột = danh sách ỨNG VIÊN, khớp CHUỖI CHÍNH XÁC (hoa/thường có phân biệt, vì _pick
+        # và usecols đều dùng `in columns` trên header thật). Thứ tự là thứ tự ưu tiên. Kèm cả
+        # tên cột của Kaggle 'Log_Problem.csv' (2020) lẫn bản junyi2015/PSLC để attach phiên bản
+        # nào cũng chạy được; usecols chỉ đọc cột thật sự tồn tại nên thêm ứng viên không tốn RAM.
         "user": ["user_id", "Anon Student Id", "student_id"],
-        "skill": ["exercise", "skill", "list_skills", "tags", "KC (Exercise)"],
-        "problem": ["problem", "problem_id", "assistment_id", "problem_name"],
+        "skill": ["exercise", "skill", "list_skills", "tags", "KC (Exercise)",
+                  "Exercise name", "KC (Default - Skill for Drill) overview"],
+        "problem": ["problem", "problem_id", "assistment_id", "problem_name",
+                    "Question Id", "Problem Name", "Step Name"],
         "correct": ["correct", "Outcome"],
-        "answer_count": ["answer_count", "count_attempts"],
-        "timestamp": ["timestamp_ms", "time_done", "time", "Timestamp"],
-        "duration": ["ms_first_response", "answer_time", "time_taken"],
+        "answer_count": ["answer_count", "count_attempts", "Answer Count"],
+        "timestamp": ["timestamp_ms", "time_done", "time", "Timestamp",
+                      "Time of Last Response", "Time of First Attempt", "Time"],
+        "duration": ["ms_first_response", "answer_time", "time_taken", "Duration (ms)"],
     },
     note=(
         "Junyi Academy — Kaggle 'junyiacademy/learning-activity-public-dataset-by-junyi-academy' "
-        "(16,2 triệu lượt làm bài / 72.630 người học, 2018/08–2019/07, CC BY-NC-SA, phải bấm "
-        "agree/subscribe một lần rồi attach vào notebook). Khái niệm = 'exercise'; đúng/sai lấy "
-        "từ cột 'correct' nếu có, nếu không thì suy từ 'answer_count' (1 -> đúng, >=3 -> sai, "
-        "bỏ 2 — quy ước pyKT)."
+        "(dataset id 614042, zip ~1.6 GB: Log_Problem.csv 16.217.311 lượt làm bài / 72.630 người "
+        "học, Info_Content.csv, Info_UserData.csv; 2018/08-2019/07, CC BY-NC-SA 4.0). Dataset này "
+        "YÊU CẦU BẤM 'Agree/Subscribe' (requiresSubscription=True) rồi mới Add input được, nếu "
+        "không Kaggle attaches rỗng và find_kaggle_input() trả None. Khái niệm = 'exercise'; "
+        "đúng/sai lấy từ cột 'correct' hoặc 'Outcome' nếu có, nếu không thì suy từ 'answer_count' "
+        "(1 -> đúng, >=3 -> sai, bỏ 2 - quy ước pyKT)."
     ),
 )
 
@@ -310,11 +319,13 @@ def ensure_canonical(
     if raw_path is None and spec.raw_file is None and not _has_canonical(spec, out_dir):
         # Tự dò file gốc trong /kaggle/input: notebook không phải truyền đường dẫn, và lỗi
         # "quên attach dataset" được báo ở ngay cell cấu hình thay vì cell chuẩn hoá.
-        found = find_kaggle_input(patterns=(spec.name, "junyi"))
+        found = find_kaggle_input(patterns=(spec.name, "junyi", "log_problem"))
         if found is not None:
             raw_path = found
             if verbose:
                 print(f"[{spec.name}] Tự dò thấy dữ liệu gốc trong /kaggle/input: {raw_path}")
+        elif verbose and spec.name == "junyi":
+            print(f"  [dò] {list_kaggle_inputs()}")
     if spec.raw_file is None and raw_path is None:
         try:
             path = resolve_canonical_path(spec, search_dirs=[out_dir])
@@ -322,7 +333,8 @@ def ensure_canonical(
             raise FileNotFoundError(
                 f"{spec.name} cần file dữ liệu gốc: attach dataset vào notebook rồi truyền "
                 f"raw_path='/kaggle/input/<dataset>/<file>.csv' (xem level2.dataset_spec.find_kaggle_input()). "
-                f"Chi tiết: {exc}"
+                f"Chi tiết: {exc}\n"
+                f"Trạng thái /kaggle/input: {list_kaggle_inputs()}"
             ) from exc
         if verbose:
             print(f"[{spec.name}] Dùng trực tiếp CSV chuẩn hoá có sẵn: {path}")
@@ -394,3 +406,35 @@ def find_kaggle_input(patterns=("junyi",), preferred_names=("Log_Problem.csv",))
             if p.name.lower() == name.lower():
                 return p
     return max(hits, key=lambda p: p.stat().st_size)
+
+
+def list_kaggle_inputs(max_files: int = 40) -> str:
+    """Mô tả ngắn những gì THỰC SỰ có trong /kaggle/input, dùng trong thông báo lỗi.
+
+    Phân biệt được ba tình huống mà trước đây đều ra cùng một FileNotFoundError: chưa attach
+    gì, attach rồi nhưng Kaggle không giải nén (dataset phân mảnh/thiếu quyền), và attach đúng
+    nhưng tên file/thư mục khác mẫu dò.
+    """
+    root = Path("/kaggle/input")
+    if not root.exists():
+        return "không có /kaggle/input (không phải môi trường Kaggle)."
+    try:
+        mounts = sorted(p for p in root.iterdir() if p.is_dir())
+    except OSError as exc:
+        return f"không đọc được /kaggle/input: {exc}"
+    if not mounts:
+        return "/kaggle/input RỖNG — chưa attach dataset nào (Add input > Datasets)."
+    lines = [f"/kaggle/input có {len(mounts)} dataset đã attach:"]
+    for m in mounts:
+        try:
+            files = sorted(m.rglob("*"), key=lambda p: p.stat().st_size if p.is_file() else -1, reverse=True)
+            csvs = [p for p in files if p.is_file() and p.suffix.lower() == ".csv"]
+            size = sum(p.stat().st_size for p in csvs) / 1024 / 1024
+            shown = ", ".join(f"{p.relative_to(m)} ({p.stat().st_size / 1024 / 1024:.0f} MB)"
+                             for p in (csvs or files)[:5])
+            lines.append(f"  {m.name}: {len(csvs)} file CSV, {size:,.0f} MB | {shown or '(trống — chưa giải nén?)'}")
+            if len(csvs) > 5:
+                lines.append(f"      ... còn lại {len(csvs) - 5} file CSV khác")
+        except OSError as exc:
+            lines.append(f"  {m.name}: không liệt kê được ({exc})")
+    return "\n".join(lines[:max_files])

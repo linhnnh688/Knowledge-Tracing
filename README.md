@@ -116,7 +116,13 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
 
 ### Chạy trên Kaggle GPU
 
-1. Attach dataset **Junyi Academy** (bấm *Agree/Subscribe* trước, rồi `Add input`) — yêu cầu
+1. Attach dataset **Junyi Academy**: mở
+   [junyiacademy/learning-activity-public-dataset-by-junyi-academy](https://www.kaggle.com/datasets/junyiacademy/learning-activity-public-dataset-by-junyi-academy),
+   bấm *Agree/Subscribe* **trước** (dataset đặt `requiresSubscription=True`, chưa subscribe thì
+   `Add input` im lặng không mount gì), rồi `Add input` vào notebook. Bundle ~1.6 GB, bên trong có
+   `Log_Problem.csv` (16.217.311 dòng / 72.630 người học), `Info_Content.csv`, `Info_UserData.csv`.
+   `level2.dataset_spec.find_kaggle_input()` tự dò file này; không tìm thấy thì
+   `list_kaggle_inputs()` in ra đúng những gì đang có trong `/kaggle/input`. Đây là yêu cầu
    "≥ 2 tập dữ liệu công khai" của đề bài.
 2. Upload/copy [`kaggle_level2.ipynb`](kaggle_level2.ipynb). Notebook tự `git clone` repo.
 3. `QUICK_RUN=True`: tập `assist2009_smoke` (15 người học, dùng lại file smoke test của
