@@ -269,9 +269,13 @@ kiểm chứng local chỉ dùng dữ liệu tổng hợp + `assist2009_smoke`).
       `consistency_strengthen` (kiểm chứng cài đặt), `consistency_spread` (tiêu chí thật:
       hướng lan truyền sang láng giềng 1-hop), `locality` (độ cục bộ của cập nhật),
       `forget_slope` (Δm giữa hai bước theo Δt tại KC không bị chạm) + `stage_attribution`.
-      Bảng so sánh giữa 4 biến thể đồ thị `train/dense/zero/shuffled`.
-- [x] Phân tích nâng cao: **ECE + ACE + Brier + reliability diagram** cho DKT, GKT và GRKT
-      (`level2/calibration.py`), và so sánh quỹ đạo có/không đồ thị ( cùng bảng trên).
+      Mặc định chỉ đo trên đồ thị `train` (`RUN_GRAPH_ABLATIONS=False`); bảng so sánh giữa 4
+      biến thể `train/dense/zero/shuffled` bật lên khi cần cột so sánh chéo.
+- [x] Phân tích nâng cao đã chọn cho cấp 2: **quỹ đạo mastery + ≥2 tiêu chí hợp lý** ở trên
+      (đề bài chỉ yêu cầu chọn MỘT). ECE + ACE + Brier + reliability diagram cho DKT, GKT và
+      GRKT vẫn có sẵn trong `level2/calibration.py`, chạy bằng `RUN_CALIBRATION=True`;
+      đa seed riêng cho GRKT chạy bằng `RUN_MULTI_SEED=True` (mặc định tắt vì 3 seed của
+      DKT/GKT đã có ở cấp 1 trên đúng split này).
 - [ ] Điền số liệu vào báo cáo sau khi chạy `kaggle_level2.ipynb` (`QUICK_RUN=False`).
 
 #### Trạng thái 30/10/2026 — sửa lỗi phát sinh khi chạy Junyi
@@ -286,7 +290,7 @@ Các sửa đổi dưới đây **phải được commit + push** trước khi c
 | --- | --- | --- |
 | `KeyError` khi chuẩn hoá Junyi | `JUNYI.columns` dùng tên thật: `uuid` / `ucid` / `upid` / `is_correct` / `timestamp_TW` / `total_sec_taken`; khái niệm ← `ucid` | File synthetic 14 cột: PASS |
 | `total_sec_taken` là **giây**, không phải ms | `_to_duration_ms` đổi đơn vị theo tên cột (×1000), không đoán theo median | `ms_first_response` của synthetic ≈ 30.000 ms |
-| Đọc 3,0 GB / 16,2 triệu dòng | Đọc header trước + `usecols` 6 cột, in lại ánh xạ cột | Log `ánh xạ cột: ...` trong cell §2 |
+| Đọc 3,0 GB / 16,2 triệu dòng | Đọc header trước + `usecols` 6 cột; quét THEO MẢNH và mã hoá id (`_CodeMap`) ngay khi quét, giải mã sau khi đã lọc người học | Log `ánh xạ cột: ...` trong cell §2 |
 | `reliability_plot` crash dưới NumPy 2 (`markersize` nhận mảng) | Điểm vẽ bằng `ax.scatter(..., s=...)` | `run_dataset` end-to-end |
 | Cảnh báo `max_users` sai cả khi CSV đã có sẵn | Chỉ cảnh báo khi `has_canonical(...)` đúng | `level2/experiment.py` |
 | Notebook §2 không chỉ ra cột thật khi schema đổi | In header file dò được + liệt kê mọi CSV trong `/kaggle/input` | Notebook đã cập nhật |
@@ -312,6 +316,14 @@ Bản gốc: Cui et al., KDD 2024 — <https://github.com/JJCui96/GRKT>. Bảy c
 `mean_abs_delta_retrieval` của `stage_attribution` phải bằng 0. Cell §5.1 in rõ phép kiểm tra
 này; nếu nó > 0 thì đồ thị rỗng chưa thật sự rỗng.
 
+**Tương thích môi trường Kaggle** (image hiện là Python 3.13 + pandas 3.x + numpy 2.x): cell
+cài đặt chỉ pip-install gói thật sự thiếu qua `importlib.util.find_spec`, nên không hạ cấp
+pandas/numpy; mọi hình vẽ đi qua matplotlib thuần vì pandas 3 đã bỏ accessor `Series.hist` và
+`Series.barh`; `matplotlib.use("Agg")` không được gọi giữa phiên (làm hỏng `plt.show()` nội
+bảng). Junyi được đọc với `usecols` giới hạn trong `JUNYI.columns` vì file gốc hàng chục triệu
+dòng, và timestamp được đổi qua `parsed - pd.Timestamp(0, tz="UTC")` thay cho
+`astype("int64")` (cách cũ trả số rất âm trên pandas 2 và raise trên pandas 3 khi có NaT).
+
 **Không đổi**: kiến trúc mô hình, công thức loss (BCE), `get_feed_dict`/`feature2tensor`
 (đệm batch), định nghĩa AUC/ACC trong `GRKT/metric.py`. Hai tham số lệch mặc định upstream
 được ghi rõ trong docstring `level2/grkt_api.make_args`: `thresh` 0.6 → 0.5, `alpha` giữ
@@ -332,6 +344,21 @@ này; nếu nó > 0 thì đồ thị rỗng chưa thật sự rỗng.
 - [ ] Bảng đóng góp + khai báo AI/mã nguồn mở.
 - [ ] Chạy lại 1 experiment nhỏ từ README (để vấn đáp).
 - [ ] Nếu dư sức: cấp 4 time-decay + ablation 2 dataset.
+
+#### Đề cương báo cáo 12–18 trang (mỗi mục kèm nguồn số liệu/file đã có sẵn)
+
+| § | Nội dung | Độ dài | Lấy từ đâu |
+|---|---|---|---|
+| 1 | Bài toán đúng/sai, vì sao cần đồ thị, phạm vi nhóm chọn (cấp 1 + 2) | 1 tr. | `YEU_CAU.md` §1–3 |
+| 2 | Dữ liệu: ASSISTments 2009 (+ Junyi cho cấp 2), EDA số lượt/người học, phân bố khái niệm | 1.5 tr. | cell EDA hai notebook, `skill_builder_data.csv` |
+| 3 | Tiền xử lý & xây đồ thị: `skill_with_answer = 2·skill + correct`, chuỗi theo người, Transition graph **chỉ từ train** (`GKT/processing.py:172-197`), `rel_map`/`pre_map` của GRKT (`level2/grkt_data.build_relevance_maps`) | 2 tr. | `README.md` §Định vị pyKT |
+| 4 | Chống rò rỉ: split theo người seed 42, label shift-1, đặc trưng không dùng \(r_t\), một split cho mọi mô hình + mọi seed, `ALLOWED_DATASETS` chặn `assist09.bin` | 1.5 tr. | `level1/pipeline.py`, `level2/experiment.py` |
+| 5 | Mô hình: DKT, GKT (công thức aggregate/update), GRKT (retrieval/strengthening/learning-forgetting) + bảng 7 chỗ đã sửa so với upstream | 3 tr. | `GKT/models.py:18-317`, notebook level2 §1, `KE_HOACH.md` mục khai báo |
+| 6 | Kết quả Cấp độ 1: bảng 1 seed + bảng 3 seed mean±std; ablation 5 biến thể; **ba kết luận trung thực** (DKT thắng; +0.0089 ≈ 1.8σ; Shuffled ≈ Transition ⇒ cấu trúc cạnh không chứng minh được bằng AUC) | 2.5 tr. | `README.md` § *Kết quả Cấp độ 1* (đúng số đã commit) |
+| 7 | Kết quả Cấp độ 2: bảng DKT/GKT-Transition/GKT-Zero/GRKT trên **2 tập** (`assist2009`, `junyi`) với cùng split và cùng chỉ số; số liệu đối chiếu AUC đường nền với Cấp độ 1; 4 tiêu chí hợp lý của quỹ đạo `consistency_strengthen`/`consistency_spread`/`locality`/`forget_slope`; heatmap + đường mastery. Ablation 4 biến thể `train/dense/zero/shuffled` và ECE/Brier là phần **tùy chọn** (mặc định tắt, chỉ có số liệu nếu bật `RUN_GRAPH_ABLATIONS`/`RUN_CALIBRATION`) | 3 tr. | `[CHỜ]` `outputs/level2/*` sau lần chạy `QUICK_RUN=False` |
+| 8 | xAI: 2–3 case trong `cases.md` kèm số phản chứng (đổi kết quả 1 bước → Δp) và ablation `A:=0` từng case; dashboard `learner_view.json` | 1.5 tr. | `outputs/level1/cases.md` (bản chạy lại sau commit `cbf8ce5`) |
+| 9 | Hạn chế & hướng cải tiến (học cấu trúc cạnh, time-decay, fidelity) — nối sang cấp 3/4 | 1 tr. | `KE_HOACH.md` §3.5–3.6 |
+| 10 | Phụ lục: cách chạy lại, môi trường Kaggle, bảng phân công, khai báo AI/mã nguồn mở | — | `README.md`, mục khai báo ở §Giai đoạn 2 |
 
 ### Phân công gợi ý (4 người)
 

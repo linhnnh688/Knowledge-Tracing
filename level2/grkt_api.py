@@ -119,6 +119,7 @@ def make_args(
         save_model=int(save_model),
         save=int(save),
         # các khoá Runner còn tham chiếu (không dùng tới vòng lặp của Runner)
+        model="GRKT",           # GRKT/Training.py đọc args.model để tra MODEL_REGISTRY
         k_exps=1,
         n_exps=1,
         repeat=1,
@@ -305,6 +306,7 @@ def run_grkt_experiment(
     dataset: str = "assist2009",
     device=None,
     save_dir=None,
+    resume_ckpt: Optional[str] = None,
     verbose: bool = True,
 ) -> Dict[str, object]:
     """Huấn luyện một biến thể đồ thị của GRKT và trả về dict ĐỦ KHOÁ như ``level1.pipeline.run_experiment``.
@@ -352,8 +354,31 @@ def run_grkt_experiment(
     train_items = split_sets["train"]["items"]
     val_items = split_sets["val"]["items"]
     test_items = split_sets["test"]["items"]
-    out = train_grkt(model, train_items, val_items, epochs=epochs, lr=lr, patience=patience,
-                     device=device, tag=f"GRKT-{graph_kind}", verbose=verbose)
+
+    loaded_from = None
+    if resume_ckpt is not None and Path(resume_ckpt).exists():
+        # weights_only=True: checkpoint chỉ là dict of tensors, nên không cần (và không được
+        # phép) cho torch.load unpickle arbitrary Python object.
+        state = torch.load(resume_ckpt, map_location=device, weights_only=True)
+        state = state.get("state_dict", state) if isinstance(state, dict) else state
+        model.load_state_dict(state)  # strict: sai kiến trúc/shape là raise, không im lặng
+        loaded_from = str(resume_ckpt)
+        val_metrics = evaluate_grkt(model, val_items, device=device)
+        out = {
+            "best_val_auc": val_metrics["auc"],
+            "history": {"train_loss": [], "val_loss": [], "val_auc": [], "val_acc": []},
+            "seconds": 0.0,
+        }
+        if verbose:
+            print(f"  [resume] nạp {loaded_from}, BỎ QUA HuẤN LUYỆN "
+                  f"(val AUC={val_metrics['auc']:.4f}). Chỉ bật khi lần chạy trước dùng đúng "
+                  "split_seed/variants/cold_thresh/graph_thresh/d_hidden như lần này — load_state_dict "
+                  "chỉ bắt được khác KIẾN TRÚC, không bắt được khác ĐỒ THỊ hay khác split.")
+    else:
+        if resume_ckpt is not None and verbose:
+            print(f"  [resume] không có {resume_ckpt} -> huấn luyện bình thường")
+        out = train_grkt(model, train_items, val_items, epochs=epochs, lr=lr, patience=patience,
+                         device=device, tag=f"GRKT-{graph_kind}", verbose=verbose)
     test_metrics = evaluate_grkt(model, test_items, device=device)
 
     result = {
@@ -371,6 +396,7 @@ def run_grkt_experiment(
         "seed": seed,
         "edges_rel": int(rel.sum()) if hasattr(rel, "sum") else 0,
         "edges_pre": int(pre.sum()) if hasattr(pre, "sum") else 0,
+        "resumed_from": loaded_from,
         "args": args,
     }
     if save_dir is not None:

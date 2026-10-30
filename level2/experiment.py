@@ -50,10 +50,30 @@ from .trajectory import (
     trajectory_metrics_table,
 )
 
+#: Bốn biến thể đồ thị GRKT hỗ trợ. Ablation cấu trúc đồ thị là yêu cầu Cấp độ 1 (đã có số
+#: liệu trong outputs/level1), nên mặc định của run_dataset chỉ train ``("train",)`` — mỗi biến
+#: thể là một lần train GRKT riêng, bật đủ bốn biến thể tốn gấp ~4 thời lượng GPU.
 GRAPH_VARIANTS: Sequence[str] = ("train", "dense", "zero", "shuffled")
 
 #: Đường nền so sánh với GRKT — đúng bộ mô hình Cấp độ 1 đã có checkpoint trên ASSISTments.
 BASELINE_SPECS: Sequence[tuple] = (("DKT", "N/A"), ("GKT", "Transition"), ("GKT", "Zero"))
+
+
+def grkt_activation_gib(concept_num: int, batch_size: int, max_seq_len: int,
+                        k_hidden: int, n_step_tensors: int = 40) -> float:
+    """Gibibyte tensor kích hoạt GRKT phải GIỮ cho một batch (ước lượng bậc độ lớn).
+
+    Mỗi bước thời gian sinh khoảng ``n_step_tensors`` tensor có dạng ``[B, K+1, k_hidden]``
+    (retrieval, gain, loss, learn — mỗi giai đoạn ba loại cạnh rel/pre/sub), và autograd giữ
+    chúng cho tới khi backprop qua toàn bộ ``max_seq_len`` bước. Con số này tỉ lệ thuận với số
+    khái niệm, nên nó là lý do ``top_concepts`` của Junyi tồn tại: log có 1.326 bài tập
+    (``ucid``; nếu lấy nhầm ``upid`` làm khái niệm thì K = 25.785 câu hỏi), còn đồ thị dense
+    (K+1)² và trạng thái ``[B, K+1, k_hidden]`` chỉ vừa VRAM 16 GB của T4 khi K ≈ 200.
+    """
+    nbytes = (n_step_tensors * max(1, int(max_seq_len)) * int(batch_size)
+              * (int(concept_num) + 1) * int(k_hidden) * 4)
+    return nbytes / 1024 ** 3
+
 
 #: Tập dữ liệu mà Cấp độ 1 đã train và lưu checkpoint (``outputs/level1/*.pt``). Tập khác
 #: phải huấn luyện lại đường nền, nên ``baseline_epochs`` được dùng riêng cho lần train đó.
@@ -71,6 +91,21 @@ def _device_of(device):
     if device is None:
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return device if hasattr(device, "type") else torch.device(str(device))
+
+
+def _safe_plot(fn, *args, **kwargs):
+    """Vẽ hình là bước TRANG TRÍ; số liệu (CSV/npz) đã ghi xong trước nó.
+
+    Một lần ValueError/TypeError trong matplotlib ở đây từng làm chết cả cell thực nghiệm sau
+    hàng giờ train GRKT trên Kaggle (kết quả không còn trong biến ``result``). Vì vậy lỗi vẽ
+    chỉ in cảnh báo chứ không ném lên :func:`run_dataset`.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        print(f"[cảnh báo] {getattr(fn, '__name__', fn)} thất bại: {type(exc).__name__}: {exc} "
+              "— số liệu vẫn còn, chỉ thiếu hình vẽ.")
+        return None
 
 
 def run_dataset(
@@ -94,10 +129,12 @@ def run_dataset(
     gap_cap_min: int = 240,
     max_users: Optional[int] = None,
     min_interactions: Optional[int] = None,
+    top_concepts: Optional[int] = None,
+    content_path=None,
     split_seed: int = 42,
     train_ratio: float = 0.6,
     val_ratio: float = 0.2,
-    variants: Sequence[str] = GRAPH_VARIANTS,
+    variants: Sequence[str] = ("train",),
     run_baselines: bool = True,
     baseline_ckpt_dir=None,
     baseline_epochs: Optional[int] = None,
@@ -105,13 +142,21 @@ def run_dataset(
     record_trajectory: bool = True,
     trajectory_users: int = 150,
     trajectory_batch: int = 16,
-    run_calibration: bool = True,
+    run_calibration: bool = False,
     run_multi_seed: bool = False,
     seeds: Sequence[int] = (42, 123, 456),
+    resume_grkt_ckpt: bool = False,
     device=None,
     verbose: bool = True,
 ) -> Dict[str, object]:
     """Chạy toàn bộ pipeline Cấp độ 2 trên một tập dữ liệu; trả về dict chứa bảng + đường dẫn.
+
+    Mặc định chỉ làm đúng những gì yêu cầu Cấp độ 2 nêu: train GRKT trên đồ thị ``train``,
+    đánh giá trên cùng split với đường nền Cấp độ 1, và ghi quỹ đạo m(u,c,t) kèm tiêu chí hợp
+    lý. Ba thứ ngoài phạm vi đó phải bật thủ công — ``variants=GRAPH_VARIANTS`` cho ablation
+    cấu trúc đồ thị (yêu cầu Cấp độ 1, mỗi biến thể thêm một lần train), ``run_calibration``
+    cho ECE/Brier (đề bài chỉ cần MỘT phân tích nâng cao) và ``run_multi_seed`` (mỗi seed một
+    lần train; DKT/GKT đã có 3 seed ở Cấp độ 1 trên cùng split).
 
     ``raw_path`` chỉ nên truyền khi chạy ĐÚNG MỘT tập dữ liệu (nó áp cho mọi tập trong vòng
     lặp của :func:`run_level2`). Với Junyi trên Kaggle thì không cần: ``ensure_canonical`` tự
@@ -134,12 +179,17 @@ def run_dataset(
     print(f">>> [C2-B1] Chuẩn hoá dữ liệu và chia split theo người học: {spec.name}")
     print("=" * 72)
     # Chỉ cảnh báo khi CSV chuẩn hoá ĐÃ có sẵn (repo hoặc lần chạy trước): lúc đó file được
-    # dùng lại nguyên trạng nên max_users/min_interactions không làm thay đổi tập người học.
-    if has_canonical(spec, save_dir) and (max_users is not None or min_interactions is not None):
+    # dùng lại nguyên trạng nên max_users/min_interactions/top_concepts không làm thay đổi
+    # tập người học/khái niệm. Trước lần chuẩn hoá đầu tiên chúng VẪN có tác dụng.
+    if has_canonical(spec, save_dir) and (max_users is not None or min_interactions is not None
+                                          or top_concepts is not None):
         print(f"  [cảnh báo] {spec.name}: dùng lại CSV chuẩn hoá có sẵn nên max_users/"
-              f"min_interactions KHÔNG được áp dụng (chỉ có tác dụng khi chuẩn hoá lại từ file gốc).")
+              f"min_interactions/top_concepts KHÔNG được áp dụng (chỉ có tác dụng khi chuẩn hoá "
+              f"lại từ file gốc; muốn chạy nhanh: dataset='assist2009_smoke').")
     canonical = ensure_canonical(spec, out_dir=save_dir, raw_path=raw_path,
-                                 max_users=max_users, min_interactions=min_interactions, verbose=verbose)
+                                 max_users=max_users, min_interactions=min_interactions,
+                                 top_concepts=top_concepts, content_path=content_path,
+                                 verbose=verbose)
     min_seq = int(min_interactions if min_interactions is not None else spec.min_interactions)
     print(f"  CSV chuẩn hoá: {canonical}")
     print(f"  Cột: {probe_columns(canonical)}")
@@ -193,6 +243,13 @@ def run_dataset(
     train_graph = graphs.get("train") or graph_variant(
         maps_train, "train", data.concept_num, thresh=graph_thresh, seed=split_seed)
     adj = adjacency_from_graphs(train_graph["rel_map"], train_graph["pre_map"])
+    if int(train_graph["edges_rel"]) + int(train_graph["edges_pre"]) == 0:
+        # Xảy ra với tập quá nhỏ (smoke) hoặc cold_thresh/graph_thresh quá cao: GRKT-train khi
+        # đó chạy y hệt GRKT-zero, mọi kết luận về "tác động của đồ thị" đều vô nghĩa.
+        print(f"  [cảnh báo] đồ thị train RỖNG (rel={train_graph['edges_rel']} pre={train_graph['edges_pre']}) "
+              f"với cold_thresh={cold_thresh}, graph_thresh={graph_thresh} trên "
+              f"{len(splits['train']['sequences'])} người học. Ablation sẽ không phân biệt được; "
+              "hạ cold_thresh/graph_thresh hoặc chạy ở chế độ đầy đủ.")
     report = leak_report(data, splits, shared, maps_train, maps_val, graphs,
                          train_ratio=train_ratio, val_ratio=val_ratio, seed=split_seed)
     print(report)
@@ -204,12 +261,23 @@ def run_dataset(
     np.savez_compressed(
         save_dir / "graphs_train_only.npz",
         rel=maps_train["rel"], pre=maps_train["pre"],
-        rel_bin=graphs["train"]["rel_map"], pre_bin=graphs["train"]["pre_map"],
+        rel_bin=train_graph["rel_map"], pre_bin=train_graph["pre_map"],
     )
     out["artifacts"]["graphs"] = str(save_dir / "graphs_train_only.npz")
 
     # ------------------------------------------------------------ 4. GRKT
     print(">>> [C2-B4] Huấn luyện GRKT cho từng biến thể đồ thị ...")
+    gib = grkt_activation_gib(data.concept_num, batch_size, max_seq_len, k_hidden)
+    print(f"  [bộ nhớ] GRKT giữ ước lượng {gib:.1f} GiB tensor kích hoạt cho MỘT batch "
+          f"(K={data.concept_num}, B={batch_size}, S={max_seq_len}, k_hidden={k_hidden})")
+    if gib > 8.0:
+        print(f"  [cảnh báo] {gib:.1f} GiB là sát/near vượt VRAM T4 (15 GiB) — giảm top_concepts "
+              "(nhiều khái niệm hiếm chỉ làm đồ thị to lên chứ không thêm tín hiệu), rồi mới tới "
+              "batch_size hoặc max_seq_len. Xem mục 'Sự cố thường gặp' của notebook.")
+    if resume_grkt_ckpt:
+        print("  [resume] BẬT: biến thể nào đã có GRKT-<graph>.pt trong thư mục output sẽ được nạp "
+              "thay vì train lại. Chỉ dùng khi lần chạy trước có CÙNG split_seed/variants/"
+              "cold_thresh/graph_thresh/d_hidden — xem cảnh báo ở [resume] bên dưới.")
     grkt_results: List[dict] = []
     for kind in variants:
         print(f"\n--- GRKT với đồ thị '{kind}' ---")
@@ -232,6 +300,7 @@ def run_dataset(
             dataset=spec.name,
             device=device,
             save_dir=save_dir,
+            resume_ckpt=(str(save_dir / f"GRKT-{kind}.pt") if resume_grkt_ckpt else None),
             verbose=verbose,
         )
         grkt_results.append(res)
@@ -304,10 +373,10 @@ def run_dataset(
             save_trajectories(traj, plot_dir / f"traj_{kind}.npz")
             export_mastery_csv(traj, plot_dir / f"mastery_{kind}.csv", max_users=25,
                                skill_lookup=data.skill_lookup)
-            plot_mastery_heatmap(traj, plot_dir / f"heatmap_{kind}.png", user_index=0,
-                                 skill_lookup=data.skill_lookup)
-            plot_mastery_curves(traj, plot_dir / f"curves_{kind}.png", user_indices=(0, 1),
-                                skill_lookup=data.skill_lookup)
+            _safe_plot(plot_mastery_heatmap, traj, plot_dir / f"heatmap_{kind}.png", user_index=0,
+                       skill_lookup=data.skill_lookup)
+            _safe_plot(plot_mastery_curves, traj, plot_dir / f"curves_{kind}.png", user_indices=(0, 1),
+                       skill_lookup=data.skill_lookup)
             model.cpu()
         traj_table = trajectory_metrics_table(traj_runs, adj=adj)
         traj_table.to_csv(save_dir / "trajectory_metrics.csv", index=False)
@@ -331,7 +400,7 @@ def run_dataset(
         cal = calibration_table(entries, n_bins=10,
                                 extra={r["name"]: {"graph": r["graph_type"]} for r in grkt_results})
         cal.to_csv(save_dir / "calibration.csv", index=False)
-        reliability_plot(entries, save_dir / "reliability.png")
+        _safe_plot(reliability_plot, entries, save_dir / "reliability.png")
         save_reliability_rows(entries, save_dir / "reliability_rows.csv")
         out["artifacts"]["calibration"] = str(save_dir / "calibration.csv")
         out["artifacts"]["reliability"] = str(save_dir / "reliability.png")

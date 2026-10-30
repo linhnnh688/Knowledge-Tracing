@@ -21,6 +21,7 @@ from .dataset_spec import (  # noqa: F401
     ensure_canonical,
     find_kaggle_input,
     get_spec,
+    list_kaggle_inputs,
     probe_columns,
     register_spec,
     resolve_canonical_path,

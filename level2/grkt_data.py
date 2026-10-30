@@ -203,7 +203,7 @@ def build_grkt_data(
     for col in ("user_id", "skill_id", "correct"):
         if col not in df.columns:
             raise KeyError(f"CSV chuẩn hoá thiếu cột bắt buộc '{col}': {path}")
-    df.dropna(subset=["skill_id"], inplace=True)
+    df = df.dropna(subset=["skill_id"])
     df = df.groupby("user_id").filter(lambda q: len(q) >= min_seq_len).copy()
     df["skill"], _ = pd.factorize(df["skill_id"], sort=True)
     if "problem_id" in df.columns:

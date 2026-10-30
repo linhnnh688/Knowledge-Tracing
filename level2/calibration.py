@@ -115,8 +115,6 @@ def reliability_plot(
     title: str = "Đồ thị độ tin cậy (reliability diagram)",
 ) -> Path:
     """Vẽ đường cong reliability của nhiều mô hình trên cùng trục + khoảng lệch tuyệt đối."""
-    import matplotlib
-    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     out_path = Path(out_path)
@@ -128,10 +126,12 @@ def reliability_plot(
         xs = [b["avg_pred"] for b in cal["reliability"]]
         ys = [b["avg_label"] for b in cal["reliability"]]
         ns = [b["n"] for b in cal["reliability"]]
-        # Kích thước điểm tỉ lệ với số mẫu của ngăn. ``plot`` chỉ nhận ``markersize`` vô hướng,
-        # nên điểm được vẽ riêng bằng ``scatter`` (``s`` là diện tích, đơn vị point²).
+        # ``plot`` chỉ nhận ``markersize`` VÔ HƯỚNG (truyền mảng làm Line2D.set_markersize
+        # raise "only length-1 arrays can be converted"), nên điểm được vẽ riêng bằng
+        # ``scatter`` (``s`` là diện tích, đơn vị point²) với kích thước tỉ lệ số mẫu mỗi ngăn.
         sizes = np.clip(np.sqrt(np.asarray(ns, dtype="float64")) / 12.0, 3.0, 12.0)
-        ax.plot(xs, ys, linewidth=1.3, label=f"{name} (ECE={cal['ece']:.3f})")
+        ax.plot(xs, ys, linewidth=1.3,
+                label=f"{name} (ECE={cal['ece']:.3f}, n={int(np.sum(ns))})")
         ax.scatter(xs, ys, s=sizes ** 2, zorder=3)
     ax.set_xlabel("xác suất dự đoán trung bình theo ngăn")
     ax.set_ylabel("tỉ lệ làm đúng quan sát được")
