@@ -31,7 +31,7 @@ import torch
 
 from .baselines import level1_baseline
 from .calibration import calibration_table, reliability_plot, save_reliability_rows
-from .dataset_spec import ensure_canonical, get_spec, probe_columns
+from .dataset_spec import ensure_canonical, get_spec, has_canonical, probe_columns
 from .grkt_api import predict_grkt, run_grkt_experiment
 from .grkt_data import (
     adjacency_from_graphs,
@@ -133,9 +133,11 @@ def run_dataset(
     print("=" * 72)
     print(f">>> [C2-B1] Chuẩn hoá dữ liệu và chia split theo người học: {spec.name}")
     print("=" * 72)
-    if spec.raw_file is None and (max_users is not None or min_interactions is not None):
-        print(f"  [cảnh báo] {spec.name} nạp thẳng CSV đã commit trong repo nên max_users/"
-              f"min_interactions KHÔNG có tác dụng (muốn chạy nhanh: dataset='assist2009_smoke').")
+    # Chỉ cảnh báo khi CSV chuẩn hoá ĐÃ có sẵn (repo hoặc lần chạy trước): lúc đó file được
+    # dùng lại nguyên trạng nên max_users/min_interactions không làm thay đổi tập người học.
+    if has_canonical(spec, save_dir) and (max_users is not None or min_interactions is not None):
+        print(f"  [cảnh báo] {spec.name}: dùng lại CSV chuẩn hoá có sẵn nên max_users/"
+              f"min_interactions KHÔNG được áp dụng (chỉ có tác dụng khi chuẩn hoá lại từ file gốc).")
     canonical = ensure_canonical(spec, out_dir=save_dir, raw_path=raw_path,
                                  max_users=max_users, min_interactions=min_interactions, verbose=verbose)
     min_seq = int(min_interactions if min_interactions is not None else spec.min_interactions)

@@ -128,8 +128,11 @@ def reliability_plot(
         xs = [b["avg_pred"] for b in cal["reliability"]]
         ys = [b["avg_label"] for b in cal["reliability"]]
         ns = [b["n"] for b in cal["reliability"]]
-        ax.plot(xs, ys, marker="o", markersize=np.clip(np.sqrt(np.asarray(ns)) / 12, 3, 12),
-                linewidth=1.3, label=f"{name} (ECE={cal['ece']:.3f})")
+        # Kích thước điểm tỉ lệ với số mẫu của ngăn. ``plot`` chỉ nhận ``markersize`` vô hướng,
+        # nên điểm được vẽ riêng bằng ``scatter`` (``s`` là diện tích, đơn vị point²).
+        sizes = np.clip(np.sqrt(np.asarray(ns, dtype="float64")) / 12.0, 3.0, 12.0)
+        ax.plot(xs, ys, linewidth=1.3, label=f"{name} (ECE={cal['ece']:.3f})")
+        ax.scatter(xs, ys, s=sizes ** 2, zorder=3)
     ax.set_xlabel("xác suất dự đoán trung bình theo ngăn")
     ax.set_ylabel("tỉ lệ làm đúng quan sát được")
     ax.set_xlim(0, 1)

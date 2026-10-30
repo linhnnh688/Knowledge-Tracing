@@ -2,6 +2,24 @@
 
 Đồ án *Theo dõi tri thức người học bằng học máy trên đồ thị* (nhánh đúng/sai).
 
+## Cấu trúc repo
+
+| Đường dẫn | Nội dung |
+|---|---|
+| `GKT/` | DKT + GKT gốc của Cấp độ 1 (`models.py`, `processing.py`, `metrics.py`) và dữ liệu ASSISTments 2009 |
+| `GRKT/` | Mã GRKT của bài báo (KDD 2024), đã package-hoá + sửa có kiểm soát (danh sách ở `kaggle_level2.ipynb` §1) |
+| `level1/` | Pipeline Cấp độ 1: `load_kt_data`, `save_split`, `train_one`, `explain`, `dashboard` |
+| `level2/` | Pipeline Cấp độ 2: spec dữ liệu, chuỗi GRKT, train/eval, quỹ đạo mastery, calibration, `run_dataset` |
+| `outputs/level1/` | Artifact Cấp độ 1 đã commit (metrics, `cases.md`, checkpoint `.pt`) |
+| `kaggle_level1.ipynb`, `kaggle_level2.ipynb` | Notebook điều phối trên Kaggle GPU — chỉ gọi hàm trong package |
+| `KE_HOACH.md`, `YEU_CAU.md`, `GAP_LEVEL1.md` | Kế hoạch/tiến độ, đề bài viết lại, rà soát khoảng trống Cấp độ 1 |
+
+`outputs/level2/` chỉ sinh ra khi chạy notebook, không commit.
+
+**Trạng thái:** Cấp độ 1 đã chạy xong (artifact trong `outputs/level1/`). Cấp độ 2 đã có mã và
+notebook; số liệu chỉ hình thành sau lần chạy `QUICK_RUN=False` trên Kaggle. Mọi sửa đổi phải
+**commit + push** trước khi chạy, vì notebook `git clone` từ GitHub chứ không dùng file local.
+
 ## Cấp độ 1
 
 - Baseline không đồ thị: **DKT** (`GKT/models.py`)
@@ -68,9 +86,30 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
 5. Sản phẩm ghi dưới `/kaggle/working/level2_out/<dataset>/`: `split.json`,
    `leak_report.txt`, `graphs_train_only.npz`, `level2_metrics.csv`,
    `trajectories/{traj_*.npz, mastery_*.csv, heatmap_*.png, curves_*.png}`,
-   `trajectory_metrics.csv`, `calibration.csv`, `reliability.png`,
-   `multiseed_metrics.csv`, `summary.json`, `GRKT-<graph>.pt`; nối nhiều dataset ở
+   `trajectory_metrics.csv`, `calibration.csv`, `reliability.png`, `reliability_rows.csv`,
+   `multiseed_metrics.csv`, `summary.json`, `GRKT-<graph>.pt`, `baselines/*.pt`
+   (chỉ khi phải huấn luyện lại đường nền, ví dụ Junyi); nối nhiều dataset ở
    `level2_all_datasets.csv`.
+
+### Dữ liệu Junyi — ánh xạ cột
+
+Bản Kaggle đang dùng (`Log_Problem.csv`, 3,0 GB, 16,2 triệu dòng) **không có cột tên `exercise`**:
+
+| Cột chuẩn hoá | Cột gốc | Ghi chú |
+|---|---|---|
+| `user_id` | `uuid` | 72.758 người học |
+| `skill_id` | `ucid` | exercise/content id (1.326 khái niệm), join được với `Info_Content.csv` |
+| `problem_id` | `upid` | 25.785 câu hỏi |
+| `correct` | `is_correct` | đúng ngay lần đầu **và** không dùng gợi ý |
+| `timestamp_ms` | `timestamp_TW` | UTC+8, làm tròn 15 phút ⇒ Δt trong một phiên thường = 0 |
+| `ms_first_response` | `total_sec_taken` | đơn vị giây, đổi sang ms |
+
+Chuẩn hoá chỉ đọc đúng 6 cột này và in lại ánh xạ đã chọn. `junyi_canonical.csv` được dùng lại
+nếu đã tồn tại (đổi `MAX_USERS`/`min_interactions` thì phải xoá file trước khi chạy lại).
+Cell §2 của notebook in header thật của file dò được và liệt kê mọi CSV trong `/kaggle/input`,
+nên nếu Kaggle đổi schema thì nhìn log là biết ngay cột nào lệch.
+Vì timestamp bị làm tròn 15 phút, `mean_abs_delta_learn_forget`/`forget_slope` trên Junyi sẽ
+bằng 0 ở phần lớn bước — đó là giới hạn của dữ liệu, không phải lỗi mô hình.
 
 ### Kiểm tra đối chiếu bắt buộc (cell §4)
 
@@ -92,8 +131,9 @@ với DKT/GKT. Đổi sang `'assist2009'` / `'junyi'` cho số liệu báo cáo.
 ## Lưu ý về file JSON đã commit
 
 `.gitattributes` chuyển toàn bộ `*.json` sang Git LFS, nên `outputs/level1/split.json`,
-`metrics.json`, `learner_view.json` trong repo **là con trỏ LFS chứ không phải nội dung**
-(máy dev này thậm chí không cài `git-lfs`). Vì vậy không code nào được đọc ngược các file đó:
+`metrics.json`, `learner_view.json` **trong commit là con trỏ LFS**, không phải nội dung
+(máy dev có `git-lfs` nên working tree đã được smudge, nhưng bản clone mới không chắc như vậy).
+Vì thế không code nào được đọc ngược các file đó:
 `level2` tái sinh split bằng đúng tham số của `level1.pipeline.load_kt_data`
 (`seed=42, train_ratio=0.6, val_ratio=0.2, min_seq_len=3, max_seq_len=200`) và chứng minh nó
 khớp bằng `_assert_align` + AUC đường nền ở mục 4 của notebook. Kết quả cấp 2 ghi mới

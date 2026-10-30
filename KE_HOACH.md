@@ -175,31 +175,48 @@ Mọi mô hình, cùng split, ≥ 3 seed.
 
 ```
 Knowledge-Tracing/
-├── KE_HOACH.md                   # Kế hoạch và nhật ký tiến độ đồ án
-├── README.md                     # Hướng dẫn chạy lại và mô tả đồ án
-├── kaggle_level1.ipynb           # Notebook điều phối toàn diện Cấp độ 1 (Kaggle GPU)
-├── kaggle-gkt.ipynb              # Notebook thử nghiệm GKT độc lập đã chạy thành công
-├── GKT/                          # Mã nguồn mô hình GKT & DKT chuẩn hóa
+├── KE_HOACH.md                   # Kế hoạch, nhật ký tiến độ, khai báo sửa mã nguồn mở
+├── YEU_CAU.md                    # Đề bài viết lại + phụ lục đối chiếu yêu cầu ↔ triển khai
+├── GAP_LEVEL1.md                 # Rà soát khoảng trống Cấp độ 1 so với yêu cầu
+├── README.md                     # Hướng dẫn chạy lại và mô tả sản phẩm
+├── kaggle_level1.ipynb           # Notebook điều phối Cấp độ 1 (Kaggle GPU)
+├── kaggle_gkt.ipynb              # Notebook thử nghiệm GKT độc lập
+├── kaggle_level2.ipynb           # Notebook Cấp độ 2: GRKT + quỹ đạo mastery + calibration
+├── GKT/                          # Mã nguồn GKT & DKT của Cấp độ 1
 │   ├── data/
-│   │   ├── assistment_test15.csv # Tập thử nghiệm nhanh (Sanity check)
-│   │   └── skill_builder_data.csv# Dataset ASSISTments 2009 đầy đủ (>525k dòng)
-│   ├── models.py                 # Kiến trúc GKT, DKT, VAE
+│   │   ├── assistment_test15.csv # Tập thử nghiệm nhanh (smoke test)
+│   │   └── skill_builder_data.csv# ASSISTments 2009 đầy đủ (>525k dòng)
+│   ├── models.py                 # Kiến trúc GKT, DKT
 │   ├── processing.py             # Nạp dữ liệu, sinh đồ thị Transition/Dense/Identity/Zero
 │   ├── metrics.py                # KTLoss, ROC-AUC, Accuracy
-│   ├── layers.py                 # MLP, EraseAddGate
-│   └── utils.py                  # Dataloader, pad_collate
+│   ├── layers.py, utils.py       # MLP / EraseAddGate / dataloader
+│   └── train.py, command.sh      # Entry point gốc của upstream
+├── GRKT/                         # GRKT upstream (Cui et al., KDD 2024) đã package-hoá
+│   ├── model/GRKT.py             # Kiến trúc gốc + hook ghi m_pre/m_tilde/m_strong
+│   ├── BaseModel.py, Training.py, metric.py, utils.py
+│   ├── Runner.py                 # Không dùng (k-fold trên cửa sổ ⇒ rò rỉ người học)
+│   └── data/assist09/            # .bin gốc — KHÔNG dùng (đồ thị dựng trên toàn bộ dữ liệu)
 ├── level1/                       # Package điều phối Cấp độ 1
-│   ├── pipeline.py               # run_experiment, train_one, save_split
+│   ├── pipeline.py               # load_kt_data, save_split, train_one, evaluate, run_experiment
 │   ├── explain.py                # collect_cases (5 đúng + 5 sai), format_cases
+│   ├── dashboard.py              # chọn người học → xác suất, lịch sử, trạng thái tri thức
 │   ├── paths.py                  # Quản lý đường dẫn tự động
-│   ├── gikt.py                   # Mô hình mở rộng GIKT (Question-Skill Bipartite)
-│   └── gikt_data.py
-└── outputs/level1/               # Artifacts sinh ra sau khi chạy
-    ├── split.json                # Minh chứng chia tập chống rò rỉ dữ liệu
-    ├── metrics.csv               # Bảng số liệu tổng hợp Test AUC, Acc, Loss
-    ├── multiseed_metrics.csv     # Bảng số liệu Mean ± Std qua 3 seed
-    ├── cases.md                  # Báo cáo chi tiết 10 case study xAI
-    └── *.pt                      # Checkpoints mô hình đã lưu
+│   └── gikt.py, gikt_data.py     # GIKT (đã tắt trong pipeline)
+├── level2/                       # Package điều phối Cấp độ 2
+│   ├── dataset_spec.py           # spec assist2009 / assist2009_smoke / junyi + chuẩn hoá CSV
+│   ├── grkt_data.py              # chuỗi GRKT, đối chiếu Cấp độ 1, rel/pre từ train, biến thể đồ thị
+│   ├── grkt_api.py               # make_args / build_grkt / train_grkt / evaluate_grkt
+│   ├── baselines.py              # DKT / GKT trên cùng split (nạp checkpoint Cấp độ 1)
+│   ├── trajectory.py             # m(u,c,t), heatmap/curves, 4 tiêu chí, stage_attribution
+│   ├── calibration.py            # ECE / ACE / Brier / reliability
+│   └── experiment.py             # run_dataset / run_level2 (B1–B8)
+└── outputs/level1/               # Artifact Cấp độ 1 đã commit
+    ├── split.json                # Con trỏ Git LFS (xem README)
+    ├── level1_metrics.csv, metrics.json, multiseed_metrics.csv
+    ├── cases.md, learner_view.json
+    └── *.pt                      # DKT, GKT-{Transition,Dense,Identity,Zero,Shuffled}
+
+# outputs/level2/ chỉ sinh ra khi chạy notebook (không commit).
 ```
 
 ---
@@ -226,12 +243,13 @@ Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**.
 - [x] **Giải thích xAI cơ bản (Nhiệm vụ 3):** Trích xuất tự động 5 case đúng + 5 case sai kèm lịch sử tương tác và liên kết láng giềng đồ thị (`cases.md`).
 - [x] **Trực quan hóa & Xuất Artifacts:** Biểu đồ Learning Curves (Loss & AUC theo epoch), biểu đồ cột so sánh Test AUC/Acc, xuất `level1_metrics.csv` và checkpoint `.pt`.
 
-**Cột mốc hoàn thành:** Notebook [kaggle_level1.ipynb](file:///d:/workspace/Knowledge-Tracing/kaggle_level1.ipynb) và [kaggle-gkt.ipynb](file:///d:/workspace/Knowledge-Tracing/kaggle-gkt.ipynb) đã chạy trơn tru, xuất toàn bộ kết quả Cấp độ 1.
+**Cột mốc hoàn thành:** Notebook [kaggle_level1.ipynb](file:///d:/workspace/Knowledge-Tracing/kaggle_level1.ipynb) và [kaggle_gkt.ipynb](file:///d:/workspace/Knowledge-Tracing/kaggle_gkt.ipynb) đã chạy trơn tru, xuất toàn bộ kết quả Cấp độ 1.
 
 ### Giai đoạn 2 — Cấp độ 2 (tuần 5–7) → trần 8.5
 
 Mã nguồn trong package `level2/` và notebook `kaggle_level2.ipynb` đã viết xong; **số liệu
-cuối cùng chỉ tồn tại sau khi chạy Kaggle** (máy dev không có môi trường Python/Kaggle).
+cuối cùng chỉ tồn tại sau khi chạy Kaggle** (máy dev không có file Junyi thật 3,0 GB và GPU;
+kiểm chứng local chỉ dùng dữ liệu tổng hợp + `assist2009_smoke`).
 
 - [x] Tái lập GRKT (code vendored trong `GRKT/`, đã package-hoá). **Map vào split của nhóm**:
       bỏ `GRKT/Runner.py` (k-fold trên cửa sổ 100 tương tác ⇒ cùng một user nằm ở cả train
@@ -255,6 +273,24 @@ cuối cùng chỉ tồn tại sau khi chạy Kaggle** (máy dev không có môi
 - [x] Phân tích nâng cao: **ECE + ACE + Brier + reliability diagram** cho DKT, GKT và GRKT
       (`level2/calibration.py`), và so sánh quỹ đạo có/không đồ thị ( cùng bảng trên).
 - [ ] Điền số liệu vào báo cáo sau khi chạy `kaggle_level2.ipynb` (`QUICK_RUN=False`).
+
+#### Trạng thái 30/10/2026 — sửa lỗi phát sinh khi chạy Junyi
+
+Lần chạy Kaggle đầu tiên dừng ở bước chuẩn hoá với `KeyError`: `JUNYI.columns` không chứa tên
+cột thật của `Log_Problem.csv` (file **không có** cột `exercise`). Đã sửa và kiểm chứng bằng
+dữ liệu tổng hợp 14 cột + chạy end-to-end `assist2009_smoke`; **chưa chạy được dữ liệu thật
+3,0 GB trên máy dev** (không có file/GPU), nên số liệu Cấp độ 2 vẫn chờ lần chạy Kaggle.
+Các sửa đổi dưới đây **phải được commit + push** trước khi chạy, vì notebook clone từ GitHub.
+
+| Lỗi / rủi ro | Xử lý | Kiểm chứng |
+| --- | --- | --- |
+| `KeyError` khi chuẩn hoá Junyi | `JUNYI.columns` dùng tên thật: `uuid` / `ucid` / `upid` / `is_correct` / `timestamp_TW` / `total_sec_taken`; khái niệm ← `ucid` | File synthetic 14 cột: PASS |
+| `total_sec_taken` là **giây**, không phải ms | `_to_duration_ms` đổi đơn vị theo tên cột (×1000), không đoán theo median | `ms_first_response` của synthetic ≈ 30.000 ms |
+| Đọc 3,0 GB / 16,2 triệu dòng | Đọc header trước + `usecols` 6 cột, in lại ánh xạ cột | Log `ánh xạ cột: ...` trong cell §2 |
+| `reliability_plot` crash dưới NumPy 2 (`markersize` nhận mảng) | Điểm vẽ bằng `ax.scatter(..., s=...)` | `run_dataset` end-to-end |
+| Cảnh báo `max_users` sai cả khi CSV đã có sẵn | Chỉ cảnh báo khi `has_canonical(...)` đúng | `level2/experiment.py` |
+| Notebook §2 không chỉ ra cột thật khi schema đổi | In header file dò được + liệt kê mọi CSV trong `/kaggle/input` | Notebook đã cập nhật |
+| Junyi `Δt = 0` vì `timestamp_TW` làm tròn 15 phút | Ghi cảnh báo ở §5: `forget_slope` / `mean_abs_delta_learn_forget` = 0 là **giới hạn dữ liệu**, không phải lỗi mô hình | README + notebook §5 |
 
 #### Khai báo chỉnh sửa mã nguồn mở GRKT (bắt buộc cho mục "khai báo AI/mã nguồn mở")
 
@@ -327,8 +363,8 @@ Mọi người vẫn train/eval được mô hình của mình trên cùng data 
 - [x] **Mã nguồn Cấp độ 1:** pipeline preprocess, graph construction, train, eval, mô hình DKT & GKT (`GKT/`, `level1/`).
 - [x] **Chống rò rỉ dữ liệu:** File `split.json` chia tập theo user; đồ thị chỉ xây từ tập train; tài liệu giải trình chống rò rỉ.
 - [x] **Nhiệm vụ 3 mức cơ bản (5 đúng + 5 sai):** Báo cáo chi tiết 10 case study có bằng chứng lịch sử và láng giềng đồ thị (`cases.md`).
-- [x] **Notebook thực nghiệm Cấp độ 1:** `kaggle_level1.ipynb` và `kaggle-gkt.ipynb` chạy hoàn tất trên Kaggle GPU.
-- [ ] **Cấp độ 2 (Mastery Trajectory):** Tái lập GRKT, xuất vector thành thạo theo thời gian và đo 2 tiêu chí quỹ đạo.
+- [x] **Notebook thực nghiệm Cấp độ 1:** `kaggle_level1.ipynb` và `kaggle_gkt.ipynb` chạy hoàn tất trên Kaggle GPU.
+- [ ] **Cấp độ 2 (Mastery Trajectory):** Tái lập GRKT, xuất vector thành thạo theo thời gian và đo 2 tiêu chí quỹ đạo. *(mã + notebook hoàn tất; số liệu và artifact chờ lần chạy `QUICK_RUN=False` trên Kaggle)*
 - [ ] **Cấp độ 3 (xAI mở rộng & Quiz):** 10 case đồ thị nâng cao, quiz thu thập thực tế, giao diện dashboard.
 - [ ] **Báo cáo & Thuyết minh:** Báo cáo 12–18 trang, slide trình bày và video demo ≤ 5 phút.
 

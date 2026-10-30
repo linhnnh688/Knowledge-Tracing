@@ -186,3 +186,29 @@ Dùng **GCN, GAT hoặc GraphSAGE** tạo biểu diễn cho các khái niệm, k
   - PSI-KT (ICLR 2024) — động lực học người học kết hợp đồ thị tiên quyết, chú trọng diễn giải
   - Efficient Knowledge Tracing Leveraging Higher-Order Information in Integrated Graphs (arXiv 2025)
 - **Công cụ và định vị:** pyKT (NeurIPS 2022, Datasets and Benchmarks); khảo sát graph-based knowledge tracing (Journal of Educational Data Mining 2025) — dùng để định vị, **không** chọn làm mô hình.
+
+---
+
+## 12. Phụ lục — Đối chiếu yêu cầu với triển khai hiện tại (30/10/2026)
+
+> Mục 1–11 giữ nguyên nội dung đề. Bảng dưới chỉ ghi **nơi đáp ứng** và **trạng thái thực tế**
+> trong repo. Số liệu Cấp độ 2 chỉ hình thành sau lần chạy `kaggle_level2.ipynb` với
+> `QUICK_RUN=False` trên Kaggle (máy dev không có file Junyi 3,0 GB và GPU).
+
+| Yêu cầu | Triển khai | Trạng thái |
+|---|---|---|
+| §4.1 dữ liệu tối thiểu (người học, câu hỏi, KC, đúng/sai, thời điểm) | `GKT/processing.py`; CSV chuẩn hoá 8 cột trong `level2/dataset_spec.py` | Đã có; ASSISTments 2009 dùng ngay |
+| §4.2 đồ thị chỉ xây từ tập train | GKT Transition chỉ từ `train_dataset`; `level2/grkt_data.py::build_relevance_maps` + `leak_report` | Đã có |
+| §5 cấp 1: baseline + mô hình đồ thị + ablation | DKT, GKT-{Transition,Dense,Identity,Zero,Shuffled} (`GKT/`, `level1/pipeline.py`) | Đã chạy — `outputs/level1/level1_metrics.csv` |
+| §5 cấp 2: phương pháp graph-aware từ 2024 | GRKT (KDD 2024) vendored, huấn luyện qua `level2/grkt_api.py` | Đã có mã; số liệu chờ chạy |
+| §5 cấp 2: ≥ 2 tập công khai, cùng quy trình và chỉ số | `assist2009` + `junyi`, cùng `load_kt_data`, cùng split seed 42, cùng AUC/ACC/NLL | Đã có mã; số liệu chờ chạy |
+| §7 trực quan mastery theo KC × thời gian | `level2/trajectory.py`: `traj_*.npz`, `mastery_*.csv`, heatmap, đường cong | Đã có |
+| §7 ≥ 2 tiêu chí hợp lý của quỹ đạo | 4 tiêu chí: `consistency_strengthen`, `consistency_spread`, `locality`, `forget_slope` | Đã có |
+| §6 chống rò rỉ | split seed 42 tái sinh, `_assert_align` từng người học, đồ thị train-only, nhãn dịch 1 bước | Đã có; `leak_report.txt` |
+| §7 AUC/ACC/NLL + ≥ 3 seed | `level2_metrics.csv`, `multiseed_metrics.csv` | Đã có; số liệu chờ chạy |
+| §7 phân tích nâng cao (tuỳ chọn) | ECE / ACE / Brier / reliability (`level2/calibration.py`) | Đã có |
+| §5 cấp 3: xAI 10 case + quiz | Kế hoạch ở Giai đoạn 3 của `KE_HOACH.md` | Chưa làm |
+
+**Lưu ý khi đọc kết quả Junyi:** `timestamp_TW` được làm tròn 15 phút ⇒ Δt = 0 trong một
+phiên ⇒ `forget_slope` và `mean_abs_delta_learn_forget` bằng 0 là **giới hạn dữ liệu**; phải
+ghi rõ trong báo cáo thay vì trình bày như kết quả của mô hình.

@@ -104,21 +104,26 @@ JUNYI = DatasetSpec(
     max_concepts=1,
     min_interactions=10,
     max_users=4000,
+    # Tên cột của bản Kaggle 2018/08–2019/07 (Log_Problem.csv) đứng ĐẦU danh sách: đó là file
+    # `find_kaggle_input` chọn, và nó KHÔNG có cột 'exercise' — khái niệm phải lấy từ `ucid`
+    # (content/exercise id, join được với Info_Content.csv), câu hỏi từ `upid`.
     columns={
-        "user": ["user_id", "Anon Student Id", "student_id"],
-        "skill": ["exercise", "skill", "list_skills", "tags", "KC (Exercise)"],
-        "problem": ["problem", "problem_id", "assistment_id", "problem_name"],
-        "correct": ["correct", "Outcome"],
-        "answer_count": ["answer_count", "count_attempts"],
-        "timestamp": ["timestamp_ms", "time_done", "time", "Timestamp"],
-        "duration": ["ms_first_response", "answer_time", "time_taken"],
+        "user": ["uuid", "user_id", "Anon Student Id", "student_id"],
+        "skill": ["ucid", "exercise", "skill", "list_skills", "tags", "KC (Exercise)"],
+        "problem": ["upid", "problem", "problem_id", "assistment_id", "problem_name"],
+        "correct": ["is_correct", "correct", "Outcome"],
+        "answer_count": ["total_attempt_cnt", "answer_count", "count_attempts"],
+        "timestamp": ["timestamp_TW", "timestamp_ms", "time_done", "time", "Timestamp"],
+        "duration": ["total_sec_taken", "ms_first_response", "answer_time", "time_taken"],
     },
     note=(
-        "Junyi Academy — Kaggle 'junyiacademy/learning-activity-public-dataset-by-junyi-academy' "
-        "(16,2 triệu lượt làm bài / 72.630 người học, 2018/08–2019/07, CC BY-NC-SA, phải bấm "
-        "agree/subscribe một lần rồi attach vào notebook). Khái niệm = 'exercise'; đúng/sai lấy "
-        "từ cột 'correct' nếu có, nếu không thì suy từ 'answer_count' (1 -> đúng, >=3 -> sai, "
-        "bỏ 2 — quy ước pyKT)."
+        "Junyi Academy — Kaggle 'junyiacademy/learning-activity-public-dataset-by-junyi-academy': "
+        "3 bảng (Log_Problem.csv 3,0 GB; Info_Content.csv; Info_UserData.csv), 16.217.311 lượt / "
+        "72.758 người học / 1.326 khái niệm (ucid) / 25.785 câu hỏi (upid), 2018/08–2019/07, "
+        "CC BY-NC-SA. Khái niệm = exercise (ucid), câu hỏi = upid. is_correct = đúng ngay lần "
+        "đầu và không dùng gợi ý. timestamp_TW ở UTC+8 và làm tròn 15 phút; total_sec_taken "
+        "tính bằng GIÂY. Nếu file có cột 'correct' thì dùng nó, nếu không thì suy từ số lần thử "
+        "(1 -> đúng, >=3 -> sai, bỏ 2 — quy ước pyKT)."
     ),
 )
 
@@ -172,15 +177,18 @@ def _pick(columns, candidates, what: str, path) -> str:
     )
 
 
-def _to_duration_ms(series: pd.Series) -> pd.Series:
-    """Suy ra miligiây từ một cột độ dài/độ trễ; tự đoán ms so với giây."""
+#: Các cột độ dài làm bài tính bằng GIÂY; mọi cột khác (``ms_first_response``) đã là miligiây.
+_DURATION_SECONDS = frozenset({"total_sec_taken", "answer_time", "time_taken"})
+
+
+def _to_duration_ms(series: pd.Series, column: str) -> pd.Series:
+    """Đổi độ dài làm bài sang miligiây; đơn vị lấy theo TÊN CỘT, không đoán từ phân phối.
+
+    Đoán theo median sẽ sai với Junyi: ``total_sec_taken`` có median vài chục giây, nằm dưới
+    ngưỡng 500 nên bị coi là miligiây và ghi thiếu 1000 lần.
+    """
     values = pd.to_numeric(series, errors="coerce").fillna(0.0).clip(lower=0)
-    positive = values[values > 0]
-    # ms_first_response (ASSIST) ở miligiây; answer_time/time_taken (Junyi) ở giây.
-    if positive.empty:
-        unit = 1000.0
-    else:
-        unit = 1000.0 if positive.median() > 500 else 1.0
+    unit = 1000.0 if column in _DURATION_SECONDS else 1.0
     return (values * unit).astype("int64")
 
 
@@ -206,22 +214,29 @@ def _to_epoch_ms(series: pd.Series) -> pd.Series:
 
 
 def _canonicalize_junyi(raw_path: Path, spec: DatasetSpec) -> pd.DataFrame:
-    df = pd.read_csv(raw_path, low_memory=False)
-    cols = list(df.columns)
-    col_user = _pick(cols, spec.columns["user"], "người học", raw_path)
-    col_skill = _pick(cols, spec.columns["skill"], "khái niệm", raw_path)
-    col_prob = _pick(cols, spec.columns["problem"], "câu hỏi", raw_path)
-    ts_col = _pick(cols, spec.columns["timestamp"], "thời điểm", raw_path)
-    dur_col = _pick(cols, spec.columns["duration"], "thời gian làm bài", raw_path)
+    # Đọc header trước rồi chỉ nạp các cột cần dùng: Log_Problem.csv của Junyi là 3,0 GB /
+    # 16,2 triệu dòng, đọc cả 14 cột bằng object dtype sẽ tốn thêm vài GB RAM vô ích.
+    header = probe_columns(raw_path)
+    col_user = _pick(header, spec.columns["user"], "người học", raw_path)
+    col_skill = _pick(header, spec.columns["skill"], "khái niệm", raw_path)
+    col_prob = _pick(header, spec.columns["problem"], "câu hỏi", raw_path)
+    ts_col = _pick(header, spec.columns["timestamp"], "thời điểm", raw_path)
+    dur_col = _pick(header, spec.columns["duration"], "thời gian làm bài", raw_path)
+    col_correct = col_correct_real(header, spec)
+    col_ac = None
+    if col_correct is None:
+        col_ac = _pick(header, spec.columns["answer_count"], "số lần thử", raw_path)
+
+    needed = [col_user, col_skill, col_prob, ts_col, dur_col, col_correct or col_ac]
+    df = pd.read_csv(raw_path, usecols=list(dict.fromkeys(needed)), low_memory=False)
 
     out = pd.DataFrame(index=df.index)
     out["user_id"] = df[col_user]
     out["skill_id"] = df[col_skill].astype("string")
     out["problem_id"] = df[col_prob].astype("string")
     out["timestamp_ms"] = _to_epoch_ms(df[ts_col])
-    out["ms_first_response"] = _to_duration_ms(df[dur_col])
+    out["ms_first_response"] = _to_duration_ms(df[dur_col], dur_col)
 
-    col_correct = col_correct_real(cols, spec)
     if col_correct is not None:
         raw = df[col_correct]
         if pd.api.types.is_numeric_dtype(raw):
@@ -233,14 +248,22 @@ def _canonicalize_junyi(raw_path: Path, spec: DatasetSpec) -> pd.DataFrame:
             out["correct"] = text.map(lambda v: 1.0 if v in truthy else (0.0 if v in falsy else np.nan))
         origin = col_correct
     else:
-        col_ac = _pick(cols, spec.columns["answer_count"], "số lần thử", raw_path)
         attempts = pd.to_numeric(df[col_ac], errors="coerce")
         # Quy ước pyKT: làm đúng ngay lần đầu = đúng; cần >=3 lần = sai; 2 lần là nhập nhằng -> bỏ.
         out["correct"] = attempts.map(lambda a: np.nan if pd.isna(a) or a == 2 else float(a == 1))
         origin = f"answer_count ({col_ac})"
     out.attrs["correct_origin"] = origin
+    out.attrs["column_mapping"] = {
+        "người học": col_user,
+        "khái niệm": col_skill,
+        "câu hỏi": col_prob,
+        "đúng/sai": origin,
+        "thời điểm": ts_col,
+        "thời gian làm bài": dur_col,
+    }
 
     out = out[out["correct"].isin([0.0, 1.0])]
+    out = out[out["user_id"].notna()]
     out = out[out["skill_id"].notna() & (out["skill_id"].str.len() > 0)]
     out = out.reset_index(drop=True)
     out["correct"] = out["correct"].astype("int64")
@@ -262,7 +285,7 @@ def col_correct_real(cols, spec: DatasetSpec) -> Optional[str]:
     return None
 
 
-def _has_canonical(spec: DatasetSpec, out_dir: Path) -> bool:
+def has_canonical(spec: DatasetSpec, out_dir: Path) -> bool:
     """CSV chuẩn hoá đã tồn tại (ở out_dir hoặc chỗ resolve_canonical_path tìm thấy)?"""
     if (Path(out_dir) / Path(spec.canonical_file).name).exists():
         return True
@@ -287,7 +310,7 @@ def ensure_canonical(
     smoke test trên Kaggle với ngân sách GPU nhỏ).
     """
     out_dir = Path(out_dir) if out_dir is not None else (Path(spec.canonical_file).parent or Path("."))
-    if raw_path is None and spec.raw_file is None and not _has_canonical(spec, out_dir):
+    if raw_path is None and spec.raw_file is None and not has_canonical(spec, out_dir):
         # Tự dò file gốc trong /kaggle/input: notebook không phải truyền đường dẫn, và lỗi
         # "quên attach dataset" được báo ở ngay cell cấu hình thay vì cell chuẩn hoá.
         found = find_kaggle_input(patterns=(spec.name, "junyi"))
@@ -331,6 +354,7 @@ def ensure_canonical(
 
     frame = _canonicalize_junyi(raw, spec)
     correct_origin = frame.attrs.get("correct_origin", "không rõ")
+    mapping = frame.attrs.get("column_mapping", {})
     frame = frame.sort_values(["user_id", "timestamp_ms"], kind="mergesort")
 
     counts = frame.groupby("user_id", sort=True).size()
@@ -354,7 +378,10 @@ def ensure_canonical(
     # build_grkt_data; ở đây chỉ ghi nguyên vẹn timestamp để tái sử dụng được nhiều cấu hình.
     frame[CANONICAL_COLUMNS].to_csv(target, index=False)
     if verbose:
-        print(f"  nhãn đúng/sai lấy từ: {correct_origin}")
+        if mapping:
+            print("  ánh xạ cột: " + " | ".join(f"{k}={v}" for k, v in mapping.items()))
+        else:
+            print(f"  nhãn đúng/sai lấy từ: {correct_origin}")
         print(f"  đã ghi {len(frame)} tương tác | {frame['user_id'].nunique()} người học | "
               f"{frame['skill_id'].nunique()} khái niệm | {frame['problem_id'].nunique()} câu hỏi")
         print(f"  tỉ lệ đúng = {frame['correct'].mean():.3f}")
