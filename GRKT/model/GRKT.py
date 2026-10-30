@@ -1,4 +1,5 @@
-from BaseModel import BaseModel
+# SỬA so với bản gốc: import tương đối để không nạp nhầm utils/metric/BaseModel của GKT (Cấp độ 1)
+from ..BaseModel import BaseModel
 import torch.nn as nn
 import torch
 import numpy as np
@@ -6,10 +7,10 @@ import torch.nn.functional as F
 from copy import deepcopy
 import random
 import tqdm
-from utils import *
-from metric import *
+from ..utils import *
+from ..metric import *
 from collections import defaultdict
-from utils import get_performance
+from ..utils import get_performance
 
 def positive_activate(mode, input_tensor):
 		
@@ -235,6 +236,11 @@ class GRKT(BaseModel):
 
 		scores = list()
 
+		# SỬA so với bản gốc (Cấp độ 2): cho phép ghi quỹ đạo mastery mà không đổi hành vi
+		# khi huấn luyện. rec là dict do level2/trajectory.py cấp phát, hoặc None khi train
+		# — lúc đó chi phí chỉ là một phép thử is-not-None.
+		rec = feed_dict.get("rec")
+
 		lk_tilde = total_know_embedding	# [NK, DH]
 
 		for k in range(self.args.k_hop):
@@ -299,6 +305,11 @@ class GRKT(BaseModel):
 
 			h = h.clamp(min = -10, max = 10)
 
+			# SỬA so với bản gốc (Cấp độ 2): mastery của mọi khái niệm TRƯỚC khi cập nhật
+			# ở bước i — đây cũng là trạng thái mô hình thực sự dùng để dự đoán.
+			if rec is not None:
+				rec["m_pre"].append(self.know_master_proj(h).squeeze(-1).detach().to("cpu", torch.float16))
+
 			# apply knowledge
 
 			prob = probs[:, i]						# [B]
@@ -336,8 +347,12 @@ class GRKT(BaseModel):
 				h_tilde = h_tilde + h_tilde_3_sub								# [B, NK, KH]
 
 
-			master = self.know_master_proj(h_tilde).squeeze(-1)			# [B, NK]
-			master = master.gather(-1, know)							# [B, K]
+			# SỬA so với bản gốc: tách biến để giữ lại vector mastery ĐẦY ĐỦ [B, NK]
+			# (giai đoạn retrieval đã lan truyền trên đồ thị) phục vụ Nhiệm vụ 2 Cấp độ 2.
+			master_full = self.know_master_proj(h_tilde).squeeze(-1)	# [B, NK]
+			if rec is not None:
+				rec["m_tilde"].append(master_full.detach().to("cpu", torch.float16))
+			master = master_full.gather(-1, know)						# [B, K]
 			master = master.masked_fill(know == 0, 0)					# [B, K]
 			master = master.sum(-1)										# [B]
 			master = master / (know > 0).sum(-1).clamp(1)				# [B]
@@ -415,6 +430,12 @@ class GRKT(BaseModel):
 			corr_1 = corr[:, None, None]
 			h = h + corr_1*total_gain - (~corr_1*total_loss)	# [B, NK, KH]
 			learn_count = learn_count + ((corr_1*total_gain) > 0).any(-1).long()	# [B, NK]
+
+			# SỬA so với bản gốc (Cấp độ 2): mastery SAU giai đoạn củng cố (strengthening)
+			# của bước i.  Δm = m_strong[i] - m_pre[i] tách riêng ảnh hưởng của việc làm
+			# đúng/sai, còn m_pre[i+1] - m_strong[i] là ảnh hưởng học/quên giữa hai bước.
+			if rec is not None:
+				rec["m_strong"].append(self.know_master_proj(h).squeeze(-1).detach().to("cpu", torch.float16))
 
 
 			if i != S - 1:

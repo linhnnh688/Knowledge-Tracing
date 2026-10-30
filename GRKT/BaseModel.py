@@ -1,9 +1,10 @@
 import torch.nn.functional as F
 import torch.nn as nn
-from utils import *
-from metric import *
+# SỬA so với bản gốc: import tương đối (xem GRKT/__init__.py — tránh xung đột tên với GKT/utils.py)
+from .utils import *
+from .metric import *
 from collections import defaultdict
-from utils import get_performance
+from .utils import get_performance
 import numpy as np
 from copy import deepcopy
 import torch

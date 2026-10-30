@@ -230,11 +230,56 @@ Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**.
 
 ### Giai đoạn 2 — Cấp độ 2 (tuần 5–7) → trần 8.5
 
-- [ ] Tái lập GRKT (code: <https://github.com/JJCui96/GRKT>); map vào split của nhóm (không dùng split mặc định khác nếu muốn so sánh công bằng — hoặc báo cáo cả hai và giải thích).
-- [ ] Đánh giá GRKT trên **cả hai** dataset, cùng chỉ số với cấp 1.
-- [ ] Export mastery \(m_{u,c,t}\); vẽ quỹ đạo.
-- [ ] Implement 2 metric quỹ đạo; so sánh 3 mô hình.
-- [ ] Một phân tích nâng cao: ECE **hoặc** user lịch sử ngắn **hoặc** so sánh quỹ đạo có/không đồ thị.
+Mã nguồn trong package `level2/` và notebook `kaggle_level2.ipynb` đã viết xong; **số liệu
+cuối cùng chỉ tồn tại sau khi chạy Kaggle** (máy dev không có môi trường Python/Kaggle).
+
+- [x] Tái lập GRKT (code vendored trong `GRKT/`, đã package-hoá). **Map vào split của nhóm**:
+      bỏ `GRKT/Runner.py` (k-fold trên cửa sổ 100 tương tác ⇒ cùng một user nằm ở cả train
+      lẫn test), mỗi user là một chuỗi, split lấy thẳng `level1.pipeline.save_split` (seed 42).
+- [x] Đánh giá GRKT trên **cả hai** dataset (`assist2009` + `junyi`), cùng `load_dataset`
+      tiền xử lý, cùng chỉ số AUC/ACC/NLL và cùng mặt nạ với cấp 1 (`level2/experiment.py`).
+      Chế độ nhanh dùng tập `assist2009_smoke` (chính là `GKT/data/assistment_test15.csv` của
+      cấp 1); `MAX_USERS` chỉ áp dụng cho tập phải chuẩn hoá nên smoke test trên ASSISTments
+      không bị âm thầm chạy full 4.217 người học.
+- [x] Cấu hình báo cáo đặt `MAX_SEQ_LEN = 200` **đúng bằng cấp 1** để checkpoint DKT/GKT nạp
+      lại được eval trên đúng cửa sổ nó đã học; cell §4 do đó so được AUC đường nền với
+      0.7866 (dung sai 0.005). Đường nền phải train lại (Junyi) dùng `BASELINE_EPOCHS = 20`
+      theo công thức cấp 1 và ghi trọng số vào `<save_dir>/baselines/`, không đè `outputs/level1`.
+- [x] Export mastery \(m_{u,c,t}\): `trajectories/traj_<graph>.npz` + `mastery_<graph>.csv`
+      (dạng dài), heatmap khái niệm × thời điểm và đường cong mastery theo bước.
+- [x] Metric quỹ đạo (định nghĩa trong `level2/trajectory.py`):
+      `consistency_strengthen` (kiểm chứng cài đặt), `consistency_spread` (tiêu chí thật:
+      hướng lan truyền sang láng giềng 1-hop), `locality` (độ cục bộ của cập nhật),
+      `forget_slope` (Δm giữa hai bước theo Δt tại KC không bị chạm) + `stage_attribution`.
+      Bảng so sánh giữa 4 biến thể đồ thị `train/dense/zero/shuffled`.
+- [x] Phân tích nâng cao: **ECE + ACE + Brier + reliability diagram** cho DKT, GKT và GRKT
+      (`level2/calibration.py`), và so sánh quỹ đạo có/không đồ thị ( cùng bảng trên).
+- [ ] Điền số liệu vào báo cáo sau khi chạy `kaggle_level2.ipynb` (`QUICK_RUN=False`).
+
+#### Khai báo chỉnh sửa mã nguồn mở GRKT (bắt buộc cho mục "khai báo AI/mã nguồn mở")
+
+Bản gốc: Cui et al., KDD 2024 — <https://github.com/JJCui96/GRKT>. Bảy chỉnh sửa dưới đây
+đều có comment `# SỬA so với bản gốc` tại chỗ sửa:
+
+| # | File | Sửa gì | Vì sao |
+| --- | --- | --- | --- |
+| 1 | `GRKT/__init__.py`, `GRKT/model/__init__.py`, `GRKT/{BaseModel,Runner,model/GRKT}.py` | Đóng gói + import tương đối | `GKT/` (cấp 1) cũng có `utils.py`; để hai package cùng trên `sys.path` thì import top-level nạp nhầm file của nhau |
+| 2 | `GRKT/model/GRKT.py::forward` | 3 hook ghi `m_pre` / `m_tilde` / `m_strong` khi `feed_dict["rec"]` được cấp phát | Nhiệm vụ 2 cần mastery của **mọi** KC theo thời điểm; `rec=None` khi train ⇒ chi phí chỉ là một phép thử `is not None` |
+| 3 | `GRKT/model/GRKT.py::forward` | Tách biến `master_full` trước khi `gather` | Giữ vector mastery đầy đủ `[B, NK]` sau giai đoạn retrieval (bản gốc chỉ giữ phần của KC đang làm) |
+| 4 | `GRKT/Training.py` | `eval('{0}.{0}')` → `MODEL_REGISTRY`, thêm `ALLOWED_DATASETS` + dựng đường dẫn bằng `Path` | Bỏ thực thi chuỗi thành mã; chặn vô tình nạp `assist09.bin` (đồ thị dựng trên toàn bộ dữ liệu ⇒ rò rỉ) |
+| 5 | *không sửa model* — `level2/grkt_api.py` | Vòng lặp epoch riêng: snapshot `state_dict()` về CPU, early stop theo val AUC toàn cục | `Runner.fit` nhân bản bằng `deepcopy(model)` (giữ tensor trên GPU ⇒ hết VRAM) và dùng k-fold |
+| 6 | *không sửa model* — `level2/grkt_data.py` | `rel_map`/`pre_map` đếm **chỉ từ train**; `args.thresh=0.5` với ma trận đã nhị phân | Chống rò rỉ §6.2; nhánh `if thresh == 0` của upstream gán toàn ma trận = 1 kể cả hàng/cột padding |
+| 7 | *không sửa model* — `level2/grkt_data.py` | Trục thời gian = phút cộng dồn **theo từng người học**, chặn 240 phút/bước, làm tròn SAU khi cộng dồn | `exp(-(n+1)·Δt·k)` với Δt thô (order_id, µs) underflow ⇒ mô hình xoá sạch trạng thái sau một bước. Tính theo từng user để không nhét khoảng cách giữa hai người học khác nhau vào delta đầu tiên; làm tròn sau cumsum vì thời gian làm bài < 1 phút, nếu làm tròn từng delta thì mọi Δt = 0 và giai đoạn học/quên không còn tác dụng |
+
+**Bằng chứng cài đặt chạy được trên Kaggle** (không cần đọc log dài): với biến thể `zero`,
+`beta_*_tilde = 0` nên `h_tilde = h` — do đó `m_tilde == m_pre` **chính xác** và cột
+`mean_abs_delta_retrieval` của `stage_attribution` phải bằng 0. Cell §5.1 in rõ phép kiểm tra
+này; nếu nó > 0 thì đồ thị rỗng chưa thật sự rỗng.
+
+**Không đổi**: kiến trúc mô hình, công thức loss (BCE), `get_feed_dict`/`feature2tensor`
+(đệm batch), định nghĩa AUC/ACC trong `GRKT/metric.py`. Hai tham số lệch mặc định upstream
+được ghi rõ trong docstring `level2/grkt_api.make_args`: `thresh` 0.6 → 0.5, `alpha` giữ
+0.01 nhưng đi cùng trục phút.
 
 ### Giai đoạn 3 — Cấp độ 3 (tuần 7–9) → trần 10
 

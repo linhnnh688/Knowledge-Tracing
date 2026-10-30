@@ -2,7 +2,8 @@ from copy import deepcopy
 import torch
 import random
 import time
-from utils import *
+# SỬA so với bản gốc: import tương đối (tránh xung đột tên với GKT/utils.py)
+from .utils import *
 import numpy as np
 from collections import defaultdict
 import os
