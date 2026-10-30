@@ -58,6 +58,22 @@ GRAPH_VARIANTS: Sequence[str] = ("train", "dense", "zero", "shuffled")
 #: Đường nền so sánh với GRKT — đúng bộ mô hình Cấp độ 1 đã có checkpoint trên ASSISTments.
 BASELINE_SPECS: Sequence[tuple] = (("DKT", "N/A"), ("GKT", "Transition"), ("GKT", "Zero"))
 
+
+def grkt_activation_gib(concept_num: int, batch_size: int, max_seq_len: int,
+                        k_hidden: int, n_step_tensors: int = 40) -> float:
+    """Gibibyte tensor kích hoạt GRKT phải GIỮ cho một batch (ước lượng bậc độ lớn).
+
+    Mỗi bước thời gian sinh khoảng ``n_step_tensors`` tensor có dạng ``[B, K+1, k_hidden]``
+    (retrieval, gain, loss, learn — mỗi giai đoạn ba loại cạnh rel/pre/sub), và autograd giữ
+    chúng cho tới khi backprop qua toàn bộ ``max_seq_len`` bước. Con số này tỉ lệ thuận với số
+    khái niệm, nên nó là lý do ``top_concepts`` của Junyi tồn tại: với K = 25.785 (số câu hỏi
+    của ``Log_Problem.csv``) thì ngay cả K = 1.000 cũng vượt xa VRAM 16 GB của T4.
+    """
+    nbytes = (n_step_tensors * max(1, int(max_seq_len)) * int(batch_size)
+              * (int(concept_num) + 1) * int(k_hidden) * 4)
+    return nbytes / 1024 ** 3
+
+
 #: Tập dữ liệu mà Cấp độ 1 đã train và lưu checkpoint (``outputs/level1/*.pt``). Tập khác
 #: phải huấn luyện lại đường nền, nên ``baseline_epochs`` được dùng riêng cho lần train đó.
 LEVEL1_CKPT_DATASETS: frozenset = frozenset({"assist2009"})
@@ -112,6 +128,8 @@ def run_dataset(
     gap_cap_min: int = 240,
     max_users: Optional[int] = None,
     min_interactions: Optional[int] = None,
+    top_concepts: Optional[int] = None,
+    content_path=None,
     split_seed: int = 42,
     train_ratio: float = 0.6,
     val_ratio: float = 0.2,
@@ -159,11 +177,14 @@ def run_dataset(
     print("=" * 72)
     print(f">>> [C2-B1] Chuẩn hoá dữ liệu và chia split theo người học: {spec.name}")
     print("=" * 72)
-    if spec.raw_file is None and (max_users is not None or min_interactions is not None):
+    if spec.raw_file is None and (max_users is not None or min_interactions is not None
+                                  or top_concepts is not None):
         print(f"  [cảnh báo] {spec.name} nạp thẳng CSV đã commit trong repo nên max_users/"
-              f"min_interactions KHÔNG có tác dụng (muốn chạy nhanh: dataset='assist2009_smoke').")
+              f"min_interactions/top_concepts KHÔNG có tác dụng (muốn chạy nhanh: dataset='assist2009_smoke').")
     canonical = ensure_canonical(spec, out_dir=save_dir, raw_path=raw_path,
-                                 max_users=max_users, min_interactions=min_interactions, verbose=verbose)
+                                 max_users=max_users, min_interactions=min_interactions,
+                                 top_concepts=top_concepts, content_path=content_path,
+                                 verbose=verbose)
     min_seq = int(min_interactions if min_interactions is not None else spec.min_interactions)
     print(f"  CSV chuẩn hoá: {canonical}")
     print(f"  Cột: {probe_columns(canonical)}")
@@ -241,6 +262,13 @@ def run_dataset(
 
     # ------------------------------------------------------------ 4. GRKT
     print(">>> [C2-B4] Huấn luyện GRKT cho từng biến thể đồ thị ...")
+    gib = grkt_activation_gib(data.concept_num, batch_size, max_seq_len, k_hidden)
+    print(f"  [bộ nhớ] GRKT giữ ước lượng {gib:.1f} GiB tensor kích hoạt cho MỘT batch "
+          f"(K={data.concept_num}, B={batch_size}, S={max_seq_len}, k_hidden={k_hidden})")
+    if gib > 8.0:
+        print(f"  [cảnh báo] {gib:.1f} GiB là sát/near vượt VRAM T4 (15 GiB) — giảm top_concepts "
+              "(nhiều khái niệm hiếm chỉ làm đồ thị to lên chứ không thêm tín hiệu), rồi mới tới "
+              "batch_size hoặc max_seq_len. Xem mục 'Sự cố thường gặp' của notebook.")
     if resume_grkt_ckpt:
         print("  [resume] BẬT: biến thể nào đã có GRKT-<graph>.pt trong thư mục output sẽ được nạp "
               "thay vì train lại. Chỉ dùng khi lần chạy trước có CÙNG split_seed/variants/"
