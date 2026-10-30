@@ -78,7 +78,6 @@ def record_trajectories(
     được, và nên giải thích độ biến thiên giữa các lần ghi như một phần của kết luận.
     """
     from level1.pipeline import set_seed
-    from level2.grkt_api import batch_items
 
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -430,9 +429,12 @@ def plot_mastery_heatmap(
     skill_lookup: Optional[Dict[int, str]] = None,
     title: Optional[str] = None,
 ) -> Path:
-    """Nhiệt độ mastery theo (khái niệm × thời điểm) của MỘT người học."""
-    import matplotlib
-    matplotlib.use("Agg")
+    """Nhiệt độ mastery theo (khái niệm × thời điểm) của MỘT người học.
+
+    Hàm KHÔNG gọi ``matplotlib.use("Agg")`` — ép backend giữa lúc notebook đang hiển thị
+    inline sẽ làm các cell ``plt.show()`` sau đó vẽ ra khoảng trắng. ``fig.savefig`` hoạt động
+    với mọi backend, và fig được ``plt.close`` ngay nên không tích tụ figure khi vẽ 4 biến thể.
+    """
     import matplotlib.pyplot as plt
 
     user = traj["users"][user_index]
@@ -464,8 +466,6 @@ def plot_mastery_curves(
     title: Optional[str] = None,
 ) -> Path:
     """Đường mastery theo thời gian của vài khái niệm, mỗi người học một subplot."""
-    import matplotlib
-    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     user_indices = list(user_indices)

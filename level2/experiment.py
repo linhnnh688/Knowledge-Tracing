@@ -191,6 +191,13 @@ def run_dataset(
     train_graph = graphs.get("train") or graph_variant(
         maps_train, "train", data.concept_num, thresh=graph_thresh, seed=split_seed)
     adj = adjacency_from_graphs(train_graph["rel_map"], train_graph["pre_map"])
+    if int(train_graph["edges_rel"]) + int(train_graph["edges_pre"]) == 0:
+        # Xảy ra với tập quá nhỏ (smoke) hoặc cold_thresh/graph_thresh quá cao: GRKT-train khi
+        # đó chạy y hệt GRKT-zero, mọi kết luận về "tác động của đồ thị" đều vô nghĩa.
+        print(f"  [cảnh báo] đồ thị train RỖNG (rel={train_graph['edges_rel']} pre={train_graph['edges_pre']}) "
+              f"với cold_thresh={cold_thresh}, graph_thresh={graph_thresh} trên "
+              f"{len(splits['train']['sequences'])} người học. Ablation sẽ không phân biệt được; "
+              "hạ cold_thresh/graph_thresh hoặc chạy ở chế độ đầy đủ.")
     report = leak_report(data, splits, shared, maps_train, maps_val, graphs,
                          train_ratio=train_ratio, val_ratio=val_ratio, seed=split_seed)
     print(report)
@@ -202,7 +209,7 @@ def run_dataset(
     np.savez_compressed(
         save_dir / "graphs_train_only.npz",
         rel=maps_train["rel"], pre=maps_train["pre"],
-        rel_bin=graphs["train"]["rel_map"], pre_bin=graphs["train"]["pre_map"],
+        rel_bin=train_graph["rel_map"], pre_bin=train_graph["pre_map"],
     )
     out["artifacts"]["graphs"] = str(save_dir / "graphs_train_only.npz")
 

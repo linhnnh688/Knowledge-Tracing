@@ -23,7 +23,14 @@ Huấn luyện được gọi từ package `level1/` (không nhét logic vào no
 > GIKT đã được loại khỏi pipeline (`level1.pipeline.run_gikt_experiment` raise
 > `NotImplementedError`); cấp độ 1 chuẩn hoá hoàn toàn trên DKT + GKT.
 
-Không `pip install torch` trên Kaggle — image đã có bản GPU.
+Không `pip install torch` trên Kaggle — image đã có bản GPU. Cell cài đặt của
+`kaggle_level2.ipynb` chỉ pip-install gói thật sự thiếu (`importlib.util.find_spec`) nên
+**pandas 3.x / numpy 2.x của image mới nhất được giữ nguyên**; package `level1/` và `level2/`
+và toàn bộ notebook Cấp độ 2 vẽ hình bằng matplotlib thuần (`axes.hist`, `axes.barh`), không
+dùng accessor `Series.hist`/`Series.barh` (pandas đã bỏ). `kaggle_level1.ipynb` đang chạy ổn
+định nên **không sửa** — nếu gặp `AttributeError: 'Series' object has no attribute 'hist'` ở
+cell EDA của nó, sửa một dòng `user_len.hist(bins=40, ax=ax, ...)` thành
+`ax.hist(user_len.to_numpy(), bins=40, ...)`.
 
 ## Chạy local
 
@@ -65,7 +72,11 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
    nạp lại được đánh giá trên cùng cửa sổ). GRKT nặng hơn GKT nhiều lần; nếu hết giờ, giảm
    `EPOCHS` và `VARIANTS` trước khi giảm `MAX_SEQ_LEN`, và **không** đổi `SPLIT_SEED`
    (seed split phải giữ 42 để cùng một split với Cấp độ 1).
-5. Sản phẩm ghi dưới `/kaggle/working/level2_out/<dataset>/`: `split.json`,
+5. **Junyi cần nhiều RAM hơn ASSIST.** File gốc `Log_Problem.csv` có hàng chục triệu dòng, nên
+   `_canonicalize_junyi` chỉ đọc các cột khớp `JUNYI.columns` (log in ra "đọc N/M cột").
+   `MAX_USERS` lấy mẫu SAU khi đã nạp file nên **không** giảm RAM lúc đọc; nếu notebook vẫn bị
+   `Killed`, chạy riêng Junyi ở notebook CPU hoặc rút `JUNYI.columns` xuống đúng tên cột thật.
+6. Sản phẩm ghi dưới `/kaggle/working/level2_out/<dataset>/`: `split.json`,
    `leak_report.txt`, `graphs_train_only.npz`, `level2_metrics.csv`,
    `trajectories/{traj_*.npz, mastery_*.csv, heatmap_*.png, curves_*.png}`,
    `trajectory_metrics.csv`, `calibration.csv`, `reliability.png`,

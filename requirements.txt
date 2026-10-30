@@ -1,8 +1,12 @@
+# Môi trường địa phương. Trên Kaggle KHÔNG cài torch (image đã có bản GPU chạy được);
+# cell cài đặt của hai notebook chỉ pip-install những gói thật sự thiếu, và mặc định
+# chấp nhận pandas 3.x / numpy 2.x của image mới nhất — code level1 + level2 đã viết
+# tương thích cả pandas 2 lẫn 3 (vẽ hình bằng matplotlib thuần, không dùng Series.barh/hist).
 numpy>=1.24,<3
-pandas>=2.0,<3
-scipy>=1.10,<2
-scikit-learn>=1.3,<2
-matplotlib>=3.7,<4
-torch>=2.0,<3
-tqdm>=4.65,<5
-ipywidgets>=8.0,<9
+pandas>=2.0
+scipy>=1.10
+scikit-learn>=1.3
+matplotlib>=3.7
+torch>=2.0
+tqdm>=4.65
+ipywidgets>=8.0

@@ -176,11 +176,13 @@ def _to_duration_ms(series: pd.Series) -> pd.Series:
     """Suy ra miligiây từ một cột độ dài/độ trễ; tự đoán ms so với giây."""
     values = pd.to_numeric(series, errors="coerce").fillna(0.0).clip(lower=0)
     positive = values[values > 0]
-    # ms_first_response (ASSIST) ở miligiây; answer_time/time_taken (Junyi) ở giây.
+    # Đơn vị tính theo_median: trên 500 thì chỉ có thể là miligiây (500 GIÂY = 8 phút cho một
+    # lượt làm bài là vô lý); dưới 500 thì là giây và phải nhân lên. ASSIST ms_first_response
+    # median ~2.5e4 -> giữ nguyên; Junyi answer_time/time_taken (giây) -> nhân 1000.
     if positive.empty:
         unit = 1000.0
     else:
-        unit = 1000.0 if positive.median() > 500 else 1.0
+        unit = 1.0 if positive.median() > 500 else 1000.0
     return (values * unit).astype("int64")
 
 
@@ -202,11 +204,27 @@ def _to_epoch_ms(series: pd.Series) -> pd.Series:
             return pd.Series(np.full(len(series), np.nan), index=series.index)
         return (values * factor).astype("Float64").astype("float64")
     parsed = pd.to_datetime(series, errors="coerce", utc=True)
-    return parsed.astype("int64").astype("float64") / 1e6
+    # Trừ mốc rồi đo giây: astype("int64") trên datetime64 có NaT cho ra số rất âm (pandas 2)
+    # hoặc raise (pandas 3), còn cách này trả NaN -> _canonicalize_junyi thay bằng bộ đếm dòng.
+    epoch = pd.Timestamp(0, tz="UTC")
+    return (parsed - epoch).dt.total_seconds() * 1e3
 
 
 def _canonicalize_junyi(raw_path: Path, spec: DatasetSpec) -> pd.DataFrame:
-    df = pd.read_csv(raw_path, low_memory=False)
+    # Thăm header trước rồi CHỈ đọc các cột nằm trong danh sách ứng viên của spec. File Junyi
+    # (Log_Problem.csv) có ~20 cột và hàng chục triệu dòng; đọc toàn bộ rồi bỏ sẽ ngốn hết RAM
+    # của notebook Kaggle trước khi kịp chuẩn hoá.
+    header = list(pd.read_csv(raw_path, nrows=0, encoding="utf-8-sig").columns)
+    candidates = {name for names in spec.columns.values() for name in names}
+    usecols = [c for c in header if c in candidates]
+    if not usecols:
+        raise KeyError(
+            f"[{raw_path.name}] Không khớp cột nào trong {sorted(candidates)}. "
+            f"Cột có sẵn trong file: {header}. Sửa DatasetSpec.columns rồi chạy lại."
+        )
+    print(f"  đọc {len(usecols)}/{len(header)} cột: {usecols}")
+    df = pd.read_csv(raw_path, usecols=usecols, low_memory=False, encoding="utf-8-sig")
+    print(f"  đã đọc {len(df):,} dòng từ {raw_path.name}")
     cols = list(df.columns)
     col_user = _pick(cols, spec.columns["user"], "người học", raw_path)
     col_skill = _pick(cols, spec.columns["skill"], "khái niệm", raw_path)
@@ -238,8 +256,6 @@ def _canonicalize_junyi(raw_path: Path, spec: DatasetSpec) -> pd.DataFrame:
         # Quy ước pyKT: làm đúng ngay lần đầu = đúng; cần >=3 lần = sai; 2 lần là nhập nhằng -> bỏ.
         out["correct"] = attempts.map(lambda a: np.nan if pd.isna(a) or a == 2 else float(a == 1))
         origin = f"answer_count ({col_ac})"
-    out.attrs["correct_origin"] = origin
-
     out = out[out["correct"].isin([0.0, 1.0])]
     out = out[out["skill_id"].notna() & (out["skill_id"].str.len() > 0)]
     out = out.reset_index(drop=True)
@@ -251,6 +267,10 @@ def _canonicalize_junyi(raw_path: Path, spec: DatasetSpec) -> pd.DataFrame:
     if bad_ts.any():
         filler = np.arange(len(out), dtype="float64") * 1000.0
         out.loc[bad_ts, "timestamp_ms"] = filler[bad_ts.to_numpy()]
+
+    # Ghi attrs SAU cùng: pandas chỉ giữ attrs qua phép biến đổi "một-một", mọi phép lọc ở
+    # trên có quyền xoá nó, và notebook cần correct_origin để in ra nguồn nhãn đúng/sai.
+    out.attrs["correct_origin"] = origin
     return out
 
 

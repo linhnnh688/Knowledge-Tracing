@@ -119,6 +119,7 @@ def make_args(
         save_model=int(save_model),
         save=int(save),
         # các khoá Runner còn tham chiếu (không dùng tới vòng lặp của Runner)
+        model="GRKT",           # GRKT/Training.py đọc args.model để tra MODEL_REGISTRY
         k_exps=1,
         n_exps=1,
         repeat=1,

@@ -276,6 +276,14 @@ Bản gốc: Cui et al., KDD 2024 — <https://github.com/JJCui96/GRKT>. Bảy c
 `mean_abs_delta_retrieval` của `stage_attribution` phải bằng 0. Cell §5.1 in rõ phép kiểm tra
 này; nếu nó > 0 thì đồ thị rỗng chưa thật sự rỗng.
 
+**Tương thích môi trường Kaggle** (image hiện là Python 3.13 + pandas 3.x + numpy 2.x): cell
+cài đặt chỉ pip-install gói thật sự thiếu qua `importlib.util.find_spec`, nên không hạ cấp
+pandas/numpy; mọi hình vẽ đi qua matplotlib thuần vì pandas 3 đã bỏ accessor `Series.hist` và
+`Series.barh`; `matplotlib.use("Agg")` không được gọi giữa phiên (làm hỏng `plt.show()` nội
+bảng). Junyi được đọc với `usecols` giới hạn trong `JUNYI.columns` vì file gốc hàng chục triệu
+dòng, và timestamp được đổi qua `parsed - pd.Timestamp(0, tz="UTC")` thay cho
+`astype("int64")` (cách cũ trả số rất âm trên pandas 2 và raise trên pandas 3 khi có NaT).
+
 **Không đổi**: kiến trúc mô hình, công thức loss (BCE), `get_feed_dict`/`feature2tensor`
 (đệm batch), định nghĩa AUC/ACC trong `GRKT/metric.py`. Hai tham số lệch mặc định upstream
 được ghi rõ trong docstring `level2/grkt_api.make_args`: `thresh` 0.6 → 0.5, `alpha` giữ

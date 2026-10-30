@@ -115,8 +115,6 @@ def reliability_plot(
     title: str = "Đồ thị độ tin cậy (reliability diagram)",
 ) -> Path:
     """Vẽ đường cong reliability của nhiều mô hình trên cùng trục + khoảng lệch tuyệt đối."""
-    import matplotlib
-    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     out_path = Path(out_path)
