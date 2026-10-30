@@ -24,6 +24,7 @@ Xem ``JUNYI.columns`` và ``JUNYI.content_columns``.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -124,11 +125,13 @@ JUNYI = DatasetSpec(
     time_mode="timestamp_ms",
     max_concepts=1,
     min_interactions=10,
-    # 800 người học ~ 96.000 lượt (cap max_keep_per_user) — GRKT tốn bộ nhớ tỉ lệ
-    # S × B × (K+1) × k_hidden cho MỌI bước, nên 4.000 người học không chạy nổi trên T4.
-    max_users=800,
-    # Log có 1.326 exercise; K=200 là mức để đồ thị (K+1)² và các tensor [B, K+1, 16]
-    # vừa VRAM 16 GB với batch 32-64, max_seq_len 200.
+    # Lần chạy báo cáo dùng TOÀN BỘ người học (~72.630, sau lọc >=10 tương tác ≈ 16,2 triệu
+    # lượt). QUICK_RUN truyền max_users=300 để đè lên spec này. Bộ nhớ GRKT tỉ lệ với B và K
+    # chứ không với tổng số người, nên số người chỉ ảnh hưởng THỜI GIAN, không ảnh hưởng VRAM.
+    max_users=None,
+    # Log có 1.326 exercise. Giữ 200 bài phổ biến nhất để đồ thị dense (K+1)² và trạng thái
+    # [B, K+1, k_hidden] của MỌI bước vừa 15 GiB T4 với batch 32, max_seq_len 200. Lấy cả
+    # 1.326 khái niệm buộc batch còn 4-8 và ước tính >10 giờ/epoch (xem grkt_activation_gib).
     top_concepts=200,
     # Info_Content.csv chỉ để LẤY TÊN bài tập nếu cần; khái niệm vẫn là ucid đọc thẳng từ log
     # (xem columns["skill"]). Để dò được khi người dùng truyền content_path.
@@ -626,6 +629,38 @@ def has_canonical(spec: DatasetSpec, out_dir: Path) -> bool:
         return False
 
 
+def _canonical_meta_path(target: Path) -> Path:
+    return target.with_name(target.name + ".meta.json")
+
+
+def _check_canonical_meta(target: Path, requested: dict, verbose: bool = True) -> None:
+    """Chặn dùng lại CSV chuẩn hoá được tạo với cấu hình khác.
+
+    ``ensure_canonical`` trả về file có sẵn mà không đọc lại dữ liệu gốc, nên nếu lần trước
+    chạy QUICK_RUN (cap 300 người) rồi lần này chạy toàn bộ, kết quả sẽ lặng lẽ là của 300
+    người. File ``.meta.json`` đi kèm ghi đúng ba tham số đã dùng để phát hiện trường hợp đó.
+    """
+    meta_path = _canonical_meta_path(target)
+    if not meta_path.exists():
+        if verbose:
+            print(f"  [cảnh báo] {target.name} không có {meta_path.name}: không xác định được "
+                  "max_users/min_interactions/top_concepts đã dùng. Nếu lần trước chạy với cap "
+                  "khác thì xoá file này trước khi chạy lại.")
+        return
+    try:
+        previous = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    diff = {k: (previous.get(k), v) for k, v in requested.items() if previous.get(k) != v}
+    if diff:
+        detail = ", ".join(f"{k}: {old} -> {new}" for k, (old, new) in diff.items())
+        raise RuntimeError(
+            f"{target.name} được tạo với cấu hình khác ({detail}). Xoá {target} và "
+            f"{meta_path.name} rồi chạy lại — dùng lại file cũ sẽ cho kết quả lệch nhưng "
+            f"không báo lỗi."
+        )
+
+
 def ensure_canonical(
     spec: DatasetSpec,
     out_dir=None,
@@ -639,11 +674,23 @@ def ensure_canonical(
     """Trả về đường dẫn CSV chuẩn hoá; nếu spec có file gốc thì tạo file chuẩn hoá một lần.
 
     ``max_users`` / ``min_interactions`` / ``top_concepts`` cho phép ghi đè cấu hình trong spec
-    (dùng khi smoke test trên Kaggle với ngân sách GPU nhỏ). ``content_path`` truyền thẳng bảng
-    tra khái niệm khi ``find_kaggle_input`` dò sai (chỉ cần thiết với tập mà file log không có
-    cột khái niệm, vd Junyi).
+    (dùng khi smoke test trên Kaggle với ngân sách GPU nhỏ). File sinh ra có sidecar
+    ``<tên>.meta.json`` ghi ba tham số này, nên lần chạy sau đổi cấu hình sẽ bị chặn thay vì
+    lặng lẽ dùng lại dữ liệu cũ. ``content_path`` truyền thẳng bảng tra khái niệm khi
+    ``find_kaggle_input`` dò sai (chỉ cần thiết với tập mà file log không có cột khái niệm,
+    vd Junyi).
     """
     out_dir = Path(out_dir) if out_dir is not None else (Path(spec.canonical_file).parent or Path("."))
+    min_int = int(min_interactions if min_interactions is not None else spec.min_interactions)
+    cap_users = int(max_users if max_users is not None else (spec.max_users or 0)) or None
+    cap_concepts = int(top_concepts if top_concepts is not None else (spec.top_concepts or 0)) or None
+    target = out_dir / Path(spec.canonical_file).name
+    if target.exists():
+        _check_canonical_meta(
+            target,
+            {"max_users": cap_users, "min_interactions": min_int, "top_concepts": cap_concepts},
+            verbose=verbose,
+        )
     if raw_path is None and spec.raw_file is None and not has_canonical(spec, out_dir):
         # Tự dò file gốc trong /kaggle/input: notebook không phải truyền đường dẫn, và lỗi
         # "quên attach dataset" được báo ở ngay cell cấu hình thay vì cell chuẩn hoá.
@@ -669,7 +716,6 @@ def ensure_canonical(
         return path
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / Path(spec.canonical_file).name
     if target.exists():
         if verbose:
             print(f"[{spec.name}] Đã có CSV chuẩn hoá, dùng lại: {target} "
@@ -683,10 +729,6 @@ def ensure_canonical(
             f"Không thấy file gốc của {spec.name}: {raw}. Với dữ liệu Kaggle, attach dataset "
             f"rồi truyền raw_path='/kaggle/input/<thư-mục-dataset>/<file>.csv'."
         )
-
-    min_int = int(min_interactions if min_interactions is not None else spec.min_interactions)
-    cap_users = int(max_users if max_users is not None else (spec.max_users or 0)) or None
-    cap_concepts = int(top_concepts if top_concepts is not None else (spec.top_concepts or 0)) or None
 
     if verbose:
         print(f"[{spec.name}] Chuẩn hoá {raw.name} -> {target.name} "
@@ -728,6 +770,18 @@ def ensure_canonical(
     # Khoảng thời gian giữa hai bước của cùng người học phải không âm và bị chặn ở bước
     # build_grkt_data; ở đây chỉ ghi nguyên vẹn timestamp để tái sử dụng được nhiều cấu hình.
     frame[CANONICAL_COLUMNS].to_csv(target, index=False)
+    _canonical_meta_path(target).write_text(
+        json.dumps({
+            "max_users": cap_users,
+            "min_interactions": min_int,
+            "top_concepts": cap_concepts,
+            "raw_file": str(raw),
+            "rows": int(len(frame)),
+            "users": int(frame["user_id"].nunique()),
+            "concepts": int(frame["skill_id"].nunique()),
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     if verbose:
         if mapping:
             print("  ánh xạ cột: " + " | ".join(f"{k}={v}" for k, v in mapping.items()))

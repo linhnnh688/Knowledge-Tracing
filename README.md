@@ -143,10 +143,13 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
    `list_kaggle_inputs()` in ra đúng những gì đang có trong `/kaggle/input`. Đây là yêu cầu
    "≥ 2 tập dữ liệu công khai" của đề bài.
 2. Upload/copy [`kaggle_level2.ipynb`](kaggle_level2.ipynb). Notebook tự `git clone` repo.
-3. `QUICK_RUN=True`: tập `assist2009_smoke` (15 người học, dùng lại file smoke test của
-   Cấp độ 1), 2 epoch, chỉ đồ thị `train` — kiểm tra mã trong vài phút, **không dùng số liệu
-   cho báo cáo**. `MAX_USERS` chỉ có tác dụng với Junyi (tập phải chuẩn hoá từ file gốc).
-4. `QUICK_RUN=False`: `assist2009` đầy đủ + `junyi` (cap 800 người, 200 khái niệm), GRKT với đồ thị `train`,
+3. `QUICK_RUN=True` (notebook mặc định `False` cho lần chạy báo cáo): tập `assist2009_smoke`
+   (15 người học, dùng lại file smoke test của Cấp độ 1), 2 epoch, chỉ đồ thị `train` — kiểm
+   tra mã trong vài phút, **không dùng số liệu cho báo cáo**. `MAX_USERS=300` chỉ có tác dụng
+   với Junyi (tập phải chuẩn hoá từ file gốc).
+4. `QUICK_RUN=False`: `assist2009` đầy đủ + `junyi` **toàn bộ người học** (72.630 người học,
+   sau lọc ≥10 tương tác còn ít hơn; tối đa ≈16,2 triệu lượt; giữ 200 bài tập phổ biến nhất),
+   GRKT với đồ thị `train`,
    quỹ đạo mastery + tiêu chí hợp lý, `MAX_SEQ_LEN=200` (đúng cấu hình Cấp độ 1 để checkpoint
    DKT/GKT nạp lại được đánh giá trên cùng cửa sổ). Ba công tắc ngoài phạm vi yêu cầu Cấp độ 2
    — `RUN_GRAPH_ABLATIONS`, `RUN_CALIBRATION`, `RUN_MULTI_SEED` — **mặc định `False`**: ablation
@@ -158,9 +161,15 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
 5. **Junyi cần nhiều RAM hơn ASSIST.** File gốc `Log_Problem.csv` có 16,2 triệu dòng, nên
    `_canonicalize_junyi` đọc header trước, chỉ `usecols` các cột khớp `JUNYI.columns` (log in ra
    "đọc N/M cột"), rồi quét THEO MẢNH và mã hoá id thành số nguyên ngay khi quét — RAM giữ lại là
-   cột int chứ không phải chuỗi object. `MAX_USERS` vẫn lấy mẫu SAU khi quét xong toàn file nên
-   **không** giảm thời gian/RAM lúc đọc, chỉ giảm phần train; nếu vẫn bị `Killed`, chạy riêng
-   Junyi ở notebook CPU hoặc hạ `JUNYI.columns` xuống đúng tên cột thật.
+   cột int chứ không phải chuỗi object. Với `MAX_USERS=None`, `junyi_canonical.csv` giữ tới
+   ≈16,2 triệu dòng (sau lọc ≥10 tương tác và cap khái niệm sẽ ít hơn; file cỡ 1 GB); lúc quét +
+   concat + sort đỉnh RAM khoảng 2–3 GB và mất 15–30 phút, còn bước `load_kt_data` đọc lại toàn bộ
+   file có thể cần thêm 5–8 GB RAM.
+   `MAX_USERS` (nếu đặt) lấy mẫu SAU khi quét xong toàn file nên **không** giảm thời gian/RAM lúc
+   đọc, chỉ giảm phần train. Nếu vẫn bị `Killed`, chạy riêng Junyi ở notebook CPU hoặc hạ
+   `JUNYI.columns` xuống đúng tên cột thật. Về thời gian train: với B=32, K=200, S=200, mỗi epoch
+   GRKT trên Junyi ước tính 1–2 giờ, nên 5 epoch + đường nền + quỹ đạo có thể chiếm gần trọn một
+   phiên GPU — nên chạy `DATASETS = ["assist2009"]` và `["junyi"]` ở hai phiên riêng.
 6. Sản phẩm ghi dưới `/kaggle/working/level2_out/<dataset>/`: `split.json`,
    `leak_report.txt`, `graphs_train_only.npz`, `level2_metrics.csv`,
    `trajectories/{traj_*.npz, mastery_*.csv, heatmap_*.png, curves_*.png}`,
@@ -197,8 +206,12 @@ Bản Kaggle đang dùng (`Log_Problem.csv`, 3,0 GB, 16,2 triệu dòng) **khôn
 | `timestamp_ms` | `timestamp_TW` | UTC+8, làm tròn 15 phút ⇒ Δt trong một phiên thường = 0 |
 | `ms_first_response` | `total_sec_taken` | đơn vị giây, đổi sang ms |
 
-Chuẩn hoá chỉ đọc đúng 6 cột này và in lại ánh xạ đã chọn. `junyi_canonical.csv` được dùng lại
-nếu đã tồn tại (đổi `MAX_USERS`/`min_interactions`/`top_concepts` thì phải xoá file trước khi chạy lại).
+Chuẩn hoá chỉ đọc đúng 6 cột này và in lại ánh xạ đã chọn. Lần chạy báo cáo giữ **toàn bộ người
+học**; 200 bài tập phổ biến nhất vẫn được giữ và 1.126 bài còn lại bị bỏ vì đồ thị GRKT là dense
+theo khái niệm (bảng `JUNYI.top_concepts`). `junyi_canonical.csv` được dùng lại nếu đã tồn tại,
+kèm `junyi_canonical.csv.meta.json` ghi `max_users`/`min_interactions`/`top_concepts`; nếu cấu
+hình hiện tại khác meta, `ensure_canonical` dừng và yêu cầu xoá file thay vì trả về dữ liệu cũ
+(ví dụ chạy QUICK_RUN 300 người rồi đổi sang toàn bộ trong cùng session).
 Cell §2 của notebook in header thật của file dò được và liệt kê mọi CSV trong `/kaggle/input`,
 nên nếu Kaggle đổi schema thì nhìn log là biết ngay cột nào lệch.
 Vì timestamp bị làm tròn 15 phút, `mean_abs_delta_learn_forget`/`forget_slope` trên Junyi sẽ

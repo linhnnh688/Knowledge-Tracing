@@ -256,9 +256,13 @@ kiểm chứng local chỉ dùng dữ liệu tổng hợp + `assist2009_smoke`).
       lẫn test), mỗi user là một chuỗi, split lấy thẳng `level1.pipeline.save_split` (seed 42).
 - [x] Đánh giá GRKT trên **cả hai** dataset (`assist2009` + `junyi`), cùng `load_dataset`
       tiền xử lý, cùng chỉ số AUC/ACC/NLL và cùng mặt nạ với cấp 1 (`level2/experiment.py`).
-      Chế độ nhanh dùng tập `assist2009_smoke` (chính là `GKT/data/assistment_test15.csv` của
-      cấp 1); `MAX_USERS` chỉ áp dụng cho tập phải chuẩn hoá nên smoke test trên ASSISTments
-      không bị âm thầm chạy full 4.217 người học.
+      ASSISTments chạy toàn bộ 4.217 người học; Junyi chạy **toàn bộ người học** (72.630 người,
+      sau lọc ≥10 tương tác còn ít hơn; tối đa ≈16,2 triệu lượt) với 200 bài tập phổ biến nhất
+      — K=1.326 buộc batch
+      còn 4–8 và >10 giờ/epoch trên T4 (xem `grkt_activation_gib`). Chế độ nhanh dùng tập
+      `assist2009_smoke` (chính là `GKT/data/assistment_test15.csv` của cấp 1); `MAX_USERS`
+      chỉ áp dụng cho tập phải chuẩn hoá nên smoke test trên ASSISTments không bị âm thầm chạy
+      full 4.217 người học.
 - [x] Cấu hình báo cáo đặt `MAX_SEQ_LEN = 200` **đúng bằng cấp 1** để checkpoint DKT/GKT nạp
       lại được eval trên đúng cửa sổ nó đã học; cell §4 do đó so được AUC đường nền với
       0.7866 (dung sai 0.005). Đường nền phải train lại (Junyi) dùng `BASELINE_EPOCHS = 20`
@@ -292,7 +296,7 @@ Các sửa đổi dưới đây **phải được commit + push** trước khi c
 | `total_sec_taken` là **giây**, không phải ms | `_to_duration_ms` đổi đơn vị theo tên cột (×1000), không đoán theo median | `ms_first_response` của synthetic ≈ 30.000 ms |
 | Đọc 3,0 GB / 16,2 triệu dòng | Đọc header trước + `usecols` 6 cột; quét THEO MẢNH và mã hoá id (`_CodeMap`) ngay khi quét, giải mã sau khi đã lọc người học | Log `ánh xạ cột: ...` trong cell §2 |
 | `reliability_plot` crash dưới NumPy 2 (`markersize` nhận mảng) | Điểm vẽ bằng `ax.scatter(..., s=...)` | `run_dataset` end-to-end |
-| Cảnh báo `max_users` sai cả khi CSV đã có sẵn | Chỉ cảnh báo khi `has_canonical(...)` đúng | `level2/experiment.py` |
+| Cảnh báo `max_users` sai cả khi CSV đã có sẵn | Chỉ cảnh báo khi `has_canonical(...)` đúng; CSV sinh ra có `.meta.json` để chặn dùng lại với cấu hình khác | `level2/experiment.py`, `level2/dataset_spec.py` |
 | Notebook §2 không chỉ ra cột thật khi schema đổi | In header file dò được + liệt kê mọi CSV trong `/kaggle/input` | Notebook đã cập nhật |
 | Junyi `Δt = 0` vì `timestamp_TW` làm tròn 15 phút | Ghi cảnh báo ở §5: `forget_slope` / `mean_abs_delta_learn_forget` = 0 là **giới hạn dữ liệu**, không phải lỗi mô hình | README + notebook §5 |
 
