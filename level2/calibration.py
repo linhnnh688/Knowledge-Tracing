@@ -126,8 +126,11 @@ def reliability_plot(
         xs = [b["avg_pred"] for b in cal["reliability"]]
         ys = [b["avg_label"] for b in cal["reliability"]]
         ns = [b["n"] for b in cal["reliability"]]
-        ax.plot(xs, ys, marker="o", markersize=np.clip(np.sqrt(np.asarray(ns)) / 12, 3, 12),
-                linewidth=1.3, label=f"{name} (ECE={cal['ece']:.3f})")
+        # markersize PHẢI là vô hướng: truyền mảng (np.clip trên cả cột n) khiến
+        # Line2D.set_markersize raise "only length-1 arrays can be converted".
+        marker_size = float(np.clip(np.sqrt(float(np.mean(ns)) if ns else 1.0) / 12.0, 3.0, 12.0))
+        ax.plot(xs, ys, marker="o", markersize=marker_size, linewidth=1.3,
+                label=f"{name} (ECE={cal['ece']:.3f}, n={int(np.sum(ns))})")
     ax.set_xlabel("xác suất dự đoán trung bình theo ngăn")
     ax.set_ylabel("tỉ lệ làm đúng quan sát được")
     ax.set_xlim(0, 1)

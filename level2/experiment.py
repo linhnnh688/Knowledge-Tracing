@@ -73,6 +73,21 @@ def _device_of(device):
     return device if hasattr(device, "type") else torch.device(str(device))
 
 
+def _safe_plot(fn, *args, **kwargs):
+    """Vẽ hình là bước TRANG TRÍ; số liệu (CSV/npz) đã ghi xong trước nó.
+
+    Một lần ValueError/TypeError trong matplotlib ở đây từng làm chết cả cell thực nghiệm sau
+    hàng giờ train GRKT trên Kaggle (kết quả không còn trong biến ``result``). Vì vậy lỗi vẽ
+    chỉ in cảnh báo chứ không ném lên :func:`run_dataset`.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        print(f"[cảnh báo] {getattr(fn, '__name__', fn)} thất bại: {type(exc).__name__}: {exc} "
+              "— số liệu vẫn còn, chỉ thiếu hình vẽ.")
+        return None
+
+
 def run_dataset(
     dataset: str = "assist2009",
     *,
@@ -108,6 +123,7 @@ def run_dataset(
     run_calibration: bool = True,
     run_multi_seed: bool = False,
     seeds: Sequence[int] = (42, 123, 456),
+    resume_grkt_ckpt: bool = False,
     device=None,
     verbose: bool = True,
 ) -> Dict[str, object]:
@@ -215,6 +231,10 @@ def run_dataset(
 
     # ------------------------------------------------------------ 4. GRKT
     print(">>> [C2-B4] Huấn luyện GRKT cho từng biến thể đồ thị ...")
+    if resume_grkt_ckpt:
+        print("  [resume] BẬT: biến thể nào đã có GRKT-<graph>.pt trong thư mục output sẽ được nạp "
+              "thay vì train lại. Chỉ dùng khi lần chạy trước có CÙNG split_seed/variants/"
+              "cold_thresh/graph_thresh/d_hidden — xem cảnh báo ở [resume] bên dưới.")
     grkt_results: List[dict] = []
     for kind in variants:
         print(f"\n--- GRKT với đồ thị '{kind}' ---")
@@ -237,6 +257,7 @@ def run_dataset(
             dataset=spec.name,
             device=device,
             save_dir=save_dir,
+            resume_ckpt=(str(save_dir / f"GRKT-{kind}.pt") if resume_grkt_ckpt else None),
             verbose=verbose,
         )
         grkt_results.append(res)
@@ -309,10 +330,10 @@ def run_dataset(
             save_trajectories(traj, plot_dir / f"traj_{kind}.npz")
             export_mastery_csv(traj, plot_dir / f"mastery_{kind}.csv", max_users=25,
                                skill_lookup=data.skill_lookup)
-            plot_mastery_heatmap(traj, plot_dir / f"heatmap_{kind}.png", user_index=0,
-                                 skill_lookup=data.skill_lookup)
-            plot_mastery_curves(traj, plot_dir / f"curves_{kind}.png", user_indices=(0, 1),
-                                skill_lookup=data.skill_lookup)
+            _safe_plot(plot_mastery_heatmap, traj, plot_dir / f"heatmap_{kind}.png", user_index=0,
+                       skill_lookup=data.skill_lookup)
+            _safe_plot(plot_mastery_curves, traj, plot_dir / f"curves_{kind}.png", user_indices=(0, 1),
+                       skill_lookup=data.skill_lookup)
             model.cpu()
         traj_table = trajectory_metrics_table(traj_runs, adj=adj)
         traj_table.to_csv(save_dir / "trajectory_metrics.csv", index=False)
@@ -336,7 +357,7 @@ def run_dataset(
         cal = calibration_table(entries, n_bins=10,
                                 extra={r["name"]: {"graph": r["graph_type"]} for r in grkt_results})
         cal.to_csv(save_dir / "calibration.csv", index=False)
-        reliability_plot(entries, save_dir / "reliability.png")
+        _safe_plot(reliability_plot, entries, save_dir / "reliability.png")
         save_reliability_rows(entries, save_dir / "reliability_rows.csv")
         out["artifacts"]["calibration"] = str(save_dir / "calibration.csv")
         out["artifacts"]["reliability"] = str(save_dir / "reliability.png")

@@ -141,6 +141,15 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
    một lần từ tab Output (Kaggle xoá `/kaggle/working` khi session kết thúc). Mặc định bỏ
    `junyi_canonical.csv` (tái sinh được) và file > `MAX_MB=150`; đặt `KEEP_CKPTS=False` nếu chỉ
    cần số liệu + ảnh. Chạy lại cell bất cứ lúc nào để gói bổ sung — zip cũ bị ghi đè.
+8. **Cứu một lần chạy đã train xong nhưng chết ở bước sau:** B4 lưu `GRKT-<graph>.pt` vào
+   `SAVE_DIR/<dataset>/` NGAY khi mỗi biến thể train xong, và toàn bộ bước vẽ hình
+   (heatmap/đường cong/reliability) đã bọc trong `_safe_plot` — lỗi matplotlib chỉ in cảnh báo,
+   không làm mất `result`. Nếu vẫn phải chạy lại cell §3 trong cùng session, đặt
+   `RESUME_GRKT_CKPT=True`: B4 nạp trọng số cũ thay vì train lại (tiết kiệm hàng giờ GPU Kaggle),
+   các bước B5→B8 chạy bình thường. **Chỉ bật khi không đổi** `SPLIT_SEED`, `VARIANTS`,
+   `COLD_THRESH`, `GRAPH_THRESH`, `D_HIDDEN` so với lần đã train: `load_state_dict(strict=True)`
+   phát hiện khác kiến trúc nhưng KHÔNG phát hiện khác đồ thị hay khác split.
+   (`torch.load(..., weights_only=True)` — checkpoint chỉ chứa tensor.)
 
 ### Kiểm tra đối chiếu bắt buộc (cell §4)
 
