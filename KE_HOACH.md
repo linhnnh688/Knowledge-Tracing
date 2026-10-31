@@ -267,6 +267,14 @@ kiểm chứng local chỉ dùng dữ liệu tổng hợp + `assist2009_smoke`).
       lại được eval trên đúng cửa sổ nó đã học; cell §4 do đó so được AUC đường nền với
       0.7866 (dung sai 0.005). Đường nền phải train lại (Junyi) dùng `BASELINE_EPOCHS = 20`
       theo công thức cấp 1 và ghi trọng số vào `<save_dir>/baselines/`, không đè `outputs/level1`.
+- [x] Chạy dài hơn một phiên Kaggle 12 giờ: `train_grkt` ghi `ckpt_GRKT-<graph>.pt` mỗi
+      `CKPT_EVERY_MIN=10` phút và cuối epoch (trọng số + Adam + epoch + batch đang dở + thứ tự
+      batch + best state); đường nền phải train lại (Junyi) ghi `baselines/ckpt_<tên>.pt` cuối
+      mỗi epoch; `TIME_BUDGET_MIN` tính một lần cho cả lần chạy và dừng chủ động bằng
+      `TrainingPaused` trước khi phiên bị cắt; phiên sau attach zip phiên trước (private Kaggle
+      Dataset) + `RESUME_ZIP` + `RESUME_GRKT_CKPT=True` để chạy tiếp đúng epoch/batch còn lại.
+      Fingerprint trong checkpoint chặn resume sai split/đồ thị/siêu tham số hoặc `batch_size`
+      (`level2/grkt_api.py`, `level2/baselines.py`, notebook §0.3 và §8.4).
 - [x] Export mastery \(m_{u,c,t}\): `trajectories/traj_<graph>.npz` + `mastery_<graph>.csv`
       (dạng dài), heatmap khái niệm × thời điểm và đường cong mastery theo bước.
 - [x] Metric quỹ đạo (định nghĩa trong `level2/trajectory.py`):
@@ -299,6 +307,7 @@ Các sửa đổi dưới đây **phải được commit + push** trước khi c
 | Cảnh báo `max_users` sai cả khi CSV đã có sẵn | Chỉ cảnh báo khi `has_canonical(...)` đúng; CSV sinh ra có `.meta.json` để chặn dùng lại với cấu hình khác | `level2/experiment.py`, `level2/dataset_spec.py` |
 | Notebook §2 không chỉ ra cột thật khi schema đổi | In header file dò được + liệt kê mọi CSV trong `/kaggle/input` | Notebook đã cập nhật |
 | Junyi `Δt = 0` vì `timestamp_TW` làm tròn 15 phút | Ghi cảnh báo ở §5: `forget_slope` / `mean_abs_delta_learn_forget` = 0 là **giới hạn dữ liệu**, không phải lỗi mô hình | README + notebook §5 |
+| Phiên Kaggle 12 giờ kết thúc khi GRKT mới train dở (bản cũ chỉ lưu `GRKT-*.pt` khi xong) | Thêm checkpoint giữa epoch (`ckpt_GRKT-*.pt`, 10 phút/lần, gồm Adam + batch đang dở), ngân sách `TIME_BUDGET_MIN` dừng chủ động, và đường resume hai phiên: §8.5 zip → upload private Dataset → §0.3 giải nén → `RESUME_ZIP` + `RESUME_GRKT_CKPT=True`. Fingerprint chặn resume khác cấu hình | `py_compile` + 32 cell notebook compile sạch; chưa chạy GPU/24 GB data trên máy dev |
 
 #### Khai báo chỉnh sửa mã nguồn mở GRKT (bắt buộc cho mục "khai báo AI/mã nguồn mở")
 

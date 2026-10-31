@@ -22,6 +22,7 @@ Thứ tự các bước — trùng với các mục in ra màn hình:
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
@@ -32,7 +33,7 @@ import torch
 from .baselines import level1_baseline
 from .calibration import calibration_table, reliability_plot, save_reliability_rows
 from .dataset_spec import ensure_canonical, get_spec, has_canonical, probe_columns
-from .grkt_api import predict_grkt, run_grkt_experiment
+from .grkt_api import TrainingPaused, predict_grkt, run_grkt_experiment
 from .grkt_data import (
     adjacency_from_graphs,
     build_grkt_data,
@@ -146,6 +147,9 @@ def run_dataset(
     run_multi_seed: bool = False,
     seeds: Sequence[int] = (42, 123, 456),
     resume_grkt_ckpt: bool = False,
+    time_budget_min: Optional[float] = None,
+    deadline: Optional[float] = None,
+    ckpt_every_min: float = 10.0,
     device=None,
     verbose: bool = True,
 ) -> Dict[str, object]:
@@ -167,12 +171,22 @@ def run_dataset(
     ``baseline_epochs`` là số epoch khi phải HUẤN LUYỆN LẠI đường nền DKT/GKT (tập chưa có
     checkpoint Cấp độ 1). Mặc định ``None`` = dùng chung ``epochs`` với GRKT; nên đặt 20 theo
     đúng công thức Cấp độ 1 để đường nền không yếu một cách nhân tạo.
+
+    Resume qua nhiều phiên Kaggle: ``resume_grkt_ckpt=True`` nạp lại ``GRKT-<graph>.pt`` (đã
+    train xong -> bỏ qua train) hoặc ``ckpt_GRKT-<graph>.pt`` (dừng giữa epoch -> train tiếp
+    đúng batch còn lại). ``time_budget_min``/``deadline`` là ngân sách thời gian: khi hết,
+    ``train_grkt`` ghi checkpoint rồi raise :class:`~level2.grkt_api.TrainingPaused` để phiên
+    Kaggle không bị kill giữa lúc ghi. ``ckpt_every_min`` là nhịp ghi checkpoint giữa epoch.
     """
     spec = get_spec(dataset)
     device = _device_of(device)
     save_dir = Path(save_root if save_root is not None else Path(spec.canonical_file).parent) / spec.name
     save_dir.mkdir(parents=True, exist_ok=True)
     out = {"dataset": spec.name, "save_dir": str(save_dir), "artifacts": {}}
+    # ``run_level2`` truyền xuống một ``deadline`` tuyệt đối chung cho mọi tập; gọi trực tiếp
+    # ``run_dataset`` thì ``time_budget_min`` được quy ra mốc tuyệt đối ngay tại đây.
+    if deadline is None and time_budget_min:
+        deadline = time.time() + float(time_budget_min) * 60.0
 
     # ------------------------------------------------------------ 1. chuẩn hoá + split
     print("=" * 72)
@@ -275,12 +289,31 @@ def run_dataset(
               "(nhiều khái niệm hiếm chỉ làm đồ thị to lên chứ không thêm tín hiệu), rồi mới tới "
               "batch_size hoặc max_seq_len. Xem mục 'Sự cố thường gặp' của notebook.")
     if resume_grkt_ckpt:
-        print("  [resume] BẬT: biến thể nào đã có GRKT-<graph>.pt trong thư mục output sẽ được nạp "
-              "thay vì train lại. Chỉ dùng khi lần chạy trước có CÙNG split_seed/variants/"
-              "cold_thresh/graph_thresh/d_hidden — xem cảnh báo ở [resume] bên dưới.")
+        print("  [resume] BẬT: ưu tiên GRKT-<graph>.pt (đã train xong -> chỉ đánh giá); nếu chưa "
+              "có thì dùng ckpt_GRKT-<graph>.pt (dừng giữa epoch -> train tiếp). Chỉ dùng khi "
+              "lần chạy trước có CÙNG split/đồ thị/siêu tham số — fingerprint trong checkpoint "
+              "sẽ chặn nếu khác.")
+    if deadline is not None:
+        print(f"  [ngân sách] còn {max(0.0, deadline - time.time()) / 60.0:.0f} phút; checkpoint "
+              f"giữa epoch mỗi {ckpt_every_min:g} phút -> {save_dir}/ckpt_GRKT-<graph>.pt")
+    if deadline is not None and time.time() >= deadline:
+        # Ngân sách đã cạn trước cả batch đầu (thường do tập trước ăn hết thời gian): dừng
+        # luôn thay vì sinh checkpoint khởi tạo ngẫu nhiên rồi mới raise.
+        raise TrainingPaused(
+            f"[{spec.name}] hết ngân sách thời gian TRƯỚC khi bắt đầu GRKT. Không có checkpoint "
+            f"mới; tăng TIME_BUDGET_MIN (hoặc chạy riêng tập này ở phiên sau)."
+        )
     grkt_results: List[dict] = []
     for kind in variants:
         print(f"\n--- GRKT với đồ thị '{kind}' ---")
+        final_ckpt = save_dir / f"GRKT-{kind}.pt"
+        rolling_ckpt = save_dir / f"ckpt_GRKT-{kind}.pt"
+        resume = None
+        if resume_grkt_ckpt:
+            resume = final_ckpt if final_ckpt.exists() else (
+                rolling_ckpt if rolling_ckpt.exists() else None)
+            if resume is None and verbose:
+                print(f"  [resume] không có {final_ckpt.name} lẫn {rolling_ckpt.name} -> train từ đầu")
         res = run_grkt_experiment(
             data,
             splits,
@@ -300,11 +333,25 @@ def run_dataset(
             dataset=spec.name,
             device=device,
             save_dir=save_dir,
-            resume_ckpt=(str(save_dir / f"GRKT-{kind}.pt") if resume_grkt_ckpt else None),
+            resume_ckpt=(str(resume) if resume is not None else None),
+            deadline=deadline,
+            ckpt_every_min=ckpt_every_min,
             verbose=verbose,
         )
         grkt_results.append(res)
     out["grkt_results"] = grkt_results
+
+    # Hết ngân sách ngay sau GRKT: ghi bảng của những gì đã có rồi dừng, thay vì chạy đường
+    # nền/quỹ đạo và bị Kaggle kill giữa chừng (checkpoint GRKT vẫn còn để phiên sau train tiếp).
+    if deadline is not None and time.time() >= deadline:
+        table = pd.DataFrame([_table_row(r) for r in grkt_results], columns=TABLE_COLUMNS)
+        table = table.sort_values("auc", ascending=False)
+        table.to_csv(save_dir / "level2_metrics.csv", index=False)
+        raise TrainingPaused(
+            f"[{spec.name}] hết ngân sách thời gian sau GRKT. Đã ghi {save_dir/'level2_metrics.csv'} "
+            f"(chỉ các dòng GRKT) và checkpoint trong {save_dir}. Phiên sau attach lại zip, đặt "
+            "RESUME_GRKT_CKPT=True và tăng TIME_BUDGET_MIN để chạy tiếp đường nền/quỹ đạo."
+        )
 
     # ------------------------------------------------------------ 5. đường nền Cấp độ 1
     base_results: List[dict] = []
@@ -335,6 +382,7 @@ def run_dataset(
             collect_probs=True,
             shared_graph_type="Transition",
             save_dir=save_dir,
+            deadline=deadline,
             verbose=verbose,
         )
         base_results, base_probs = got["results"], got["probs"]
@@ -480,16 +528,23 @@ def run_level2(
     datasets: Sequence[str] = ("assist2009", "junyi"),
     *,
     save_root=None,
+    time_budget_min: Optional[float] = None,
     **kwargs,
 ) -> Dict[str, object]:
-    """Lặp :func:`run_dataset` qua nhiều tập dữ liệu và nối bảng (yêu cầu ≥ 2 dataset)."""
+    """Lặp :func:`run_dataset` qua nhiều tập dữ liệu và nối bảng (yêu cầu ≥ 2 dataset).
+
+    ``time_budget_min`` là ngân sách của CẢ LẦN CHẠY: mốc dừng được tính MỘT lần ở đây rồi
+    truyền xuống từng tập, nên tập thứ hai không được cấp lại đủ ngân sách và phiên Kaggle
+    không bị kill giữa lúc ghi checkpoint.
+    """
+    deadline = (time.time() + float(time_budget_min) * 60.0) if time_budget_min else None
     runs: Dict[str, dict] = {}
     frames = []
     for name in datasets:
         print("\n" + "#" * 72)
         print(f"# TẬP DỮ LIỆU: {name}")
         print("#" * 72)
-        run = run_dataset(name, save_root=save_root, **kwargs)
+        run = run_dataset(name, save_root=save_root, deadline=deadline, **kwargs)
         runs[name] = run
         t = run["table"].copy()
         t.insert(0, "dataset", name)

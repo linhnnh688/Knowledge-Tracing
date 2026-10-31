@@ -174,24 +174,51 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
    `leak_report.txt`, `graphs_train_only.npz`, `level2_metrics.csv`,
    `trajectories/{traj_*.npz, mastery_*.csv, heatmap_*.png, curves_*.png}`,
    `trajectory_metrics.csv`, `calibration.csv`, `reliability.png`, `reliability_rows.csv`,
-   `multiseed_metrics.csv`, `summary.json`, `GRKT-<graph>.pt`, `baselines/*.pt`
+   `multiseed_metrics.csv`, `summary.json`, `GRKT-<graph>.pt`, `ckpt_GRKT-<graph>.pt`
+   (checkpoint giữa epoch — chỉ có trong lúc train, và được xoá khi biến thể đó xong),
+   `baselines/*.pt`
    (chỉ khi phải huấn luyện lại đường nền, ví dụ Junyi); nối nhiều dataset ở
    `level2_all_datasets.csv`. Cấu hình mặc định KHÔNG sinh `calibration.csv`,
    `reliability.png`, `reliability_rows.csv` và `multiseed_metrics.csv` (hai bước cuối tắt) —
    chỉ có khi bật `RUN_CALIBRATION` / `RUN_MULTI_SEED`.
 7. **Cell §8.5** gói cả cây `level2_out/` thành `/kaggle/working/level2_output.zip` để tải về
    một lần từ tab Output (Kaggle xoá `/kaggle/working` khi session kết thúc). Mặc định bỏ
-   `junyi_canonical.csv` (tái sinh được) và file > `MAX_MB=150`; đặt `KEEP_CKPTS=False` nếu chỉ
-   cần số liệu + ảnh. Chạy lại cell bất cứ lúc nào để gói bổ sung — zip cũ bị ghi đè.
-8. **Cứu một lần chạy đã train xong nhưng chết ở bước sau:** B4 lưu `GRKT-<graph>.pt` vào
-   `SAVE_DIR/<dataset>/` NGAY khi mỗi biến thể train xong, và toàn bộ bước vẽ hình
-   (heatmap/đường cong/reliability) đã bọc trong `_safe_plot` — lỗi matplotlib chỉ in cảnh báo,
-   không làm mất `result`. Nếu vẫn phải chạy lại cell §3 trong cùng session, đặt
-   `RESUME_GRKT_CKPT=True`: B4 nạp trọng số cũ thay vì train lại (tiết kiệm hàng giờ GPU Kaggle),
-   các bước B5→B8 chạy bình thường. **Chỉ bật khi không đổi** `SPLIT_SEED`, `VARIANTS`,
-   `COLD_THRESH`, `GRAPH_THRESH`, `D_HIDDEN` so với lần đã train: `load_state_dict(strict=True)`
-   phát hiện khác kiến trúc nhưng KHÔNG phát hiện khác đồ thị hay khác split.
-   (`torch.load(..., weights_only=True)` — checkpoint chỉ chứa tensor.)
+   `junyi_canonical.csv` (tái sinh được) và file > `MAX_MB=150` — **trừ checkpoint GRKT**, được
+   giữ bất kể kích thước vì thiếu nó là mất khả năng resume; đặt `KEEP_CKPTS=False` nếu chỉ
+   cần số liệu + ảnh (khi đó KHÔNG resume được). Chạy lại cell bất cứ lúc nào để gói bổ sung —
+   zip cũ bị ghi đè.
+8. **Resume qua nhiều phiên 12 giờ** (bắt buộc khi GRKT chưa train xong):
+   * `train_grkt` ghi `ckpt_GRKT-<graph>.pt` mỗi `CKPT_EVERY_MIN=10` phút và cuối mỗi epoch:
+     trọng số + trạng thái Adam + epoch + **đúng batch đang dở** + thứ tự batch + best state.
+     Session bị kill bất ngờ mất tối đa 10 phút GPU. Ghi qua file tạm rồi `os.replace` nên
+     kill giữa lúc ghi không làm hỏng checkpoint cũ.
+   * `TIME_BUDGET_MIN=600` (10 giờ) là mốc dừng chủ động, tính **một lần** cho cả lần chạy
+     (`run_level2`) rồi dùng cho mọi tập. Hết ngân sách, GRKT ghi checkpoint rồi raise
+     `TrainingPaused`; nếu tất cả biến thể GRKT đã xong, `level2_metrics.csv` (các dòng GRKT)
+     cũng được ghi trước khi raise. `0`/`None` = không giới hạn.
+   * Quy trình: **phiên trước** chạy §8.5 → tải `level2_output.zip` (chứa `ckpt_GRKT-*.pt`,
+     `GRKT-*.pt`, `split.json`); **phiên sau** upload zip đó thành **private Kaggle Dataset**
+     → `Add Input` → đặt `RESUME_ZIP="/kaggle/input/<slug>/level2_output.zip"` (để `None` nếu
+     chỉ có đúng một zip) → chạy §0.3 để giải nén về `/kaggle/working` → chạy §3 với
+     `RESUME_GRKT_CKPT=True` (mặc định). Biến thể đã xong được nạp và chỉ đánh giá; biến thể
+     dở dang train tiếp đúng batch còn lại, kể cả phần loss dở của epoch.
+   * Checkpoint lưu **fingerprint** (dataset, loại đồ thị, K, n_probs, số người/số bước của
+     split, `BATCH_SIZE`, `D_HIDDEN`, `K_HIDDEN`, `K_HOP`, `ALPHA`, `TAU`, `THRESH`,
+     `SPLIT_SEED`, `LR`, số cạnh). Resume với cấu hình khác sẽ raise thay vì lặng lẽ trộn hai
+     lần train; muốn train lại từ đầu thì đặt `RESUME_GRKT_CKPT=False` **và** xoá
+     `ckpt_GRKT-*.pt` lẫn `GRKT-*.pt`. (`torch.load(..., weights_only=False)` vì payload có
+     `order`/`history`/`fingerprint`; file do chính repo sinh ra và người dùng tự attach.)
+   * §8.4 in trạng thái (`epoch`, `batch`, `best val AUC`) của mọi checkpoint, kể cả sau khi
+     dừng vì `TrainingPaused`.
+   * **Đường nền DKT/GKT phải train lại (Junyi) cũng resume:** mỗi epoch xong ghi
+     `baselines/ckpt_<tên>.pt` (trọng số + Adam + epoch + best state); train xong ghi
+     `baselines/<tên>.pt` kèm `baselines/<tên>.json` chứa fingerprint split/cấu hình. Lần chạy
+     sau nạp lại thay vì train lại cả 20 epoch; fingerprint khác thì raise kèm hướng dẫn xoá.
+     Với ASSISTments vẫn nạp checkpoint Cấp độ 1 trong `outputs/level1` như cũ.
+   * **Lưu ý cho lần chạy đang dở:** bản code trước tính năng này chỉ lưu `GRKT-<graph>.pt`
+     khi một biến thể đã train **xong**. Nếu phiên hiện tại bị cắt giữa chừng thì không có gì
+     để resume — vẫn nên chạy §8.5 ngay để mang theo `split.json`, CSV chuẩn hoá (nếu đã có)
+     và các đường nền đã tính, giảm việc phải làm lại ở phiên sau.
 
 ### Dữ liệu Junyi — ánh xạ cột
 

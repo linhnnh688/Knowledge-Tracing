@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import os
 import random
 import sys
 import time
@@ -161,6 +162,63 @@ def _to_device_feed(model, batch, mode: str, device) -> dict:
     return feed
 
 
+# ---------------------------------------------------------------- checkpoint/resume
+#: Định danh cho phép phân biệt checkpoint "đang train dở" (có optimizer/epoch/batch) với
+#: checkpoint cuối cùng ``GRKT-<graph>.pt`` (chỉ là state_dict để nạp và bỏ qua train).
+RESUME_FORMAT = "grkt-resume-v1"
+
+
+class TrainingPaused(RuntimeError):
+    """Hết ngân sách thời gian. Checkpoint đã được ghi NGAY TRƯỚC khi raise."""
+
+
+def _atomic_torch_save(payload, path: Path) -> None:
+    """Ghi ra file tạm rồi ``os.replace`` — session bị kill giữa lúc ghi không làm hỏng file cũ."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    torch.save(payload, tmp)
+    os.replace(tmp, path)
+
+
+def _cpu_state_dict(state: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    return {k: v.detach().cpu().clone() for k, v in state.items()}
+
+
+def _optimizer_state_cpu(optim) -> dict:
+    """Đưa trạng thái Adam về CPU; checkpoint nhỏ, nạp lại ở phiên khác không phụ thuộc GPU."""
+    state = optim.state_dict()
+    return {
+        "state": {
+            idx: {k: (v.detach().cpu().clone() if torch.is_tensor(v) else v)
+                  for k, v in entry.items()}
+            for idx, entry in state["state"].items()
+        },
+        "param_groups": state["param_groups"],
+    }
+
+
+def _optimizer_state_to_device(optim, device) -> None:
+    for entry in optim.state.values():
+        for k, v in entry.items():
+            if torch.is_tensor(v):
+                entry[k] = v.to(device)
+
+
+def _check_fingerprint(previous: Optional[dict], current: dict) -> None:
+    """Từ chối resume nếu split/đồ thị/siêu tham số đã đổi (load_state_dict không bắt được)."""
+    if not previous:
+        return
+    diff = {k: (previous.get(k), v) for k, v in current.items() if previous.get(k) != v}
+    if diff:
+        detail = ", ".join(f"{k}: {old} -> {new}" for k, (old, new) in diff.items())
+        raise RuntimeError(
+            "Checkpoint được tạo với cấu hình khác (" + detail + "). Xoá checkpoint cũ "
+            "(cả ckpt_GRKT-*.pt lẫn GRKT-*.pt) rồi train lại — tiếp tục với cấu hình khác "
+            "sẽ cho kết quả không tái lập được."
+        )
+
+
 # ---------------------------------------------------------------- train
 def train_grkt(
     model,
@@ -172,12 +230,24 @@ def train_grkt(
     device=None,
     tag: str = "GRKT",
     verbose: bool = True,
+    *,
+    seed: int = 42,
+    resume_state: Optional[dict] = None,
+    ckpt_path=None,
+    fingerprint: Optional[dict] = None,
+    deadline: Optional[float] = None,
+    ckpt_every_s: float = 600.0,
 ) -> Dict[str, object]:
     """Vòng lặp epoch riêng của Cấp độ 2: early stop theo val AUC TOÀN CỤC.
 
-    Dùng lại ``train_an_epoch``/``eval_an_epoch`` của upstream cho việc đệm batch và tính
-    AUC/ACC, nhưng tự quản lý optimizer và checkpoint (snapshot ``state_dict`` về CPU thay
-    vì ``deepcopy(model)``).
+    Khác upstream ``Runner.fit`` ở hai điểm phục vụ resume qua nhiều phiên Kaggle:
+
+    * Shuffle bằng ``np.random.RandomState`` và lưu ``order`` + ``batch_pos`` vào checkpoint,
+      nên dừng giữa epoch vẫn tiếp tục đúng thứ tự batch còn lại.
+    * Cứ ``ckpt_every_s`` giây (và cuối mỗi epoch) ghi ``ckpt_path`` gồm weights, optimizer,
+      epoch, batch, best_state. Session bị kill mất tối đa ``ckpt_every_s`` phút.
+    * ``deadline`` (epoch giây) cho phép dừng chủ động trước khi Kaggle cắt phiên; checkpoint
+      được ghi rồi raise :class:`TrainingPaused`.
     """
     if device is None:
         device = next(model.parameters()).device
@@ -188,9 +258,91 @@ def train_grkt(
 
     history = {k: [] for k in ["train_loss", "val_loss", "val_auc", "val_acc"]}
     best_auc, best_state, wait = -1.0, None, 0
+    epoch, batch_pos = 0, 0
+    order: Optional[List[int]] = None
+    loss_sum, loss_count = 0.0, 0
+    if resume_state:
+        _check_fingerprint(resume_state.get("fingerprint"), fingerprint or {})
+        model.load_state_dict(resume_state["state_dict"])
+        model.optim.load_state_dict(resume_state["optim"])
+        _optimizer_state_to_device(model.optim, device)
+        model.to(device)
+        epoch = int(resume_state.get("epoch", 0))
+        batch_pos = int(resume_state.get("batch_pos", 0))
+        order = resume_state.get("order")
+        loss_sum = float(resume_state.get("loss_sum", 0.0))
+        loss_count = int(resume_state.get("loss_count", 0))
+        best_auc = float(resume_state.get("best_auc", -1.0))
+        best_state = resume_state.get("best_state")
+        wait = int(resume_state.get("wait", 0))
+        history = resume_state.get("history", history)
+        if verbose:
+            print(f"  [{tag}] RESUME: đã xong epoch {epoch}, đang ở batch {batch_pos} "
+                  f"| best val AUC={best_auc:.4f} | chờ {wait}/{patience}")
+
+    def _save(ep: int, pos: int, ord_: Optional[List[int]], lsum: float, lcnt: int) -> None:
+        if ckpt_path is None:
+            return
+        _atomic_torch_save({
+            "format": RESUME_FORMAT,
+            "state_dict": _cpu_state_dict(model.state_dict()),
+            "optim": _optimizer_state_cpu(model.optim),
+            "epoch": int(ep),
+            "batch_pos": int(pos),
+            "order": ord_,
+            "loss_sum": float(lsum),
+            "loss_count": int(lcnt),
+            "best_auc": float(best_auc),
+            "best_state": best_state,
+            "wait": int(wait),
+            "history": history,
+            "fingerprint": fingerprint or {},
+            "tag": tag,
+        }, ckpt_path)
+
     t0 = time.time()
-    for epoch in range(1, int(epochs) + 1):
-        train_loss = model.train_an_epoch(list(train_items))
+    last_ckpt = t0
+    n_items = len(train_items)
+    bs = max(1, int(model.args.batch_size))
+    while epoch < int(epochs):
+        current = epoch + 1          # epoch đang chạy (1-based); ``epoch`` = số epoch đã xong
+        if order is None:
+            # Epoch mới (hoặc vừa nạp checkpoint cuối epoch): sinh thứ tự batch và reset loss.
+            order = np.random.RandomState(int(seed) * 1000 + current).permutation(n_items).tolist()
+            loss_sum, loss_count = 0.0, 0
+            batch_pos = 0
+        n_batches = (len(order) + bs - 1) // bs
+        model.train()
+        for bidx in range(batch_pos, n_batches):
+            if deadline is not None and time.time() >= deadline:
+                # Lưu ``current - 1`` (số epoch đã xong) + batch đã xong + order, để resume
+                # không bỏ qua epoch khi dừng đúng ở batch 0.
+                _save(current - 1, bidx, order, loss_sum, loss_count)
+                raise TrainingPaused(
+                    f"[{tag}] hết ngân sách thời gian tại epoch {current}, batch {bidx}/"
+                    f"{n_batches}. Checkpoint đã lưu: {ckpt_path}. Phiên sau attach lại zip "
+                    f"và đặt RESUME_GRKT_CKPT=True."
+                )
+            chunk = [train_items[i] for i in order[bidx * bs:(bidx + 1) * bs]]
+            model.optim.zero_grad()
+            feed = model.get_feed_dict(chunk, "train")
+            feed["mark"] = bidx * bs
+            model.forward(feed)
+            loss = model.loss(feed)
+            loss.backward()
+            model.optim.step()
+            loss_sum += float(loss.item())
+            loss_count += 1
+            now = time.time()
+            if ckpt_path is not None and ckpt_every_s and now - last_ckpt >= ckpt_every_s:
+                _save(current - 1, bidx + 1, order, loss_sum, loss_count)
+                last_ckpt = now
+                if verbose:
+                    print(f"  [{tag}] checkpoint giữa epoch: epoch {current}, batch {bidx + 1}/"
+                          f"{n_batches} -> {Path(ckpt_path).name}")
+
+        epoch, batch_pos, order = current, 0, None
+        train_loss = loss_sum / max(loss_count, 1)
         va = _eval_items(model, val_items, device, tag=tag)
         history["train_loss"].append(float(train_loss))
         history["val_loss"].append(va["loss"])
@@ -199,7 +351,7 @@ def train_grkt(
         improved = va["auc"] > best_auc
         if improved:
             best_auc = va["auc"]
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            best_state = _cpu_state_dict(model.state_dict())
             wait = 0
         else:
             wait += 1
@@ -209,6 +361,8 @@ def train_grkt(
                 f"val loss={va['loss']:.4f} val auc={va['auc']:.4f} val acc={va['acc']:.4f}"
                 + (" *" if improved else "")
             )
+        _save(epoch, 0, None, 0.0, 0)
+        last_ckpt = time.time()
         if wait >= patience:
             if verbose:
                 print(f"  [{tag}] early stopping tại epoch {epoch}")
@@ -307,6 +461,8 @@ def run_grkt_experiment(
     device=None,
     save_dir=None,
     resume_ckpt: Optional[str] = None,
+    deadline: Optional[float] = None,
+    ckpt_every_min: float = 10.0,
     verbose: bool = True,
 ) -> Dict[str, object]:
     """Huấn luyện một biến thể đồ thị của GRKT và trả về dict ĐỦ KHOÁ như ``level1.pipeline.run_experiment``.
@@ -354,31 +510,70 @@ def run_grkt_experiment(
     train_items = split_sets["train"]["items"]
     val_items = split_sets["val"]["items"]
     test_items = split_sets["test"]["items"]
+    name = f"GRKT-{graph_kind}"
+
+    # Vân tay dữ liệu/cấu hình: load_state_dict chỉ bắt khác kiến trúc, KHÔNG bắt khác split,
+    # đồ thị hay batch_size — trong khi resume sai split sẽ cho kết quả không tái lập được.
+    fingerprint = {
+        "dataset": dataset,
+        "graph_kind": graph_kind,
+        "n_knows": int(grkt_data.concept_num),
+        "n_probs": int(grkt_data.n_probs),
+        "n_train": len(train_items),
+        "n_val": len(val_items),
+        "n_test": len(test_items),
+        "n_steps_train": int(sum(len(items) for items in train_items)),
+        "batch_size": int(batch_size),
+        "d_hidden": int(d_hidden),
+        "k_hidden": int(k_hidden),
+        "k_hop": int(k_hop),
+        "alpha": float(alpha),
+        "tau": float(tau),
+        "thresh": float(thresh),
+        "seed": int(seed),
+        "lr": float(lr),
+        "edges_rel": int(np.asarray(rel).sum()),
+        "edges_pre": int(np.asarray(pre).sum()),
+    }
+    rolling_ckpt = (Path(save_dir) / f"ckpt_{name}.pt") if save_dir is not None else None
 
     loaded_from = None
+    resume_state = None
+    skipped_training = False
     if resume_ckpt is not None and Path(resume_ckpt).exists():
-        # weights_only=True: checkpoint chỉ là dict of tensors, nên không cần (và không được
-        # phép) cho torch.load unpickle arbitrary Python object.
-        state = torch.load(resume_ckpt, map_location=device, weights_only=True)
-        state = state.get("state_dict", state) if isinstance(state, dict) else state
-        model.load_state_dict(state)  # strict: sai kiến trúc/shape là raise, không im lặng
+        # Checkpoint giữa epoch có list/dict/float (order, history, fingerprint) nên phải dùng
+        # weights_only=False; file do chính repo sinh ra và người dùng tự attach.
+        payload = torch.load(resume_ckpt, map_location="cpu", weights_only=False)
         loaded_from = str(resume_ckpt)
-        val_metrics = evaluate_grkt(model, val_items, device=device)
-        out = {
-            "best_val_auc": val_metrics["auc"],
-            "history": {"train_loss": [], "val_loss": [], "val_auc": [], "val_acc": []},
-            "seconds": 0.0,
-        }
-        if verbose:
-            print(f"  [resume] nạp {loaded_from}, BỎ QUA HuẤN LUYỆN "
-                  f"(val AUC={val_metrics['auc']:.4f}). Chỉ bật khi lần chạy trước dùng đúng "
-                  "split_seed/variants/cold_thresh/graph_thresh/d_hidden như lần này — load_state_dict "
-                  "chỉ bắt được khác KIẾN TRÚC, không bắt được khác ĐỒ THỊ hay khác split.")
-    else:
-        if resume_ckpt is not None and verbose:
+        if isinstance(payload, dict) and payload.get("format") == RESUME_FORMAT:
+            resume_state = payload
+            if verbose:
+                print(f"  [resume] {loaded_from}: tiếp tục từ epoch {payload.get('epoch')}, "
+                      f"batch {payload.get('batch_pos')} | best val AUC="
+                      f"{float(payload.get('best_auc', -1.0)):.4f}")
+        else:
+            state = payload.get("state_dict", payload) if isinstance(payload, dict) else payload
+            model.load_state_dict(state)  # strict: sai kiến trúc/shape là raise, không im lặng
+            skipped_training = True
+            val_metrics = evaluate_grkt(model, val_items, device=device)
+            out = {
+                "best_val_auc": val_metrics["auc"],
+                "history": {"train_loss": [], "val_loss": [], "val_auc": [], "val_acc": []},
+                "seconds": 0.0,
+            }
+            if verbose:
+                print(f"  [resume] nạp {loaded_from}, BỎ QUA HuẤN LUYỆN "
+                      f"(val AUC={val_metrics['auc']:.4f}). Checkpoint cuối chỉ chứa trọng số; "
+                      "chỉ bật khi lần chạy trước dùng đúng split/đồ thị/siêu tham số như lần này.")
+    if not skipped_training:
+        if resume_ckpt is not None and resume_state is None and verbose:
             print(f"  [resume] không có {resume_ckpt} -> huấn luyện bình thường")
-        out = train_grkt(model, train_items, val_items, epochs=epochs, lr=lr, patience=patience,
-                         device=device, tag=f"GRKT-{graph_kind}", verbose=verbose)
+        out = train_grkt(
+            model, train_items, val_items, epochs=epochs, lr=lr, patience=patience,
+            device=device, tag=name, verbose=verbose, seed=seed,
+            resume_state=resume_state, ckpt_path=rolling_ckpt, fingerprint=fingerprint,
+            deadline=deadline, ckpt_every_s=(float(ckpt_every_min) * 60.0 if ckpt_every_min else 0.0),
+        )
     test_metrics = evaluate_grkt(model, test_items, device=device)
 
     result = {
@@ -405,6 +600,10 @@ def run_grkt_experiment(
         ckpt = save_dir / f"{result['name']}.pt"
         torch.save({k: v.detach().cpu() for k, v in model.state_dict().items()}, ckpt)
         result["ckpt"] = str(ckpt)
+        if rolling_ckpt is not None and rolling_ckpt.exists():
+            # Đã có checkpoint cuối: giữ bản giữa epoch chỉ làm zip resume nặng thêm và dễ
+            # khiến người đọc tưởng lần chạy còn dở.
+            rolling_ckpt.unlink()
     result["model"] = model.cpu()
     print(
         f">>> {result['name']} test AUC={result['test_auc']:.4f} "
