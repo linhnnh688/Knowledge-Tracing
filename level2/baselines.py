@@ -312,14 +312,29 @@ def train_baseline_resumable(
         }, ckpt_path)
 
     t0, paused = time.time(), False
+    last_epoch_s: Optional[float] = None
     while epoch < int(epochs):
         if deadline is not None and time.time() >= deadline:
             _save(epoch)
             paused = True
             break
         current = epoch + 1
+        # Checkpoint chỉ ghi ở ranh giới epoch (một epoch Junyi đã hàng chục phút), nên nếu
+        # epoch này không kịp xong thì dừng NGAY: Kaggle kill giữa epoch sẽ mất cả epoch đó.
+        if (deadline is not None and last_epoch_s is not None
+                and time.time() + last_epoch_s * 1.1 > deadline):
+            _save(epoch)
+            paused = True
+            if verbose:
+                print(f"  [{model_type}] dừng TRƯỚC epoch {current}: epoch trước mất "
+                      f"{last_epoch_s / 60:.0f} phút, chỉ còn "
+                      f"{max(0.0, deadline - time.time()) / 60:.0f} phút ngân sách — checkpoint "
+                      f"đã ghi, phiên sau train tiếp từ epoch {epoch}")
+            break
+        t_epoch = time.time()
         tr = _epoch_loop(model, bundle["train_loader"], model_type, device, kt_loss, optimizer)
         va = _epoch_loop(model, bundle["val_loader"], model_type, device, kt_loss, optimizer=None)
+        last_epoch_s = time.time() - t_epoch
         history["train_loss"].append(tr["loss"])
         history["val_loss"].append(va["loss"])
         history["train_auc"].append(tr["auc"])
