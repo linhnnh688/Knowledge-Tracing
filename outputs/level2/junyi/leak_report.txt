@@ -1,0 +1,11 @@
+=== BÁO CÁO CHỐNG RÒ RÌ (Cấp độ 2 / GRKT) ===
+File chuẩn hoá          : junyi | time_mode=timestamp_ms
+Người học train/val/test: 27737/9245/9247 (split seed=42, tỉ lệ 0.6/0.2)
+Giám sát giao nhau      : train∩val=0 train∩test=0 val∩test=0 (phải = 0)
+Số tương tác            : {'train': 2421121, 'val': 801456, 'test': 796748}
+Không gian khái niệm    : n_knows=200 (Cấp độ 1 + 1 cho padding), n_probs=3987
+Số cạnh đồ thị từ train : 77392
+Số cạnh nếu dựng từ val : 71612 (khác train => đồ thị phụ thuộc tập huấn luyện)
+  biến thể train    : rel= 24908 pre= 14468
+Nhãn hiện tại/tương lai : không dùng. GRKT chỉ dùng knows[i+1] và times[i+1] (danh tính + thời điểm câu hỏi kế tiếp, KHÔNG dùng kết quả) cho giai đoạn học/quên.
+Padding                 : chỉ số 0 (khái niệm & câu hỏi); hàng/cột 0 của đồ thị luôn = 0.

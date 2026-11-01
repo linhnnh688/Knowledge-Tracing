@@ -1,0 +1,2 @@
+graph,users,steps,consistency_strengthen,consistency_spread,locality,forget_slope,pearson_dt_dm,abs_delta_strengthen,abs_delta_learn_forget,abs_delta_retrieval
+train,150,13975,1.0,1.0,0.9999999998709539,-9.599378123449283e-05,-0.4419303512051821,0.02702373062455377,0.0005354526049753379,0.054818416982889175

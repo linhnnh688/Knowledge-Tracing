@@ -1,0 +1,5 @@
+model,model_type,graph,auc,acc,loss,val_auc,n_test,edges_rel,edges_pre,seed,seconds
+GRKT-train,GRKT,train,0.8157,0.8052,0.4238,0.8151,787501,24908,14468,42,0.0
+GKT-Transition,GKT,Transition,0.7673,0.7827,0.464,,787501,0,0,42,0.0
+DKT,DKT,N/A,0.7647,0.7849,0.4633,,787501,0,0,42,0.0
+GKT-Zero,GKT,Zero,0.7557,0.7802,0.4699,0.7547,787501,0,0,42,0.0
