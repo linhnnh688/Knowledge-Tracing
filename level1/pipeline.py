@@ -102,7 +102,17 @@ def save_split(bundle, out_path: Path) -> None:
     return payload
 
 
-def build_model(model_type, concept_num, graph=None, graph_type="Transition", hid_dim=32, emb_dim=32, dropout=0.0, edge_types=2, device=None):
+def build_model(
+    model_type,
+    concept_num,
+    graph=None,
+    graph_type="Transition",
+    hid_dim=32,
+    emb_dim=32,
+    dropout=0.0,
+    edge_types=2,
+    device=None,
+):
     ensure_gkt_on_path()
     from models import DKT, GKT
 
@@ -198,7 +208,17 @@ def train_one(
         device = next(model.parameters()).device
     kt_loss = KTLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    history = {k: [] for k in ["train_loss", "val_loss", "train_auc", "val_auc", "train_acc", "val_acc"]}
+    history = {
+        k: []
+        for k in [
+            "train_loss",
+            "val_loss",
+            "train_auc",
+            "val_auc",
+            "train_acc",
+            "val_acc",
+        ]
+    }
     best_auc = -1.0
     best_state = None
     wait = 0
@@ -215,7 +235,9 @@ def train_one(
         improved = va["auc"] > best_auc
         if improved:
             best_auc = va["auc"]
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            best_state = {
+                k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+            }
             wait = 0
         else:
             wait += 1
@@ -298,7 +320,9 @@ def run_experiment(
         lr=lr,
         device=device,
     )
-    test_metrics = evaluate(model, bundle["test_loader"], model_type=model_type, device=device)
+    test_metrics = evaluate(
+        model, bundle["test_loader"], model_type=model_type, device=device
+    )
     name = model_type if model_type == "DKT" else f"GKT-{graph_type}"
     result = {
         "name": name,
@@ -312,7 +336,9 @@ def run_experiment(
         "history": history,
         "seed": seed,
     }
-    print(f">>> {name} test AUC={result['test_auc']:.4f} Acc={result['test_acc']:.4f} Loss={result['test_loss']:.4f}")
+    print(
+        f">>> {name} test AUC={result['test_auc']:.4f} Acc={result['test_acc']:.4f} Loss={result['test_loss']:.4f}"
+    )
     if save_dir:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -364,7 +390,9 @@ def run_level1(
         use_cuda=device.type == "cuda",
     )
     split = save_split(shared, save_dir / "split.json")
-    print(f"split users train/val/test = {len(split['train_users'])}/{len(split['val_users'])}/{len(split['test_users'])}")
+    print(
+        f"split users train/val/test = {len(split['train_users'])}/{len(split['val_users'])}/{len(split['test_users'])}"
+    )
 
     results = []
     results.append(
@@ -422,5 +450,13 @@ def run_level1(
         }
         for r in results
     ]
-    (save_dir / "metrics.json").write_text(json.dumps(table, indent=2), encoding="utf-8")
-    return {"results": results, "table": table, "split": split, "save_dir": str(save_dir), "shared": shared}
+    (save_dir / "metrics.json").write_text(
+        json.dumps(table, indent=2), encoding="utf-8"
+    )
+    return {
+        "results": results,
+        "table": table,
+        "split": split,
+        "save_dir": str(save_dir),
+        "shared": shared,
+    }

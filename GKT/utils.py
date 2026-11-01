@@ -10,7 +10,7 @@ from torch.autograd import Variable
 
 
 def build_dense_graph(node_num):
-    graph = 1. / (node_num - 1) * np.ones((node_num, node_num))
+    graph = 1.0 / (node_num - 1) * np.ones((node_num, node_num))
     np.fill_diagonal(graph, 0)
     graph = torch.from_numpy(graph).float()
     return graph
@@ -63,7 +63,7 @@ def sample_gumbel(shape, eps=1e-10):
     https://github.com/ericjang/gumbel-softmax/blob/3c8584924603869e90ca74ac20a6a03d99a91ef9/Categorical%20VAE.ipynb ,
     """
     U = torch.rand(shape).float()
-    return - torch.log(eps - torch.log(U + eps))
+    return -torch.log(eps - torch.log(U + eps))
 
 
 def gumbel_softmax_sample(logits, tau=1, eps=1e-10, dim=-1):
@@ -123,7 +123,9 @@ def kl_categorical(preds, log_prior, concept_num, eps=1e-16):
     return kl_div.sum() / (concept_num * preds.size(0))
 
 
-def kl_categorical_uniform(preds, concept_num, num_edge_types, add_const=False, eps=1e-16):
+def kl_categorical_uniform(
+    preds, concept_num, num_edge_types, add_const=False, eps=1e-16
+):
     kl_div = preds * torch.log(preds + eps)
     if add_const:
         const = np.log(num_edge_types)
@@ -134,7 +136,7 @@ def kl_categorical_uniform(preds, concept_num, num_edge_types, add_const=False, 
 def nll_gaussian(preds, target, variance, add_const=False):
     # pred: [concept_num, embedding_dim]
     # target: [concept_num, embedding_dim]
-    neg_log_p = ((preds - target) ** 2 / (2 * variance))
+    neg_log_p = (preds - target) ** 2 / (2 * variance)
     if add_const:
         const = 0.5 * np.log(2 * np.pi * variance)
         neg_log_p += const

@@ -17,7 +17,20 @@ from utils import gumbel_softmax
 
 class GKT(nn.Module):
 
-    def __init__(self, concept_num, hidden_dim, embedding_dim, edge_type_num, graph_type, graph=None, graph_model=None, dropout=0.5, bias=True, binary=False, has_cuda=False):
+    def __init__(
+        self,
+        concept_num,
+        hidden_dim,
+        embedding_dim,
+        edge_type_num,
+        graph_type,
+        graph=None,
+        graph_model=None,
+        dropout=0.5,
+        bias=True,
+        binary=False,
+        has_cuda=False,
+    ):
         super(GKT, self).__init__()
         self.concept_num = concept_num
         self.hidden_dim = hidden_dim
@@ -27,9 +40,19 @@ class GKT(nn.Module):
         self.res_len = 2 if binary else 12
         self.has_cuda = has_cuda
 
-        assert graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'Shuffled', 'PAM', 'MHA', 'VAE']
+        assert graph_type in [
+            "Dense",
+            "Transition",
+            "DKT",
+            "Identity",
+            "Zero",
+            "Shuffled",
+            "PAM",
+            "MHA",
+            "VAE",
+        ]
         self.graph_type = graph_type
-        if graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'Shuffled']:
+        if graph_type in ["Dense", "Transition", "DKT", "Identity", "Zero", "Shuffled"]:
             assert edge_type_num == 2
             assert graph is not None and graph_model is None
             self.graph = nn.Parameter(graph)  # [concept_num, concept_num]
@@ -38,7 +61,7 @@ class GKT(nn.Module):
         else:  # ['PAM', 'MHA', 'VAE']
             assert graph is None
             self.graph = graph  # None
-            if graph_type == 'PAM':
+            if graph_type == "PAM":
                 assert graph_model is None
                 self.graph = nn.Parameter(torch.rand(concept_num, concept_num))
             else:
@@ -58,15 +81,49 @@ class GKT(nn.Module):
 
         # f_self function and f_neighbor functions
         mlp_input_dim = hidden_dim + embedding_dim
-        self.f_self = MLP(mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias)
+        self.f_self = MLP(
+            mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias
+        )
         self.f_neighbor_list = nn.ModuleList()
-        if graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'Shuffled', 'PAM']:
+        if graph_type in [
+            "Dense",
+            "Transition",
+            "DKT",
+            "Identity",
+            "Zero",
+            "Shuffled",
+            "PAM",
+        ]:
             # f_in and f_out functions
-            self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
-            self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
+            self.f_neighbor_list.append(
+                MLP(
+                    2 * mlp_input_dim,
+                    hidden_dim,
+                    hidden_dim,
+                    dropout=dropout,
+                    bias=bias,
+                )
+            )
+            self.f_neighbor_list.append(
+                MLP(
+                    2 * mlp_input_dim,
+                    hidden_dim,
+                    hidden_dim,
+                    dropout=dropout,
+                    bias=bias,
+                )
+            )
         else:  # ['MHA', 'VAE']
             for i in range(edge_type_num):
-                self.f_neighbor_list.append(MLP(2 * mlp_input_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias))
+                self.f_neighbor_list.append(
+                    MLP(
+                        2 * mlp_input_dim,
+                        hidden_dim,
+                        hidden_dim,
+                        dropout=dropout,
+                        bias=bias,
+                    )
+                )
 
         # Erase & Add Gate
         self.erase_add_gate = EraseAddGate(hidden_dim, concept_num)
@@ -94,17 +151,28 @@ class GKT(nn.Module):
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
         x_idx_mat = torch.arange(self.res_len * self.concept_num, device=xt.device)
         x_embedding = self.emb_x(x_idx_mat)  # [res_len * concept_num, embedding_dim]
-        masked_feat = F.embedding(xt[qt_mask], self.one_hot_feat)  # [mask_num, res_len * concept_num]
+        masked_feat = F.embedding(
+            xt[qt_mask], self.one_hot_feat
+        )  # [mask_num, res_len * concept_num]
         res_embedding = masked_feat.mm(x_embedding)  # [mask_num, embedding_dim]
         mask_num = res_embedding.shape[0]
 
-        concept_idx_mat = self.concept_num * torch.ones((batch_size, self.concept_num), device=xt.device).long()
+        concept_idx_mat = (
+            self.concept_num
+            * torch.ones((batch_size, self.concept_num), device=xt.device).long()
+        )
         concept_idx_mat[qt_mask, :] = torch.arange(self.concept_num, device=xt.device)
-        concept_embedding = self.emb_c(concept_idx_mat)  # [batch_size, concept_num, embedding_dim]
+        concept_embedding = self.emb_c(
+            concept_idx_mat
+        )  # [batch_size, concept_num, embedding_dim]
 
         index_tuple = (torch.arange(mask_num, device=xt.device), qt[qt_mask].long())
-        concept_embedding[qt_mask] = concept_embedding[qt_mask].index_put(index_tuple, res_embedding)
-        tmp_ht = torch.cat((ht, concept_embedding), dim=-1)  # [batch_size, concept_num, hidden_dim + embedding_dim]
+        concept_embedding[qt_mask] = concept_embedding[qt_mask].index_put(
+            index_tuple, res_embedding
+        )
+        tmp_ht = torch.cat(
+            (ht, concept_embedding), dim=-1
+        )  # [batch_size, concept_num, hidden_dim + embedding_dim]
         return tmp_ht
 
     # GNN aggregation step, as shown in 3.3.2 Equation 1 of the paper
@@ -125,45 +193,84 @@ class GKT(nn.Module):
         """
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
         masked_qt = qt[qt_mask]  # [mask_num, ]
-        masked_tmp_ht = tmp_ht[qt_mask]  # [mask_num, concept_num, hidden_dim + embedding_dim]
+        masked_tmp_ht = tmp_ht[
+            qt_mask
+        ]  # [mask_num, concept_num, hidden_dim + embedding_dim]
         mask_num = masked_tmp_ht.shape[0]
         self_index_tuple = (torch.arange(mask_num, device=qt.device), masked_qt.long())
-        self_ht = masked_tmp_ht[self_index_tuple]  # [mask_num, hidden_dim + embedding_dim]
+        self_ht = masked_tmp_ht[
+            self_index_tuple
+        ]  # [mask_num, hidden_dim + embedding_dim]
         self_features = self.f_self(self_ht)  # [mask_num, hidden_dim]
-        expanded_self_ht = self_ht.unsqueeze(dim=1).repeat(1, self.concept_num, 1)  #[mask_num, concept_num, hidden_dim + embedding_dim]
-        neigh_ht = torch.cat((expanded_self_ht, masked_tmp_ht), dim=-1)  #[mask_num, concept_num, 2 * (hidden_dim + embedding_dim)]
+        expanded_self_ht = self_ht.unsqueeze(dim=1).repeat(
+            1, self.concept_num, 1
+        )  # [mask_num, concept_num, hidden_dim + embedding_dim]
+        neigh_ht = torch.cat(
+            (expanded_self_ht, masked_tmp_ht), dim=-1
+        )  # [mask_num, concept_num, 2 * (hidden_dim + embedding_dim)]
         concept_embedding, rec_embedding, z_prob = None, None, None
 
-        if self.graph_type in ['Dense', 'Transition', 'DKT', 'Identity', 'Zero', 'Shuffled', 'PAM']:
-            adj = self.graph[masked_qt.long(), :].unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
-            reverse_adj = self.graph[:, masked_qt.long()].transpose(0, 1).unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
+        if self.graph_type in [
+            "Dense",
+            "Transition",
+            "DKT",
+            "Identity",
+            "Zero",
+            "Shuffled",
+            "PAM",
+        ]:
+            adj = self.graph[masked_qt.long(), :].unsqueeze(
+                dim=-1
+            )  # [mask_num, concept_num, 1]
+            reverse_adj = (
+                self.graph[:, masked_qt.long()].transpose(0, 1).unsqueeze(dim=-1)
+            )  # [mask_num, concept_num, 1]
             # self.f_neighbor_list[0](neigh_ht) shape: [mask_num, concept_num, hidden_dim]
-            neigh_features = adj * self.f_neighbor_list[0](neigh_ht) + reverse_adj * self.f_neighbor_list[1](neigh_ht)
+            neigh_features = adj * self.f_neighbor_list[0](
+                neigh_ht
+            ) + reverse_adj * self.f_neighbor_list[1](neigh_ht)
         else:  # ['MHA', 'VAE']
             concept_index = torch.arange(self.concept_num, device=qt.device)
-            concept_embedding = self.emb_c(concept_index)  # [concept_num, embedding_dim]
-            if self.graph_type == 'MHA':
+            concept_embedding = self.emb_c(
+                concept_index
+            )  # [concept_num, embedding_dim]
+            if self.graph_type == "MHA":
                 query = self.emb_c(masked_qt)
                 key = concept_embedding
-                att_mask = Variable(torch.ones(self.edge_type_num, mask_num, self.concept_num, device=qt.device))
+                att_mask = Variable(
+                    torch.ones(
+                        self.edge_type_num, mask_num, self.concept_num, device=qt.device
+                    )
+                )
                 for k in range(self.edge_type_num):
-                    index_tuple = (torch.arange(mask_num, device=qt.device), masked_qt.long())
-                    att_mask[k] = att_mask[k].index_put(index_tuple, torch.zeros(mask_num, device=qt.device))
+                    index_tuple = (
+                        torch.arange(mask_num, device=qt.device),
+                        masked_qt.long(),
+                    )
+                    att_mask[k] = att_mask[k].index_put(
+                        index_tuple, torch.zeros(mask_num, device=qt.device)
+                    )
                 graphs = self.graph_model(masked_qt, query, key, att_mask)
             else:  # self.graph_type == 'VAE'
                 sp_send, sp_rec, sp_send_t, sp_rec_t = self._get_edges(masked_qt)
-                graphs, rec_embedding, z_prob = self.graph_model(concept_embedding, sp_send, sp_rec, sp_send_t, sp_rec_t)
+                graphs, rec_embedding, z_prob = self.graph_model(
+                    concept_embedding, sp_send, sp_rec, sp_send_t, sp_rec_t
+                )
             neigh_features = 0
             for k in range(self.edge_type_num):
-                adj = graphs[k][masked_qt, :].unsqueeze(dim=-1)  # [mask_num, concept_num, 1]
+                adj = graphs[k][masked_qt, :].unsqueeze(
+                    dim=-1
+                )  # [mask_num, concept_num, 1]
                 if k == 0:
                     neigh_features = adj * self.f_neighbor_list[k](neigh_ht)
                 else:
-                    neigh_features = neigh_features + adj * self.f_neighbor_list[k](neigh_ht)
-            if self.graph_type == 'MHA':
-                neigh_features = 1. / self.edge_type_num * neigh_features
+                    neigh_features = neigh_features + adj * self.f_neighbor_list[k](
+                        neigh_ht
+                    )
+            if self.graph_type == "MHA":
+                neigh_features = 1.0 / self.edge_type_num * neigh_features
         # neigh_features: [mask_num, concept_num, hidden_dim]
-        m_next = tmp_ht[:, :, :self.hidden_dim]
+        m_next = tmp_ht[:, :, : self.hidden_dim]
         m_next[qt_mask] = neigh_features
         m_next[qt_mask] = m_next[qt_mask].index_put(self_index_tuple, self_features)
         return m_next, concept_embedding, rec_embedding, z_prob
@@ -189,14 +296,23 @@ class GKT(nn.Module):
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
         mask_num = qt_mask.nonzero().shape[0]
         # GNN Aggregation
-        m_next, concept_embedding, rec_embedding, z_prob = self._agg_neighbors(tmp_ht, qt)  # [batch_size, concept_num, hidden_dim]
+        m_next, concept_embedding, rec_embedding, z_prob = self._agg_neighbors(
+            tmp_ht, qt
+        )  # [batch_size, concept_num, hidden_dim]
         # Erase & Add Gate
-        m_next[qt_mask] = self.erase_add_gate(m_next[qt_mask])  # [mask_num, concept_num, hidden_dim]
+        m_next[qt_mask] = self.erase_add_gate(
+            m_next[qt_mask]
+        )  # [mask_num, concept_num, hidden_dim]
         # GRU
         h_next = m_next
-        res = self.gru(m_next[qt_mask].reshape(-1, self.hidden_dim), ht[qt_mask].reshape(-1, self.hidden_dim))  # [mask_num * concept_num, hidden_num]
-        index_tuple = (torch.arange(mask_num, device=qt_mask.device), )
-        h_next[qt_mask] = h_next[qt_mask].index_put(index_tuple, res.reshape(-1, self.concept_num, self.hidden_dim))
+        res = self.gru(
+            m_next[qt_mask].reshape(-1, self.hidden_dim),
+            ht[qt_mask].reshape(-1, self.hidden_dim),
+        )  # [mask_num * concept_num, hidden_num]
+        index_tuple = (torch.arange(mask_num, device=qt_mask.device),)
+        h_next[qt_mask] = h_next[qt_mask].index_put(
+            index_tuple, res.reshape(-1, self.concept_num, self.hidden_dim)
+        )
         return h_next, concept_embedding, rec_embedding, z_prob
 
     # Predict step, as shown in Section 3.3.3 of the paper
@@ -231,8 +347,14 @@ class GKT(nn.Module):
             pred: predicted correct probability of the question answered at the next timestamp
         """
         next_qt = q_next
-        next_qt = torch.where(next_qt != -1, next_qt, self.concept_num * torch.ones_like(next_qt, device=yt.device))
-        one_hot_qt = F.embedding(next_qt.long(), self.one_hot_q)  # [batch_size, concept_num]
+        next_qt = torch.where(
+            next_qt != -1,
+            next_qt,
+            self.concept_num * torch.ones_like(next_qt, device=yt.device),
+        )
+        one_hot_qt = F.embedding(
+            next_qt.long(), self.one_hot_q
+        )  # [batch_size, concept_num]
         # dot product between yt and one_hot_qt
         pred = (yt * one_hot_qt).sum(dim=1)  # [batch_size, ]
         return pred
@@ -252,7 +374,9 @@ class GKT(nn.Module):
         """
         mask_num = masked_qt.shape[0]
         row_arr = masked_qt.cpu().numpy().reshape(-1, 1)  # [mask_num, 1]
-        row_arr = np.repeat(row_arr, self.concept_num, axis=1)  # [mask_num, concept_num]
+        row_arr = np.repeat(
+            row_arr, self.concept_num, axis=1
+        )  # [mask_num, concept_num]
         col_arr = np.arange(self.concept_num).reshape(1, -1)  # [1, concept_num]
         col_arr = np.repeat(col_arr, mask_num, axis=0)  # [mask_num, concept_num]
         # add reversed edges
@@ -261,7 +385,9 @@ class GKT(nn.Module):
         row_arr = new_row.flatten()  # [2 * mask_num * concept_num, ]
         col_arr = new_col.flatten()  # [2 * mask_num * concept_num, ]
         data_arr = np.ones(2 * mask_num * self.concept_num)
-        init_graph = sp.coo_matrix((data_arr, (row_arr, col_arr)), shape=(self.concept_num, self.concept_num))
+        init_graph = sp.coo_matrix(
+            (data_arr, (row_arr, col_arr)), shape=(self.concept_num, self.concept_num)
+        )
         init_graph.setdiag(0)  # remove self-loop edges
         row_arr, col_arr, _ = sp.find(init_graph)
         row_tensor = torch.from_numpy(row_arr).long()
@@ -297,7 +423,11 @@ class GKT(nn.Module):
             states: list of h_t snapshots (optional, only when return_state=True)
         """
         batch_size, seq_len = features.shape
-        ht = Variable(torch.zeros((batch_size, self.concept_num, self.hidden_dim), device=features.device))
+        ht = Variable(
+            torch.zeros(
+                (batch_size, self.concept_num, self.hidden_dim), device=features.device
+            )
+        )
         pred_list = []
         ec_list = []  # concept embedding list in VAE
         rec_list = []  # reconstructed embedding list in VAE
@@ -307,8 +437,12 @@ class GKT(nn.Module):
             xt = features[:, i]  # [batch_size]
             qt = questions[:, i]  # [batch_size]
             qt_mask = torch.ne(qt, -1)  # [batch_size], next_qt != -1
-            tmp_ht = self._aggregate(xt, qt, ht, batch_size)  # [batch_size, concept_num, hidden_dim + embedding_dim]
-            h_next, concept_embedding, rec_embedding, z_prob = self._update(tmp_ht, ht, qt)  # [batch_size, concept_num, hidden_dim]
+            tmp_ht = self._aggregate(
+                xt, qt, ht, batch_size
+            )  # [batch_size, concept_num, hidden_dim + embedding_dim]
+            h_next, concept_embedding, rec_embedding, z_prob = self._update(
+                tmp_ht, ht, qt
+            )  # [batch_size, concept_num, hidden_dim]
             ht[qt_mask] = h_next[qt_mask]  # update new ht
             if return_state:
                 states.append(h_next.detach())
@@ -331,14 +465,16 @@ class MultiHeadAttention(nn.Module):
     NOTE: Stole and modify from https://github.com/jadore801120/attention-is-all-you-need-pytorch/blob/master/transformer/SubLayers.py
     """
 
-    def __init__(self, n_head, concept_num, input_dim, d_k, dropout=0.):
+    def __init__(self, n_head, concept_num, input_dim, d_k, dropout=0.0):
         super(MultiHeadAttention, self).__init__()
         self.n_head = n_head
         self.concept_num = concept_num
         self.d_k = d_k
         self.w_qs = nn.Linear(input_dim, n_head * d_k, bias=False)
         self.w_ks = nn.Linear(input_dim, n_head * d_k, bias=False)
-        self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5, attn_dropout=dropout)
+        self.attention = ScaledDotProductAttention(
+            temperature=d_k**0.5, attn_dropout=dropout
+        )
         # inferred latent graph, used for saving and visualization
         self.graphs = nn.Parameter(torch.zeros(n_head, concept_num, concept_num))
         self.graphs.requires_grad = False
@@ -354,13 +490,21 @@ class MultiHeadAttention(nn.Module):
         Return:
             graphs: n_head types of inferred graphs
         """
-        graphs = Variable(torch.zeros(self.n_head, self.concept_num, self.concept_num, device=qt.device))
+        graphs = Variable(
+            torch.zeros(
+                self.n_head, self.concept_num, self.concept_num, device=qt.device
+            )
+        )
         for k in range(self.n_head):
-            index_tuple = (qt.long(), )
-            graphs[k] = graphs[k].index_put(index_tuple, attn_score[k])  # used for calculation
+            index_tuple = (qt.long(),)
+            graphs[k] = graphs[k].index_put(
+                index_tuple, attn_score[k]
+            )  # used for calculation
             #############################
             # here, we need to detach edges when storing it into self.graphs in case memory leak!
-            self.graphs.data[k] = self.graphs.data[k].index_put(index_tuple, attn_score[k].detach())  # used for saving and visualization
+            self.graphs.data[k] = self.graphs.data[k].index_put(
+                index_tuple, attn_score[k].detach()
+            )  # used for saving and visualization
             #############################
         return graphs
 
@@ -395,14 +539,36 @@ class MultiHeadAttention(nn.Module):
 
 class VAE(nn.Module):
 
-    def __init__(self, input_dim, hidden_dim, output_dim, msg_hidden_dim, msg_output_dim, concept_num, edge_type_num=2,
-                 tau=0.1, factor=True, dropout=0., bias=True):
+    def __init__(
+        self,
+        input_dim,
+        hidden_dim,
+        output_dim,
+        msg_hidden_dim,
+        msg_output_dim,
+        concept_num,
+        edge_type_num=2,
+        tau=0.1,
+        factor=True,
+        dropout=0.0,
+        bias=True,
+    ):
         super(VAE, self).__init__()
         self.edge_type_num = edge_type_num
         self.concept_num = concept_num
         self.tau = tau
-        self.encoder = MLPEncoder(input_dim, hidden_dim, output_dim, factor=factor, dropout=dropout, bias=bias)
-        self.decoder = MLPDecoder(input_dim, msg_hidden_dim, msg_output_dim, hidden_dim, edge_type_num, dropout=dropout, bias=bias)
+        self.encoder = MLPEncoder(
+            input_dim, hidden_dim, output_dim, factor=factor, dropout=dropout, bias=bias
+        )
+        self.decoder = MLPDecoder(
+            input_dim,
+            msg_hidden_dim,
+            msg_output_dim,
+            hidden_dim,
+            edge_type_num,
+            dropout=dropout,
+            bias=bias,
+        )
         # inferred latent graph, used for saving and visualization
         self.graphs = nn.Parameter(torch.zeros(edge_type_num, concept_num, concept_num))
         self.graphs.requires_grad = False
@@ -421,14 +587,25 @@ class VAE(nn.Module):
             graphs: latent graph list modeled by z which has different edge types
         """
         x_index = sp_send._indices()[1].long()  # send node index: [edge_num, ]
-        y_index = sp_rec._indices()[1].long()   # receive node index [edge_num, ]
-        graphs = Variable(torch.zeros(self.edge_type_num, self.concept_num, self.concept_num, device=edges.device))
+        y_index = sp_rec._indices()[1].long()  # receive node index [edge_num, ]
+        graphs = Variable(
+            torch.zeros(
+                self.edge_type_num,
+                self.concept_num,
+                self.concept_num,
+                device=edges.device,
+            )
+        )
         for k in range(self.edge_type_num):
             index_tuple = (x_index, y_index)
-            graphs[k] = graphs[k].index_put(index_tuple, edges[:, k])  # used for calculation
+            graphs[k] = graphs[k].index_put(
+                index_tuple, edges[:, k]
+            )  # used for calculation
             #############################
             # here, we need to detach edges when storing it into self.graphs in case memory leak!
-            self.graphs.data[k] = self.graphs.data[k].index_put(index_tuple, edges[:, k].detach())  # used for saving and visualization
+            self.graphs.data[k] = self.graphs.data[k].index_put(
+                index_tuple, edges[:, k].detach()
+            )  # used for saving and visualization
             #############################
         return graphs
 
@@ -451,23 +628,31 @@ class VAE(nn.Module):
             output: the reconstructed data
             prob: q(z|x) distribution
         """
-        logits = self.encoder(data, sp_send, sp_rec, sp_send_t, sp_rec_t)  # [edge_num, output_dim(edge_type_num)]
-        edges = gumbel_softmax(logits, tau=self.tau, dim=-1)  # [edge_num, edge_type_num]
+        logits = self.encoder(
+            data, sp_send, sp_rec, sp_send_t, sp_rec_t
+        )  # [edge_num, output_dim(edge_type_num)]
+        edges = gumbel_softmax(
+            logits, tau=self.tau, dim=-1
+        )  # [edge_num, edge_type_num]
         prob = F.softmax(logits, dim=-1)
-        output = self.decoder(data, edges, sp_send, sp_rec, sp_send_t, sp_rec_t)  # [concept_num, embedding_dim]
+        output = self.decoder(
+            data, edges, sp_send, sp_rec, sp_send_t, sp_rec_t
+        )  # [concept_num, embedding_dim]
         graphs = self._get_graph(edges, sp_send, sp_rec)
         return graphs, output, prob
 
 
 class DKT(nn.Module):
 
-    def __init__(self, feature_dim, hidden_dim, output_dim, dropout=0., bias=True):
+    def __init__(self, feature_dim, hidden_dim, output_dim, dropout=0.0, bias=True):
         super(DKT, self).__init__()
         self.feature_dim = feature_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
         self.bias = bias
-        self.rnn = nn.LSTM(feature_dim, hidden_dim, bias=bias, dropout=dropout, batch_first=True)
+        self.rnn = nn.LSTM(
+            feature_dim, hidden_dim, bias=bias, dropout=dropout, batch_first=True
+        )
         self.f_out = nn.Linear(hidden_dim, output_dim, bias=bias)
         self.init_weights()
 
@@ -493,10 +678,18 @@ class DKT(nn.Module):
             pred: predicted correct probability of the question answered at the next timestamp
         """
         one_hot = torch.eye(self.output_dim, device=yt.device)
-        one_hot = torch.cat((one_hot, torch.zeros(1, self.output_dim, device=yt.device)), dim=0)
+        one_hot = torch.cat(
+            (one_hot, torch.zeros(1, self.output_dim, device=yt.device)), dim=0
+        )
         next_qt = questions[:, 1:]
-        next_qt = torch.where(next_qt != -1, next_qt, self.output_dim * torch.ones_like(next_qt, device=yt.device))  # [batch_size, seq_len - 1]
-        one_hot_qt = F.embedding(next_qt, one_hot)  # [batch_size, seq_len - 1, output_dim]
+        next_qt = torch.where(
+            next_qt != -1,
+            next_qt,
+            self.output_dim * torch.ones_like(next_qt, device=yt.device),
+        )  # [batch_size, seq_len - 1]
+        one_hot_qt = F.embedding(
+            next_qt, one_hot
+        )  # [batch_size, seq_len - 1, output_dim]
         # dot product between yt and one_hot_qt
         pred = (yt * one_hot_qt).sum(dim=-1)  # [batch_size, seq_len - 1]
         return pred
@@ -518,15 +711,26 @@ class DKT(nn.Module):
             z_prob: probability distribution of latent variable z in VAE (optional)
         """
         feat_one_hot = torch.eye(self.feature_dim, device=features.device)
-        feat_one_hot = torch.cat((feat_one_hot, torch.zeros(1, self.feature_dim, device=features.device)), dim=0)
-        feat = torch.where(features != -1, features, self.feature_dim * torch.ones_like(features, device=features.device))
+        feat_one_hot = torch.cat(
+            (feat_one_hot, torch.zeros(1, self.feature_dim, device=features.device)),
+            dim=0,
+        )
+        feat = torch.where(
+            features != -1,
+            features,
+            self.feature_dim * torch.ones_like(features, device=features.device),
+        )
         features = F.embedding(feat, feat_one_hot)
 
         feature_lens = torch.ne(questions, -1).sum(dim=1).cpu()  # padding value = -1
         feature_lens = torch.clamp(feature_lens, min=1)
-        x_packed = pack_padded_sequence(features, feature_lens, batch_first=True, enforce_sorted=False)
+        x_packed = pack_padded_sequence(
+            features, feature_lens, batch_first=True, enforce_sorted=False
+        )
         output_packed, _ = self.rnn(x_packed)  # [batch, seq_len, hidden_dim]
-        output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=True, total_length=features.shape[1])  # [batch, seq_len, hidden_dim]
+        output_padded, output_lengths = pad_packed_sequence(
+            output_packed, batch_first=True, total_length=features.shape[1]
+        )  # [batch, seq_len, hidden_dim]
         yt = self.f_out(output_padded)  # [batch, seq_len, output_dim]
         yt = torch.sigmoid(yt)
         yt = yt[:, :-1, :]  # [batch, seq_len - 1, output_dim]

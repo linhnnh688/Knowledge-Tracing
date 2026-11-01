@@ -59,7 +59,11 @@ def export_learner_view(
             mask = (real != -1) & (q_seq[:, 1:] != -1)
             bsz, tlen = pred.shape
             for b in range(bsz):
-                uid = user_ids[batch_offset + b] if batch_offset + b < len(user_ids) else None
+                uid = (
+                    user_ids[batch_offset + b]
+                    if batch_offset + b < len(user_ids)
+                    else None
+                )
                 steps = []
                 for t in range(tlen):
                     if not bool(mask[b, t]):
@@ -78,7 +82,9 @@ def export_learner_view(
                     if states is not None and t < len(states):
                         # Frobenius-style per-concept norm of the hidden knowledge state at this step
                         h = states[t][b]  # [concept_num, hidden_dim]
-                        step["state_norm"] = [round(float(x), 4) for x in h.norm(dim=-1).cpu().tolist()]
+                        step["state_norm"] = [
+                            round(float(x), 4) for x in h.norm(dim=-1).cpu().tolist()
+                        ]
                     steps.append(step)
                 views.append({"user_id": uid, "n_steps": len(steps), "steps": steps})
                 if max_learners is not None and len(views) >= max_learners:
@@ -89,7 +95,9 @@ def export_learner_view(
     if out_path is not None:
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(views, indent=2, ensure_ascii=False), encoding="utf-8")
+        out_path.write_text(
+            json.dumps(views, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
     return views
 
 
@@ -116,7 +124,9 @@ def interactive_learner_view(views):
     except ImportError:
         print(render_learner_view(views, 0))
         return
-    options = [(f"user {v['user_id']} ({v['n_steps']} steps)", i) for i, v in enumerate(views)]
+    options = [
+        (f"user {v['user_id']} ({v['n_steps']} steps)", i) for i, v in enumerate(views)
+    ]
     dd = widgets.Dropdown(options=options, description="Learner:")
     out = widgets.Output()
 

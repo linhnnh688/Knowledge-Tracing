@@ -31,24 +31,26 @@ ALLOWED_DATASETS = {"assist09"}
 
 def training(argv=None):
 
-    print('Training start...')
-    parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--model', default='GRKT', type=str,
-                        help='Model used.')
-    parser.add_argument('--dataset', default='assist09', type=str,
-                        help='Data used.')
+    print("Training start...")
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument("--model", default="GRKT", type=str, help="Model used.")
+    parser.add_argument("--dataset", default="assist09", type=str, help="Data used.")
 
     if argv:
         sys.argv = argv
 
     args, _ = parser.parse_known_args()
     if args.model not in MODEL_REGISTRY:
-        raise SystemExit(f"Mô hình không được đăng ký: {args.model}. Cho phép: {sorted(MODEL_REGISTRY)}")
+        raise SystemExit(
+            f"Mô hình không được đăng ký: {args.model}. Cho phép: {sorted(MODEL_REGISTRY)}"
+        )
     if args.dataset not in ALLOWED_DATASETS:
-        raise SystemExit(f"Tập dữ liệu không được cho phép: {args.dataset}. Cho phép: {sorted(ALLOWED_DATASETS)}")
+        raise SystemExit(
+            f"Tập dữ liệu không được cho phép: {args.dataset}. Cho phép: {sorted(ALLOWED_DATASETS)}"
+        )
     model_class = MODEL_REGISTRY[args.model]
-    bin_path = Path('data') / args.dataset / f'{args.dataset}.bin'
-    with bin_path.open('rb') as f:
+    bin_path = Path("data") / args.dataset / f"{args.dataset}.bin"
+    with bin_path.open("rb") as f:
         dataset = pickle.load(f)
 
     Runner.parse_args(parser)
@@ -57,13 +59,13 @@ def training(argv=None):
     args, _ = parser.parse_known_args()
 
     for key in dataset:
-        if key != 'data':
+        if key != "data":
             args.__setattr__(key, dataset[key])
 
     runner = Runner(args)
-    result = runner.run(model_class, dataset['data'])
+    result = runner.run(model_class, dataset["data"])
     return result
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     training()

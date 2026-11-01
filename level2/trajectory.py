@@ -103,21 +103,25 @@ def record_trajectories(
         stacked = _stack_rec(feed["rec"], n_steps)
         for j, seq in enumerate(batch_seqs):
             L = seq.length
-            users.append({
-                "user_id": seq.user_id,
-                # "_raw" = vô hướng mastery chưa bị chặn của GRKT; biến không đuôi = sigmoid(_)
-                # ∈ [0, 1] để vẽ/so sánh được với độ thành thạo của Cấp độ 1.
-                "m_pre_raw": stacked["m_pre"][j, :L],
-                "m_strong_raw": stacked["m_strong"][j, :L],
-                "m_tilde_raw": stacked["m_tilde"][j, :L],
-                "m_pre": _sigmoid(stacked["m_pre"][j, :L]),
-                "m_strong": _sigmoid(stacked["m_strong"][j, :L]),
-                "m_tilde": _sigmoid(stacked["m_tilde"][j, :L]),
-                "knows": np.asarray(seq.knows, dtype="int64"),        # [S, K] 1-based
-                "corrs": np.asarray(seq.corrs, dtype="int64"),        # [S]
-                "times": np.asarray(seq.times, dtype="int64"),        # [S] phút cộng dồn
-                "skills0": np.asarray(seq.skills0, dtype="int64"),    # [S] không gian Cấp độ 1
-            })
+            users.append(
+                {
+                    "user_id": seq.user_id,
+                    # "_raw" = vô hướng mastery chưa bị chặn của GRKT; biến không đuôi = sigmoid(_)
+                    # ∈ [0, 1] để vẽ/so sánh được với độ thành thạo của Cấp độ 1.
+                    "m_pre_raw": stacked["m_pre"][j, :L],
+                    "m_strong_raw": stacked["m_strong"][j, :L],
+                    "m_tilde_raw": stacked["m_tilde"][j, :L],
+                    "m_pre": _sigmoid(stacked["m_pre"][j, :L]),
+                    "m_strong": _sigmoid(stacked["m_strong"][j, :L]),
+                    "m_tilde": _sigmoid(stacked["m_tilde"][j, :L]),
+                    "knows": np.asarray(seq.knows, dtype="int64"),  # [S, K] 1-based
+                    "corrs": np.asarray(seq.corrs, dtype="int64"),  # [S]
+                    "times": np.asarray(seq.times, dtype="int64"),  # [S] phút cộng dồn
+                    "skills0": np.asarray(
+                        seq.skills0, dtype="int64"
+                    ),  # [S] không gian Cấp độ 1
+                }
+            )
         offset += len(batch_seqs)
         if verbose and (offset // 200) != (offset - len(batch_seqs)) // 200:
             print(f"  đã ghi quỹ đạo {offset}/{len(seqs)} người học ...")
@@ -125,7 +129,9 @@ def record_trajectories(
         print(f"  đã ghi quỹ đạo {len(users)}/{len(seqs)} người học")
     return {
         "users": users,
-        "concept_num": int(concept_num if concept_num is not None else model.args.n_knows),
+        "concept_num": int(
+            concept_num if concept_num is not None else model.args.n_knows
+        ),
         "graph_kind": str(graph_kind),
         "n_knows_plus_pad": int(model.args.n_knows) + 1,
         "seed": int(seed),
@@ -139,11 +145,13 @@ def _sigmoid(m: np.ndarray) -> np.ndarray:
 def _batch_with_meta(items: List[list], seqs: List, batch_size: int):
     """Giữ nguyên thứ tự người học để mảng ghi được khớp với ``user_id``."""
     for i in range(0, len(items), batch_size):
-        yield items[i:i + batch_size], seqs[i:i + batch_size]
+        yield items[i : i + batch_size], seqs[i : i + batch_size]
 
 
 # ---------------------------------------------------------------- tiêu chí hợp lý
-def directional_consistency(traj: Dict[str, object], adj: Optional[np.ndarray] = None) -> dict:
+def directional_consistency(
+    traj: Dict[str, object], adj: Optional[np.ndarray] = None
+) -> dict:
     """Hướng thay đổi mastery có đi đúng chiều với kết quả làm bài không.
 
     Hai số đo, phân giải hai cơ chế khác nhau:
@@ -167,9 +175,11 @@ def directional_consistency(traj: Dict[str, object], adj: Optional[np.ndarray] =
     for user in traj["users"]:
         m_pre, m_strong = user["m_pre"], user["m_strong"]
         knows, corrs = user["knows"], user["corrs"]
-        dm = m_strong - m_pre                              # [S, NK+1]
+        dm = m_strong - m_pre  # [S, NK+1]
         for i in range(len(corrs)):
-            ans = [int(k) for k in knows[i] if k > 0]      # đã là chỉ số không gian có padding
+            ans = [
+                int(k) for k in knows[i] if k > 0
+            ]  # đã là chỉ số không gian có padding
             if not ans:
                 continue
             n_steps_used += 1
@@ -257,7 +267,7 @@ def forgetting_monotonicity(traj: Dict[str, object], n_buckets: int = 5) -> dict
         if m_pre.shape[0] < 2:
             continue
         touched = np.zeros(m_pre.shape[1], dtype=bool)
-        touched[0] = True                       # cột padding: không phải khái niệm thật
+        touched[0] = True  # cột padding: không phải khái niệm thật
         for i in range(m_pre.shape[0] - 1):
             touched[1:] = False
             for k in list(knows[i]) + list(knows[i + 1]):
@@ -271,7 +281,13 @@ def forgetting_monotonicity(traj: Dict[str, object], n_buckets: int = 5) -> dict
             dt_all.append(gap)
             dm_all.append(float(dm[free].mean()))
     if not dt_all:
-        return {"slope": None, "buckets": [], "n": 0, "pearson_dt_vs_dm": None, "dt_zero_frac": 1.0}
+        return {
+            "slope": None,
+            "buckets": [],
+            "n": 0,
+            "pearson_dt_vs_dm": None,
+            "dt_zero_frac": 1.0,
+        }
     dt = np.asarray(dt_all, dtype="float64")
     dm = np.asarray(dm_all, dtype="float64")
     qs = np.quantile(dt, np.linspace(0, 1, n_buckets + 1))
@@ -285,12 +301,14 @@ def forgetting_monotonicity(traj: Dict[str, object], n_buckets: int = 5) -> dict
             continue
         mean_dm = float(dm[m].mean())
         med_dt = float(np.median(dt[m]))
-        buckets.append({
-            "bucket": b,
-            "n": int(m.sum()),
-            "dt_min_median": med_dt,
-            "mean_delta_m": mean_dm,
-        })
+        buckets.append(
+            {
+                "bucket": b,
+                "n": int(m.sum()),
+                "dt_min_median": med_dt,
+                "mean_delta_m": mean_dm,
+            }
+        )
         means.append(mean_dm)
         centers.append(med_dt)
     slope = None
@@ -321,7 +339,9 @@ def stage_attribution(traj: Dict[str, object]) -> dict:
                 continue
             strong.append(float(np.mean([abs(dm_s[i, a]) for a in ans])))
         if user["m_pre"].shape[0] >= 2:
-            hf.append(float(np.abs(user["m_pre"][1:, 1:] - user["m_strong"][:-1, 1:]).mean()))
+            hf.append(
+                float(np.abs(user["m_pre"][1:, 1:] - user["m_strong"][:-1, 1:]).mean())
+            )
         retr.append(float(np.abs(user["m_tilde"][:, 1:] - user["m_pre"][:, 1:]).mean()))
     return {
         "mean_abs_delta_strengthen": float(np.mean(strong)) if strong else None,
@@ -331,7 +351,9 @@ def stage_attribution(traj: Dict[str, object]) -> dict:
     }
 
 
-def trajectory_metrics_table(runs: Dict[str, Dict[str, object]], adj: Optional[np.ndarray] = None):
+def trajectory_metrics_table(
+    runs: Dict[str, Dict[str, object]], adj: Optional[np.ndarray] = None
+):
     """Bảng tiêu chí cho nhiều lần chạy ``{tên biến thể đồ thị: trajectory dict}``.
 
     Trả về ``pandas.DataFrame`` với các cột: graph, steps, strengthen, spread, locality,
@@ -350,19 +372,21 @@ def trajectory_metrics_table(runs: Dict[str, Dict[str, object]], adj: Optional[n
         lo = locality(traj, adj)
         fm = forgetting_monotonicity(traj)
         sa = stage_attribution(traj)
-        rows.append({
-            "graph": str(traj.get("graph_kind", name)),
-            "users": len(traj["users"]),
-            "steps": dc["n_steps"],
-            "consistency_strengthen": dc["strengthen"],
-            "consistency_spread": dc["spread"],
-            "locality": lo["locality"],
-            "forget_slope": fm["slope"],
-            "pearson_dt_dm": fm["pearson_dt_vs_dm"],
-            "abs_delta_strengthen": sa["mean_abs_delta_strengthen"],
-            "abs_delta_learn_forget": sa["mean_abs_delta_learn_forget"],
-            "abs_delta_retrieval": sa["mean_abs_delta_retrieval"],
-        })
+        rows.append(
+            {
+                "graph": str(traj.get("graph_kind", name)),
+                "users": len(traj["users"]),
+                "steps": dc["n_steps"],
+                "consistency_strengthen": dc["strengthen"],
+                "consistency_spread": dc["spread"],
+                "locality": lo["locality"],
+                "forget_slope": fm["slope"],
+                "pearson_dt_dm": fm["pearson_dt_vs_dm"],
+                "abs_delta_strengthen": sa["mean_abs_delta_strengthen"],
+                "abs_delta_learn_forget": sa["mean_abs_delta_learn_forget"],
+                "abs_delta_retrieval": sa["mean_abs_delta_retrieval"],
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -383,7 +407,9 @@ def save_trajectories(traj: Dict[str, object], out_path) -> Path:
     payloads = {
         "graph_kind": str(traj.get("graph_kind", "train")),
         "concept_num": int(traj["concept_num"]),
-        "n_knows_plus_pad": int(traj.get("n_knows_plus_pad", int(traj["concept_num"]) + 1)),
+        "n_knows_plus_pad": int(
+            traj.get("n_knows_plus_pad", int(traj["concept_num"]) + 1)
+        ),
         "seed": int(traj.get("seed", 0)),
         "user_ids": user_ids,
     }
@@ -400,8 +426,14 @@ def save_trajectories(traj: Dict[str, object], out_path) -> Path:
 
 # Các mục lưu lại cho từng người học (mastery float16, chỉ số/nguyên float32-or-int)
 NPZ_SLOTS = ("m_pre", "m_strong", "m_tilde", "knows", "corrs", "times")
-NPZ_DTYPES = {"m_pre": np.float32, "m_strong": np.float32, "m_tilde": np.float32,
-              "knows": np.int64, "corrs": np.int64, "times": np.int64}
+NPZ_DTYPES = {
+    "m_pre": np.float32,
+    "m_strong": np.float32,
+    "m_tilde": np.float32,
+    "knows": np.int64,
+    "corrs": np.int64,
+    "times": np.int64,
+}
 
 
 def load_trajectories(npz_path) -> Dict[str, object]:
@@ -439,16 +471,27 @@ def plot_mastery_heatmap(
 
     user = traj["users"][user_index]
     concepts = _active_concepts(user, max_concepts)
-    mat = user["m_strong"][:, concepts].T if concepts.size else np.zeros((0, user["m_strong"].shape[1]))
+    mat = (
+        user["m_strong"][:, concepts].T
+        if concepts.size
+        else np.zeros((0, user["m_strong"].shape[1]))
+    )
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(max(6.0, 0.22 * mat.shape[1] + 3), max(3.0, 0.26 * mat.shape[0] + 1.6)))
+    fig, ax = plt.subplots(
+        figsize=(max(6.0, 0.22 * mat.shape[1] + 3), max(3.0, 0.26 * mat.shape[0] + 1.6))
+    )
     im = ax.imshow(mat, aspect="auto", cmap="viridis", vmin=0.0, vmax=1.0)
     ax.set_ylabel("khái niệm")
     ax.set_xlabel("bước tương tác")
     ax.set_yticks(range(mat.shape[0]))
-    ax.set_yticklabels([_concept_name(int(c), skill_lookup) for c in concepts], fontsize=7)
-    ttl = title or f"Mastery m(u,c,t) — user {user['user_id']} [{traj.get('graph_kind', 'train')}]"
+    ax.set_yticklabels(
+        [_concept_name(int(c), skill_lookup) for c in concepts], fontsize=7
+    )
+    ttl = (
+        title
+        or f"Mastery m(u,c,t) — user {user['user_id']} [{traj.get('graph_kind', 'train')}]"
+    )
     ax.set_title(ttl, fontsize=10)
     fig.colorbar(im, ax=ax, label="sigmoid(m)")
     fig.tight_layout()
@@ -478,24 +521,41 @@ def plot_mastery_curves(
         concepts = _active_concepts(user, concepts_per_user)
         for c in concepts:
             line = user["m_strong"][:, int(c)]
-            ax.plot(np.arange(len(line)), line, linewidth=1.4, label=_concept_name(int(c), skill_lookup))
+            ax.plot(
+                np.arange(len(line)),
+                line,
+                linewidth=1.4,
+                label=_concept_name(int(c), skill_lookup),
+            )
         corr = user["corrs"]
         for i, v in enumerate(corr):
-            ax.axvline(i, color=("#2e7d32" if v else "#c62828"), alpha=0.10, linewidth=0.9)
+            ax.axvline(
+                i, color=("#2e7d32" if v else "#c62828"), alpha=0.10, linewidth=0.9
+            )
         ax.set_xlabel("bước")
-        ax.set_title(f"user {user['user_id']} [{traj.get('graph_kind', 'train')}]", fontsize=9)
+        ax.set_title(
+            f"user {user['user_id']} [{traj.get('graph_kind', 'train')}]", fontsize=9
+        )
         ax.legend(fontsize=6, ncol=2, loc="best")
         ax.set_ylim(0, 1)
         ax.grid(alpha=0.25)
     axes[0][0].set_ylabel("sigmoid(m)")
-    fig.suptitle(title or "Quỹ đạo mastery theo thời gian (nền đậm: đúng=xanh, sai=đỏ)", fontsize=10)
+    fig.suptitle(
+        title or "Quỹ đạo mastery theo thời gian (nền đậm: đúng=xanh, sai=đỏ)",
+        fontsize=10,
+    )
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(out_path, dpi=140)
     plt.close(fig)
     return out_path
 
 
-def export_mastery_csv(traj: Dict[str, object], out_path, max_users: int = 50, skill_lookup: Optional[Dict[int, str]] = None) -> Path:
+def export_mastery_csv(
+    traj: Dict[str, object],
+    out_path,
+    max_users: int = 50,
+    skill_lookup: Optional[Dict[int, str]] = None,
+) -> Path:
     """Xuất bảng dài ``m(u,c,t)``: một dòng = (người học, bước, khái niệm, m_pre, m_strong, m_tilde, nhãn).
 
     Chỉ xuất các khái niệm thực sự xuất hiện trong chuỗi của người học; nếu xuất mọi khái
@@ -511,19 +571,21 @@ def export_mastery_csv(traj: Dict[str, object], out_path, max_users: int = 50, s
             continue
         for i in range(user["corrs"].shape[0]):
             for c in cols:
-                rows.append({
-                    "graph": str(traj.get("graph_kind", "train")),
-                    "user_id": user["user_id"],
-                    "step": i,
-                    "concept0": int(c) - 1,
-                    "skill": _concept_name(int(c), skill_lookup),
-                    "answered": int(bool(np.any(user["knows"][i] == c))),
-                    "correct": int(user["corrs"][i]),
-                    "time_min": int(user["times"][i]),
-                    "m_pre": float(user["m_pre"][i, c]),
-                    "m_strong": float(user["m_strong"][i, c]),
-                    "m_tilde": float(user["m_tilde"][i, c]),
-                })
+                rows.append(
+                    {
+                        "graph": str(traj.get("graph_kind", "train")),
+                        "user_id": user["user_id"],
+                        "step": i,
+                        "concept0": int(c) - 1,
+                        "skill": _concept_name(int(c), skill_lookup),
+                        "answered": int(bool(np.any(user["knows"][i] == c))),
+                        "correct": int(user["corrs"][i]),
+                        "time_min": int(user["times"][i]),
+                        "m_pre": float(user["m_pre"][i, c]),
+                        "m_strong": float(user["m_strong"][i, c]),
+                        "m_tilde": float(user["m_tilde"][i, c]),
+                    }
+                )
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(out_path, index=False)

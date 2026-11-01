@@ -103,9 +103,15 @@ def load_gikt_dataset(
     )
 
     loaders = {
-        "train": DataLoader(train_ds, batch_size=batch_size, shuffle=True, collate_fn=_pad_collate),
-        "val": DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=_pad_collate),
-        "test": DataLoader(test_ds, batch_size=batch_size, shuffle=False, collate_fn=_pad_collate),
+        "train": DataLoader(
+            train_ds, batch_size=batch_size, shuffle=True, collate_fn=_pad_collate
+        ),
+        "val": DataLoader(
+            val_ds, batch_size=batch_size, shuffle=False, collate_fn=_pad_collate
+        ),
+        "test": DataLoader(
+            test_ds, batch_size=batch_size, shuffle=False, collate_fn=_pad_collate
+        ),
     }
     return {
         "num_questions": num_questions,

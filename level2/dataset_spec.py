@@ -139,12 +139,34 @@ JUNYI = DatasetSpec(
     content_patterns=("info_content", "junyi"),
     content_columns={
         # Khoá nối của bảng tra: bản Kaggle khoá theo ucid; bản junyi2015/PSLC khoá theo upid.
-        "key": ["ucid", "upid", "problem_id", "question_id", "id", "Problem Id", "Anon Problem Id"],
+        "key": [
+            "ucid",
+            "upid",
+            "problem_id",
+            "question_id",
+            "id",
+            "Problem Id",
+            "Anon Problem Id",
+        ],
         # Tên khái niệm/bài tập trong bảng tra. _match_column khớp chính xác trước, rồi khớp
         # mờ (bỏ hoa/thường, cách, gạch dưới); nếu vẫn không có, lỗi in ra TOÀN BỘ cột của
         # bảng tra để bổ sung tên đúng vào danh sách này.
-        "skill": ["exercise", "exercise_name", "name", "title", "skill", "skills", "kc",
-                  "list_skills", "topic", "unit", "area", "chapter", "category", "tags"],
+        "skill": [
+            "exercise",
+            "exercise_name",
+            "name",
+            "title",
+            "skill",
+            "skills",
+            "kc",
+            "list_skills",
+            "topic",
+            "unit",
+            "area",
+            "chapter",
+            "category",
+            "tags",
+        ],
     },
     columns={
         # Tên cột = danh sách ỨNG VIÊN, khớp CHUỖI CHÍNH XÁC trước rồi khớp MỜ (hoa/thường,
@@ -157,19 +179,51 @@ JUNYI = DatasetSpec(
         # ucid lên vai người học (sẽ còn 1.326 "người học") và đừng lấy upid làm khái niệm
         # (ma trận 25.786² không chạy nổi).
         "user": ["uuid", "user_id", "Anon Student Id", "student_id"],
-        "skill": ["ucid", "exercise", "skill", "list_skills", "tags", "KC (Exercise)",
-                  "Exercise name", "KC (Default - Skill for Drill) overview"],
+        "skill": [
+            "ucid",
+            "exercise",
+            "skill",
+            "list_skills",
+            "tags",
+            "KC (Exercise)",
+            "Exercise name",
+            "KC (Default - Skill for Drill) overview",
+        ],
         # "upid" = định danh câu hỏi; "problem_number" là số thứ tự câu trong bài tập nên
         # KHÔNG được dùng làm định danh. "uuid" cũng bị loại: nó là người học, lấy làm
         # problem_id sẽ sinh embedding 72.630 hàng vô nghĩa.
-        "problem": ["upid", "problem", "problem_id", "assistment_id",
-                    "Question Id", "Problem Name", "Step Name"],
+        "problem": [
+            "upid",
+            "problem",
+            "problem_id",
+            "assistment_id",
+            "Question Id",
+            "Problem Name",
+            "Step Name",
+        ],
         "correct": ["is_correct", "correct", "Outcome"],
-        "answer_count": ["total_attempt_cnt", "answer_count", "count_attempts", "Answer Count"],
-        "timestamp": ["timestamp_TW", "timestamp_ms", "time_done", "time", "Timestamp",
-                      "Time of Last Response", "Time of First Attempt"],
-        "duration": ["total_sec_taken", "ms_first_response", "answer_time", "time_taken",
-                     "Duration (ms)"],
+        "answer_count": [
+            "total_attempt_cnt",
+            "answer_count",
+            "count_attempts",
+            "Answer Count",
+        ],
+        "timestamp": [
+            "timestamp_TW",
+            "timestamp_ms",
+            "time_done",
+            "time",
+            "Timestamp",
+            "Time of Last Response",
+            "Time of First Attempt",
+        ],
+        "duration": [
+            "total_sec_taken",
+            "ms_first_response",
+            "answer_time",
+            "time_taken",
+            "Duration (ms)",
+        ],
     },
     note=(
         "Junyi Academy — Kaggle 'junyiacademy/learning-activity-public-dataset-by-junyi-academy' "
@@ -193,7 +247,9 @@ _REGISTRY = {spec.name: spec for spec in (ASSIST2009, ASSIST2009_SMOKE, JUNYI)}
 
 def get_spec(name: str) -> DatasetSpec:
     if name not in _REGISTRY:
-        raise KeyError(f"Tập dữ liệu chưa được mô tả: {name}. Hợp lệ: {sorted(_REGISTRY)}")
+        raise KeyError(
+            f"Tập dữ liệu chưa được mô tả: {name}. Hợp lệ: {sorted(_REGISTRY)}"
+        )
     return _REGISTRY[name]
 
 
@@ -212,7 +268,7 @@ def resolve_canonical_path(spec: DatasetSpec, search_dirs=None) -> Path:
     from level1.paths import repo_root
 
     candidates = [repo_root() / "GKT" / "data" / spec.canonical_file]
-    for d in (search_dirs or []):
+    for d in search_dirs or []:
         candidates.append(Path(d) / spec.canonical_file)
     for c in candidates:
         if c.exists():
@@ -233,19 +289,34 @@ def _probe_header(path) -> list:
     return list(pd.read_csv(path, nrows=0, encoding="utf-8-sig").columns)
 
 
-def describe_schema(raw_path=None, content_path=None, spec=None, verbose: bool = True) -> dict:
+def describe_schema(
+    raw_path=None, content_path=None, spec=None, verbose: bool = True
+) -> dict:
     """In ra notebook những gì SẼ được dùng để chuẩn hoá, mà không nạp file log.
 
     Chỉ đọc hai dòng header và bảng tra, nên chạy được trên máy CPU trong vài giây: dùng để
     kiểm chứng ánh xạ cột TRƯỚC khi bỏ hàng giờ GPU vào cell thực nghiệm.
     """
     spec = spec or JUNYI
-    raw = Path(raw_path) if raw_path is not None else find_kaggle_input(
-        patterns=(spec.name, "log_problem"), preferred_names=("Log_Problem.csv",))
-    info = {"spec": spec.name, "raw": None if raw is None else str(raw), "log_columns": None,
-            "mapping": None, "content": None, "error": None}
+    raw = (
+        Path(raw_path)
+        if raw_path is not None
+        else find_kaggle_input(
+            patterns=(spec.name, "log_problem"), preferred_names=("Log_Problem.csv",)
+        )
+    )
+    info = {
+        "spec": spec.name,
+        "raw": None if raw is None else str(raw),
+        "log_columns": None,
+        "mapping": None,
+        "content": None,
+        "error": None,
+    }
     if raw is None or not Path(raw).exists():
-        info["error"] = f"Không tìm thấy file log của '{spec.name}' trong /kaggle/input."
+        info["error"] = (
+            f"Không tìm thấy file log của '{spec.name}' trong /kaggle/input."
+        )
         if verbose:
             print(f"  [schema] {info['error']}\n  {list_kaggle_inputs()}")
         return info
@@ -253,7 +324,7 @@ def describe_schema(raw_path=None, content_path=None, spec=None, verbose: bool =
     info["log_columns"] = header
     try:
         resolved = _resolve_columns(header, spec)
-    except KeyError as exc:                      # mô tả thì không được chết, chỉ báo cáo
+    except KeyError as exc:  # mô tả thì không được chết, chỉ báo cáo
         info["error"] = str(exc)
         if verbose:
             print(f"  [schema] Ánh xạ cột thất bại: {info['error']}")
@@ -261,10 +332,18 @@ def describe_schema(raw_path=None, content_path=None, spec=None, verbose: bool =
     info["mapping"] = {k: v for k, v in resolved.items() if k != "usecols"}
     if resolved["skill"] is None:
         try:
-            skill_of_key, cinfo = _load_content_map(spec, Path(raw), resolved["problem"],
-                                                   content_path=content_path, verbose=False)
-            info["content"] = {**cinfo, "columns": _probe_header(Path(cinfo["file"])),
-                               "examples": skill_of_key.drop_duplicates().head(10).to_dict()}
+            skill_of_key, cinfo = _load_content_map(
+                spec,
+                Path(raw),
+                resolved["problem"],
+                content_path=content_path,
+                verbose=False,
+            )
+            info["content"] = {
+                **cinfo,
+                "columns": _probe_header(Path(cinfo["file"])),
+                "examples": skill_of_key.drop_duplicates().head(10).to_dict(),
+            }
         except KeyError as exc:
             info["error"] = str(exc)
     if verbose:
@@ -273,8 +352,10 @@ def describe_schema(raw_path=None, content_path=None, spec=None, verbose: bool =
         if info["content"]:
             c = info["content"]
             print(f"  [schema] bảng tra {Path(c['file']).name}: cột {c['columns']}")
-            print(f"  [schema]   nối {c['key']} -> {c['skill']}: {c['n_entries']:,} mục, "
-                  f"{c['n_concepts']:,} khái niệm, phủ {c['coverage']:.1%} lượt")
+            print(
+                f"  [schema]   nối {c['key']} -> {c['skill']}: {c['n_entries']:,} mục, "
+                f"{c['n_concepts']:,} khái niệm, phủ {c['coverage']:.1%} lượt"
+            )
             print(f"  [schema]   ví dụ khái niệm: {list(c['examples'].values())[:10]}")
         if info["error"]:
             print(f"  [schema] LỖI: {info['error']}")
@@ -320,8 +401,13 @@ def _to_epoch_ms(series: pd.Series) -> pd.Series:
     return (parsed - epoch).dt.total_seconds() * 1e3
 
 
-def _canonicalize_junyi(raw_path: Path, spec: DatasetSpec, content_path=None,
-                        top_concepts=None, verbose: bool = True) -> pd.DataFrame:
+def _canonicalize_junyi(
+    raw_path: Path,
+    spec: DatasetSpec,
+    content_path=None,
+    top_concepts=None,
+    verbose: bool = True,
+) -> pd.DataFrame:
     """Đổi file log về khung chuẩn hoá, đọc THEO MẢNH và chỉ giữ các cột thật sự cần.
 
     Hai ràng buộc định hình hàm này:
@@ -342,46 +428,73 @@ def _canonicalize_junyi(raw_path: Path, spec: DatasetSpec, content_path=None,
     usecols = resolved["usecols"]
     col_user, col_prob = resolved["user"], resolved["problem"]
     ts_col, dur_col = resolved["timestamp"], resolved["duration"]
-    col_correct, col_ac, col_skill = resolved["correct"], resolved["answer_count"], resolved["skill"]
+    col_correct, col_ac, col_skill = (
+        resolved["correct"],
+        resolved["answer_count"],
+        resolved["skill"],
+    )
     if col_correct is None and col_ac is None:
-        raise KeyError(f"[{raw_path.name}] Không có cột nhãn đúng/sai cũng không có cột số lần thử. "
-                       f"Ứng viên: {spec.columns.get('correct')} / {spec.columns.get('answer_count')}. "
-                       f"Cột có sẵn: {header}.")
+        raise KeyError(
+            f"[{raw_path.name}] Không có cột nhãn đúng/sai cũng không có cột số lần thử. "
+            f"Ứng viên: {spec.columns.get('correct')} / {spec.columns.get('answer_count')}. "
+            f"Cột có sẵn: {header}."
+        )
     if verbose:
         print(f"  đọc {len(usecols)}/{len(header)} cột: {usecols}")
-        print(f"  ánh xạ: user={col_user} | câu hỏi={col_prob} | thời điểm={ts_col} | "
-              f"độ dài={dur_col} | nhãn={'(' + col_correct + ')' if col_correct else 'suy từ ' + col_ac}")
+        print(
+            f"  ánh xạ: user={col_user} | câu hỏi={col_prob} | thời điểm={ts_col} | "
+            f"độ dài={dur_col} | nhãn={'(' + col_correct + ')' if col_correct else 'suy từ ' + col_ac}"
+        )
 
     # Khái niệm: hoặc có sẵn trong log (bản junyi2015/PSLC có cột 'exercise'), hoặc phải nối
     # bảng tra Info_Content.csv theo định danh câu hỏi.
     skill_of_key = None
     if col_skill is None:
-        skill_of_key, cinfo = _load_content_map(spec, raw_path, col_prob, content_path, verbose=verbose)
+        skill_of_key, cinfo = _load_content_map(
+            spec, raw_path, col_prob, content_path, verbose=verbose
+        )
     elif verbose:
         print(f"  khái niệm lấy trực tiếp từ cột '{col_skill}' của file log")
 
     maps = {c: _CodeMap(c) for c in ("user_id", "skill_id", "problem_id")}
     pieces, n_raw, n_kept = [], 0, 0
-    for chunk in pd.read_csv(raw_path, usecols=usecols, chunksize=max(1, int(spec.chunksize)),
-                            low_memory=False, encoding="utf-8-sig"):
+    for chunk in pd.read_csv(
+        raw_path,
+        usecols=usecols,
+        chunksize=max(1, int(spec.chunksize)),
+        low_memory=False,
+        encoding="utf-8-sig",
+    ):
         n_raw += len(chunk)
         flags, origin = _correct_flags(chunk, col_correct, col_ac)
-        skill = (chunk[col_skill].astype("string").str.strip() if skill_of_key is None
-                 else _join_key(chunk[col_prob]).map(skill_of_key).astype("string"))
-        ok = (flags.isin([0.0, 1.0]) & skill.notna() & (skill.str.len() > 0)
-              & chunk[col_user].notna() & chunk[col_prob].notna())
+        skill = (
+            chunk[col_skill].astype("string").str.strip()
+            if skill_of_key is None
+            else _join_key(chunk[col_prob]).map(skill_of_key).astype("string")
+        )
+        ok = (
+            flags.isin([0.0, 1.0])
+            & skill.notna()
+            & (skill.str.len() > 0)
+            & chunk[col_user].notna()
+            & chunk[col_prob].notna()
+        )
         ok = ok.to_numpy()
         if not ok.any():
             continue
         chunk, flags, skill = chunk[ok], flags[ok], skill[ok]
-        piece = pd.DataFrame({
-            "user_id": maps["user_id"].encode(chunk[col_user]),
-            "skill_id": maps["skill_id"].encode(skill),
-            "problem_id": maps["problem_id"].encode(chunk[col_prob]),
-            "correct": flags.astype("float64").astype("int8").to_numpy(),
-            "timestamp_ms": _to_epoch_ms(chunk[ts_col]).to_numpy(dtype="float64"),
-            "ms_first_response": _to_duration_ms(chunk[dur_col], dur_col).to_numpy(dtype="int64"),
-        })
+        piece = pd.DataFrame(
+            {
+                "user_id": maps["user_id"].encode(chunk[col_user]),
+                "skill_id": maps["skill_id"].encode(skill),
+                "problem_id": maps["problem_id"].encode(chunk[col_prob]),
+                "correct": flags.astype("float64").astype("int8").to_numpy(),
+                "timestamp_ms": _to_epoch_ms(chunk[ts_col]).to_numpy(dtype="float64"),
+                "ms_first_response": _to_duration_ms(chunk[dur_col], dur_col).to_numpy(
+                    dtype="int64"
+                ),
+            }
+        )
         pieces.append(piece)
         n_kept += len(piece)
     if not pieces:
@@ -392,8 +505,14 @@ def _canonicalize_junyi(raw_path: Path, spec: DatasetSpec, content_path=None,
         )
     frame = pd.concat(pieces, ignore_index=True)
     if verbose:
-        kept_note = (f"{len(skill_of_key):,} mục tra" if skill_of_key is not None else f"cột '{col_skill}'")
-        print(f"  đã quét {n_raw:,} dòng, giữ {n_kept:,} dòng hợp lệ | khái niệm: {len(maps['skill_id'].values):,} ({kept_note})")
+        kept_note = (
+            f"{len(skill_of_key):,} mục tra"
+            if skill_of_key is not None
+            else f"cột '{col_skill}'"
+        )
+        print(
+            f"  đã quét {n_raw:,} dòng, giữ {n_kept:,} dòng hợp lệ | khái niệm: {len(maps['skill_id'].values):,} ({kept_note})"
+        )
 
     # Thời gian thiếu/hợp lệ -> thay bằng vị trí dòng (đơn điệu theo thứ tự file), mỗi dòng cách nhau 1 giây
     bad_ts = frame["timestamp_ms"].isna() | (frame["timestamp_ms"] <= 0)
@@ -401,7 +520,10 @@ def _canonicalize_junyi(raw_path: Path, spec: DatasetSpec, content_path=None,
         filler = np.arange(len(frame), dtype="float64") * 1000.0
         frame.loc[bad_ts, "timestamp_ms"] = filler[bad_ts.to_numpy()]
 
-    cap = int(top_concepts if top_concepts is not None else (spec.top_concepts or 0)) or None
+    cap = (
+        int(top_concepts if top_concepts is not None else (spec.top_concepts or 0))
+        or None
+    )
     if cap is not None:
         frame = _cap_concepts(frame, cap, verbose=verbose)
 
@@ -428,13 +550,17 @@ def _cap_concepts(frame: pd.DataFrame, cap: int, verbose: bool = True) -> pd.Dat
         if verbose:
             print(f"  khái niệm: {len(counts)} (dưới cap {cap}) — giữ nguyên")
         return frame
-    keep = set(counts.sort_values(ascending=False, kind="mergesort").head(cap).index.tolist())
+    keep = set(
+        counts.sort_values(ascending=False, kind="mergesort").head(cap).index.tolist()
+    )
     before = len(frame)
     out = frame[frame["skill_id"].isin(keep)].reset_index(drop=True)
     if verbose:
-        print(f"  giới hạn khái niệm: giữ {cap}/{len(counts)} khái niệm hay gặp nhất, "
-              f"bỏ {before - len(out):,} lượt ({100 * (before - len(out)) / max(before, 1):.1f}%) "
-              "trên khái niệm hiếm — GRKT không chạy nổi với K lớn hơn")
+        print(
+            f"  giới hạn khái niệm: giữ {cap}/{len(counts)} khái niệm hay gặp nhất, "
+            f"bỏ {before - len(out):,} lượt ({100 * (before - len(out)) / max(before, 1):.1f}%) "
+            "trên khái niệm hiếm — GRKT không chạy nổi với K lớn hơn"
+        )
     return out
 
 
@@ -476,11 +602,26 @@ def _resolve_columns(header, spec: DatasetSpec) -> dict:
     phép ``None`` vì còn đường bảng tra / đường suy nhãn.
     """
     required = ("user", "problem", "timestamp", "duration")
-    resolved = {role: _match_column(header, spec.columns.get(role, []), role, spec.name,
-                                    required=role in required)
-                for role in spec.columns}
+    resolved = {
+        role: _match_column(
+            header,
+            spec.columns.get(role, []),
+            role,
+            spec.name,
+            required=role in required,
+        )
+        for role in spec.columns
+    }
     read = set()
-    for role in ("user", "problem", "timestamp", "duration", "skill", "correct", "answer_count"):
+    for role in (
+        "user",
+        "problem",
+        "timestamp",
+        "duration",
+        "skill",
+        "correct",
+        "answer_count",
+    ):
         col = resolved.get(role)
         if col:
             read.add(col)
@@ -513,10 +654,16 @@ def _correct_flags(chunk: pd.DataFrame, col_correct, col_ac):
         text = raw.astype("string").str.strip().str.lower()
         truthy = {"true", "1", "1.0", "correct", "yes"}
         falsy = {"false", "0", "0.0", "incorrect", "no", "wrong"}
-        return text.map(lambda v: 1.0 if v in truthy else (0.0 if v in falsy else np.nan)), origin
+        return (
+            text.map(lambda v: 1.0 if v in truthy else (0.0 if v in falsy else np.nan)),
+            origin,
+        )
     attempts = pd.to_numeric(chunk[col_ac], errors="coerce")
     # Quy ước pyKT: làm đúng ngay lần đầu = đúng; cần >=3 lần = sai; 2 lần là nhập nhằng -> bỏ.
-    return attempts.map(lambda a: np.nan if pd.isna(a) or a == 2 else float(a == 1)), f"answer_count ({col_ac})"
+    return (
+        attempts.map(lambda a: np.nan if pd.isna(a) or a == 2 else float(a == 1)),
+        f"answer_count ({col_ac})",
+    )
 
 
 def _find_content_file(spec: DatasetSpec, content_path=None) -> Optional[Path]:
@@ -529,8 +676,13 @@ def _find_content_file(spec: DatasetSpec, content_path=None) -> Optional[Path]:
     return find_kaggle_input(patterns=patterns, preferred_names=preferred)
 
 
-def _load_content_map(spec: DatasetSpec, raw_path: Path, col_prob: str, content_path=None,
-                      verbose: bool = True):
+def _load_content_map(
+    spec: DatasetSpec,
+    raw_path: Path,
+    col_prob: str,
+    content_path=None,
+    verbose: bool = True,
+):
     """Đọc bảng tra khái niệm (Info_Content.csv) -> Series khoá câu hỏi -> tên khái niệm.
 
     Không có bảng này thì không có khái niệm cho Junyi: ``Log_Problem.csv`` chỉ định danh câu
@@ -551,35 +703,72 @@ def _load_content_map(spec: DatasetSpec, raw_path: Path, col_prob: str, content_
             f"  Hiện trạng input: {list_kaggle_inputs()}"
         )
     cheader = _probe_header(content)
-    key = _match_column(cheader, [col_prob, *(spec.content_columns.get("key") or [])],
-                        "khoá nối bảng tra", content)
-    skill = _match_column(cheader, spec.content_columns.get("skill"), "tên khái niệm", content,
-                          required=False)
+    key = _match_column(
+        cheader,
+        [col_prob, *(spec.content_columns.get("key") or [])],
+        "khoá nối bảng tra",
+        content,
+    )
+    skill = _match_column(
+        cheader,
+        spec.content_columns.get("skill"),
+        "tên khái niệm",
+        content,
+        required=False,
+    )
     if skill is None:
-        fuzzy = [c for c in cheader
-                 if any(w in _norm_name(c) for w in ("exercis", "name", "title", "skill", "topic",
-                                                     "unit", "kc", "chapter", "categ", "tags"))]
+        fuzzy = [
+            c
+            for c in cheader
+            if any(
+                w in _norm_name(c)
+                for w in (
+                    "exercis",
+                    "name",
+                    "title",
+                    "skill",
+                    "topic",
+                    "unit",
+                    "kc",
+                    "chapter",
+                    "categ",
+                    "tags",
+                )
+            )
+        ]
         raise KeyError(
             f"[{content.name}] Không khớp cột khái niệm nào trong "
             f"{list(spec.content_columns.get('skill') or ())}. Cột có sẵn: {cheader}. "
             f"Cột có vẻ là khái niệm: {fuzzy}. Thêm đúng tên vào JUNYI.content_columns['skill'] rồi chạy lại."
         )
-    table = pd.read_csv(content, usecols=[key, skill], low_memory=False, encoding="utf-8-sig")
+    table = pd.read_csv(
+        content, usecols=[key, skill], low_memory=False, encoding="utf-8-sig"
+    )
     keys = _join_key(table[key])
     vals = table[skill].astype("string").str.strip()
     bad = keys.isna() | vals.isna() | (vals.str.len() == 0)
-    table = pd.DataFrame({"k": keys[~bad], "v": vals[~bad]}).drop_duplicates("k", keep="first")
+    table = pd.DataFrame({"k": keys[~bad], "v": vals[~bad]}).drop_duplicates(
+        "k", keep="first"
+    )
     if table.empty:
-        raise KeyError(f"[{content.name}] Bảng tra rỗng sau khi lọc: key='{key}', skill='{skill}'.")
+        raise KeyError(
+            f"[{content.name}] Bảng tra rỗng sau khi lọc: key='{key}', skill='{skill}'."
+        )
     skill_of_key = table.set_index("k")["v"]
 
     # Kiểm tra khoá nối có thật sự khớp với log không, trên một mẫu nhỏ (đọc 200k dòng đầu).
-    sample = pd.read_csv(raw_path, usecols=[col_prob], nrows=200_000, encoding="utf-8-sig")
+    sample = pd.read_csv(
+        raw_path, usecols=[col_prob], nrows=200_000, encoding="utf-8-sig"
+    )
     coverage = float(_join_key(sample[col_prob]).isin(skill_of_key.index).mean())
     if verbose:
-        print(f"  bảng tra: {content.name} | khoá '{key}' -> khái niệm '{skill}' | "
-              f"{len(skill_of_key):,} mục | {skill_of_key.nunique():,} khái niệm khác nhau")
-        print(f"  phủ {coverage:.1%} lượt làm bài (đo trên 200.000 dòng đầu của {raw_path.name})")
+        print(
+            f"  bảng tra: {content.name} | khoá '{key}' -> khái niệm '{skill}' | "
+            f"{len(skill_of_key):,} mục | {skill_of_key.nunique():,} khái niệm khác nhau"
+        )
+        print(
+            f"  phủ {coverage:.1%} lượt làm bài (đo trên 200.000 dòng đầu của {raw_path.name})"
+        )
     if coverage < 0.5:
         raise KeyError(
             f"[{content.name}] Nối theo khoá '{key}' chỉ phủ {coverage:.1%} lượt làm bài — nhiều "
@@ -587,9 +776,14 @@ def _load_content_map(spec: DatasetSpec, raw_path: Path, col_prob: str, content_
             f"{cheader}. Cột của log: {_probe_header(raw_path)}. "
             "Sửa JUNYI.content_columns rồi chạy lại."
         )
-    return skill_of_key, {"file": str(content), "key": key, "skill": skill,
-                          "n_entries": int(len(skill_of_key)),
-                          "n_concepts": int(skill_of_key.nunique()), "coverage": coverage}
+    return skill_of_key, {
+        "file": str(content),
+        "key": key,
+        "skill": skill,
+        "n_entries": int(len(skill_of_key)),
+        "n_concepts": int(skill_of_key.nunique()),
+        "coverage": coverage,
+    }
 
 
 class _CodeMap:
@@ -643,15 +837,19 @@ def _check_canonical_meta(target: Path, requested: dict, verbose: bool = True) -
     meta_path = _canonical_meta_path(target)
     if not meta_path.exists():
         if verbose:
-            print(f"  [cảnh báo] {target.name} không có {meta_path.name}: không xác định được "
-                  "max_users/min_interactions/top_concepts đã dùng. Nếu lần trước chạy với cap "
-                  "khác thì xoá file này trước khi chạy lại.")
+            print(
+                f"  [cảnh báo] {target.name} không có {meta_path.name}: không xác định được "
+                "max_users/min_interactions/top_concepts đã dùng. Nếu lần trước chạy với cap "
+                "khác thì xoá file này trước khi chạy lại."
+            )
         return
     try:
         previous = json.loads(meta_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return
-    diff = {k: (previous.get(k), v) for k, v in requested.items() if previous.get(k) != v}
+    diff = {
+        k: (previous.get(k), v) for k, v in requested.items() if previous.get(k) != v
+    }
     if diff:
         detail = ", ".join(f"{k}: {old} -> {new}" for k, (old, new) in diff.items())
         raise RuntimeError(
@@ -680,15 +878,30 @@ def ensure_canonical(
     ``find_kaggle_input`` dò sai (chỉ cần thiết với tập mà file log không có cột khái niệm,
     vd Junyi).
     """
-    out_dir = Path(out_dir) if out_dir is not None else (Path(spec.canonical_file).parent or Path("."))
-    min_int = int(min_interactions if min_interactions is not None else spec.min_interactions)
-    cap_users = int(max_users if max_users is not None else (spec.max_users or 0)) or None
-    cap_concepts = int(top_concepts if top_concepts is not None else (spec.top_concepts or 0)) or None
+    out_dir = (
+        Path(out_dir)
+        if out_dir is not None
+        else (Path(spec.canonical_file).parent or Path("."))
+    )
+    min_int = int(
+        min_interactions if min_interactions is not None else spec.min_interactions
+    )
+    cap_users = (
+        int(max_users if max_users is not None else (spec.max_users or 0)) or None
+    )
+    cap_concepts = (
+        int(top_concepts if top_concepts is not None else (spec.top_concepts or 0))
+        or None
+    )
     target = out_dir / Path(spec.canonical_file).name
     if target.exists():
         _check_canonical_meta(
             target,
-            {"max_users": cap_users, "min_interactions": min_int, "top_concepts": cap_concepts},
+            {
+                "max_users": cap_users,
+                "min_interactions": min_int,
+                "top_concepts": cap_concepts,
+            },
             verbose=verbose,
         )
     if raw_path is None and spec.raw_file is None and not has_canonical(spec, out_dir):
@@ -698,7 +911,9 @@ def ensure_canonical(
         if found is not None:
             raw_path = found
             if verbose:
-                print(f"[{spec.name}] Tự dò thấy dữ liệu gốc trong /kaggle/input: {raw_path}")
+                print(
+                    f"[{spec.name}] Tự dò thấy dữ liệu gốc trong /kaggle/input: {raw_path}"
+                )
         elif verbose and spec.name == "junyi":
             print(f"  [dò] {list_kaggle_inputs()}")
     if spec.raw_file is None and raw_path is None:
@@ -718,9 +933,11 @@ def ensure_canonical(
     out_dir.mkdir(parents=True, exist_ok=True)
     if target.exists():
         if verbose:
-            print(f"[{spec.name}] Đã có CSV chuẩn hoá, dùng lại: {target} "
-                  "(xoá file này nếu đổi max_users/min_interactions/top_concepts hoặc nếu dữ "
-                  "liệu nguồn thay đổi)")
+            print(
+                f"[{spec.name}] Đã có CSV chuẩn hoá, dùng lại: {target} "
+                "(xoá file này nếu đổi max_users/min_interactions/top_concepts hoặc nếu dữ "
+                "liệu nguồn thay đổi)"
+            )
         return target
 
     raw = Path(raw_path if raw_path is not None else spec.raw_file)
@@ -731,12 +948,15 @@ def ensure_canonical(
         )
 
     if verbose:
-        print(f"[{spec.name}] Chuẩn hoá {raw.name} -> {target.name} "
-              f"(min {min_int} tương tác/người, cap {'toàn bộ' if cap_users is None else cap_users} người, "
-              f"cap {'toàn bộ' if cap_concepts is None else cap_concepts} khái niệm)")
+        print(
+            f"[{spec.name}] Chuẩn hoá {raw.name} -> {target.name} "
+            f"(min {min_int} tương tác/người, cap {'toàn bộ' if cap_users is None else cap_users} người, "
+            f"cap {'toàn bộ' if cap_concepts is None else cap_concepts} khái niệm)"
+        )
 
-    frame = _canonicalize_junyi(raw, spec, content_path=content_path,
-                                top_concepts=cap_concepts, verbose=verbose)
+    frame = _canonicalize_junyi(
+        raw, spec, content_path=content_path, top_concepts=cap_concepts, verbose=verbose
+    )
     # Đọc attrs NGAY tại đây: mọi phép sắp xếp/lọc bên dưới đều có quyền bỏ attrs của pandas.
     correct_origin = frame.attrs.get("correct_origin", "không rõ")
     mapping = frame.attrs.get("column_mapping", {})
@@ -749,14 +969,20 @@ def ensure_canonical(
         print(f"  người học sau lọc tối thiểu tương tác: {len(keep)} / {len(counts)}")
     if cap_users is not None and len(keep) > cap_users:
         rng = np.random.RandomState(spec.subsample_seed)
-        chosen = np.sort(rng.choice(np.asarray(keep.index), size=cap_users, replace=False))
+        chosen = np.sort(
+            rng.choice(np.asarray(keep.index), size=cap_users, replace=False)
+        )
         keep = keep.loc[list(chosen)]
         if verbose:
-            print(f"  sub-sample theo seed {spec.subsample_seed}: {len(keep)} người học")
+            print(
+                f"  sub-sample theo seed {spec.subsample_seed}: {len(keep)} người học"
+            )
     frame = frame[frame["user_id"].isin(keep.index)]
 
     # Cắt chuỗi mỗi người theo thứ tự thời gian trước khi ghi file (giữ thời gian thật của phần còn lại)
-    frame = frame.groupby("user_id", sort=False, group_keys=False).head(spec.max_keep_per_user)
+    frame = frame.groupby("user_id", sort=False, group_keys=False).head(
+        spec.max_keep_per_user
+    )
     # Giải mã sau cùng, khi khung đã nhỏ: 16 triệu chuỗi khái niệm giữ trong RAM là lý do
     # notebook Kaggle chết bằng "Killed" ở lần chạy trước.
     for column, decoding in decoders.items():
@@ -764,22 +990,28 @@ def ensure_canonical(
             frame[column] = frame[column].map(decoding)
     if "skill_id" in frame.columns:
         frame["skill_name"] = frame["skill_id"]
-    frame = frame.sort_values(["user_id", "timestamp_ms"], kind="mergesort").reset_index(drop=True)
+    frame = frame.sort_values(
+        ["user_id", "timestamp_ms"], kind="mergesort"
+    ).reset_index(drop=True)
     frame["order_id"] = np.arange(1, len(frame) + 1, dtype="int64")
 
     # Khoảng thời gian giữa hai bước của cùng người học phải không âm và bị chặn ở bước
     # build_grkt_data; ở đây chỉ ghi nguyên vẹn timestamp để tái sử dụng được nhiều cấu hình.
     frame[CANONICAL_COLUMNS].to_csv(target, index=False)
     _canonical_meta_path(target).write_text(
-        json.dumps({
-            "max_users": cap_users,
-            "min_interactions": min_int,
-            "top_concepts": cap_concepts,
-            "raw_file": str(raw),
-            "rows": int(len(frame)),
-            "users": int(frame["user_id"].nunique()),
-            "concepts": int(frame["skill_id"].nunique()),
-        }, ensure_ascii=False, indent=2),
+        json.dumps(
+            {
+                "max_users": cap_users,
+                "min_interactions": min_int,
+                "top_concepts": cap_concepts,
+                "raw_file": str(raw),
+                "rows": int(len(frame)),
+                "users": int(frame["user_id"].nunique()),
+                "concepts": int(frame["skill_id"].nunique()),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
     if verbose:
@@ -787,18 +1019,24 @@ def ensure_canonical(
             print("  ánh xạ cột: " + " | ".join(f"{k}={v}" for k, v in mapping.items()))
         else:
             print(f"  nhãn đúng/sai lấy từ: {correct_origin}")
-        print(f"  đã ghi {len(frame)} tương tác | {frame['user_id'].nunique()} người học | "
-              f"{frame['skill_id'].nunique()} khái niệm | {frame['problem_id'].nunique()} câu hỏi")
+        print(
+            f"  đã ghi {len(frame)} tương tác | {frame['user_id'].nunique()} người học | "
+            f"{frame['skill_id'].nunique()} khái niệm | {frame['problem_id'].nunique()} câu hỏi"
+        )
         print(f"  tỉ lệ đúng = {frame['correct'].mean():.3f}")
     return target
 
 
-def find_kaggle_input(patterns=("junyi",), preferred_names=("Log_Problem.csv",)) -> Optional[Path]:
-    """ dò file Junyi trong /kaggle/input, ưu tiên tên quen thuộc; None nếu chưa attach."""
+def find_kaggle_input(
+    patterns=("junyi",), preferred_names=("Log_Problem.csv",)
+) -> Optional[Path]:
+    """dò file Junyi trong /kaggle/input, ưu tiên tên quen thuộc; None nếu chưa attach."""
     root = Path("/kaggle/input")
     if not root.exists():
         return None
-    hits = [p for p in root.rglob("*.csv") if any(k in str(p).lower() for k in patterns)]
+    hits = [
+        p for p in root.rglob("*.csv") if any(k in str(p).lower() for k in patterns)
+    ]
     if not hits:
         return None
     for name in preferred_names:
@@ -827,12 +1065,20 @@ def list_kaggle_inputs(max_files: int = 40) -> str:
     lines = [f"/kaggle/input có {len(mounts)} dataset đã attach:"]
     for m in mounts:
         try:
-            files = sorted(m.rglob("*"), key=lambda p: p.stat().st_size if p.is_file() else -1, reverse=True)
+            files = sorted(
+                m.rglob("*"),
+                key=lambda p: p.stat().st_size if p.is_file() else -1,
+                reverse=True,
+            )
             csvs = [p for p in files if p.is_file() and p.suffix.lower() == ".csv"]
             size = sum(p.stat().st_size for p in csvs) / 1024 / 1024
-            shown = ", ".join(f"{p.relative_to(m)} ({p.stat().st_size / 1024 / 1024:.0f} MB)"
-                             for p in (csvs or files)[:5])
-            lines.append(f"  {m.name}: {len(csvs)} file CSV, {size:,.0f} MB | {shown or '(trống — chưa giải nén?)'}")
+            shown = ", ".join(
+                f"{p.relative_to(m)} ({p.stat().st_size / 1024 / 1024:.0f} MB)"
+                for p in (csvs or files)[:5]
+            )
+            lines.append(
+                f"  {m.name}: {len(csvs)} file CSV, {size:,.0f} MB | {shown or '(trống — chưa giải nén?)'}"
+            )
             if len(csvs) > 5:
                 lines.append(f"      ... còn lại {len(csvs) - 5} file CSV khác")
         except OSError as exc:

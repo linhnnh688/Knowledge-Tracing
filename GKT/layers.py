@@ -14,7 +14,7 @@ from torch.autograd import Variable
 class MLP(nn.Module):
     """Two-layer fully-connected ReLU net with batch norm."""
 
-    def __init__(self, input_dim, hidden_dim, output_dim, dropout=0., bias=True):
+    def __init__(self, input_dim, hidden_dim, output_dim, dropout=0.0, bias=True):
         super(MLP, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim, bias=bias)
         self.fc2 = nn.Linear(hidden_dim, output_dim, bias=bias)
@@ -46,7 +46,9 @@ class MLP(nn.Module):
 
     def forward(self, inputs):
         x = F.relu(self.fc1(inputs))
-        x = F.dropout(x, self.dropout, training=self.training)  # pay attention to add training=self.training
+        x = F.dropout(
+            x, self.dropout, training=self.training
+        )  # pay attention to add training=self.training
         x = F.relu(self.fc2(x))
         return self.batch_norm(x)
 
@@ -70,7 +72,7 @@ class EraseAddGate(nn.Module):
         self.add = nn.Linear(feature_dim, feature_dim, bias=bias)
 
     def reset_parameters(self):
-        stdv = 1. / math.sqrt(self.weight.size(0))
+        stdv = 1.0 / math.sqrt(self.weight.size(0))
         self.weight.data.uniform_(-stdv, stdv)
 
     def forward(self, x):
@@ -85,7 +87,9 @@ class EraseAddGate(nn.Module):
         The GKT paper didn't provide detailed explanation about this erase-add gate. As the erase-add gate in the GKT only has one input parameter,
         this gate is different with that of the DKVMN. We used the input matrix to build the erase and add gates, rather than $\mathbf{v}_{t}$ vector in the DKVMN.
         """
-        erase_gate = torch.sigmoid(self.erase(x))  # [batch_size, concept_num, feature_dim]
+        erase_gate = torch.sigmoid(
+            self.erase(x)
+        )  # [batch_size, concept_num, feature_dim]
         # self.weight.unsqueeze(dim=1) shape: [concept_num, 1]
         tmp_x = x - self.weight.unsqueeze(dim=1) * erase_gate * x
         add_feat = torch.tanh(self.add(x))  # [batch_size, concept_num, feature_dim]
@@ -99,7 +103,7 @@ class ScaledDotProductAttention(nn.Module):
     NOTE: Stole and modify from https://github.com/jadore801120/attention-is-all-you-need-pytorch/blob/master/transformer/Modules.py
     """
 
-    def __init__(self, temperature, attn_dropout=0.):
+    def __init__(self, temperature, attn_dropout=0.0):
         super().__init__()
         self.temperature = temperature
         self.dropout = attn_dropout
@@ -115,11 +119,15 @@ class ScaledDotProductAttention(nn.Module):
             k: [n_head, concept_num, embedding_dim]
         Return: attention score of all queries
         """
-        attn = torch.matmul(q / self.temperature, k.transpose(1, 2))  # [n_head, mask_number, concept_num]
+        attn = torch.matmul(
+            q / self.temperature, k.transpose(1, 2)
+        )  # [n_head, mask_number, concept_num]
         if mask is not None:
             attn = attn.masked_fill(mask == 0, -1e9)
         # pay attention to add training=self.training!
-        attn = F.dropout(F.softmax(attn, dim=0), self.dropout, training=self.training)  # pay attention that dim=-1 is not as good as dim=0!
+        attn = F.dropout(
+            F.softmax(attn, dim=0), self.dropout, training=self.training
+        )  # pay attention that dim=-1 is not as good as dim=0!
         return attn
 
 
@@ -128,15 +136,24 @@ class MLPEncoder(nn.Module):
     MLP encoder module.
     NOTE: Stole and modify the code from https://github.com/ethanfetaya/NRI/blob/master/modules.py
     """
-    def __init__(self, input_dim, hidden_dim, output_dim, factor=True, dropout=0., bias=True):
+
+    def __init__(
+        self, input_dim, hidden_dim, output_dim, factor=True, dropout=0.0, bias=True
+    ):
         super(MLPEncoder, self).__init__()
         self.factor = factor
-        self.mlp = MLP(input_dim * 2, hidden_dim, hidden_dim, dropout=dropout, bias=bias)
+        self.mlp = MLP(
+            input_dim * 2, hidden_dim, hidden_dim, dropout=dropout, bias=bias
+        )
         self.mlp2 = MLP(hidden_dim, hidden_dim, hidden_dim, dropout=dropout, bias=bias)
         if self.factor:
-            self.mlp3 = MLP(hidden_dim * 3, hidden_dim, hidden_dim, dropout=dropout, bias=bias)
+            self.mlp3 = MLP(
+                hidden_dim * 3, hidden_dim, hidden_dim, dropout=dropout, bias=bias
+            )
         else:
-            self.mlp3 = MLP(hidden_dim * 2, hidden_dim, hidden_dim, dropout=dropout, bias=bias)
+            self.mlp3 = MLP(
+                hidden_dim * 2, hidden_dim, hidden_dim, dropout=dropout, bias=bias
+            )
         self.fc_out = nn.Linear(hidden_dim, output_dim)
         self.init_weights()
 
@@ -183,11 +200,15 @@ class MLPEncoder(nn.Module):
             x = self.edge2node(x, sp_send_t, sp_rec_t)  # [concept_num, hidden_num]
             x = self.mlp2(x)  # [concept_num, hidden_num]
             x = self.node2edge(x, sp_send, sp_rec)  # [edge_num, 2 * hidden_num]
-            x = torch.cat((x, x_skip), dim=1)  # Skip connection  shape: [edge_num, 3 * hidden_num]
+            x = torch.cat(
+                (x, x_skip), dim=1
+            )  # Skip connection  shape: [edge_num, 3 * hidden_num]
             x = self.mlp3(x)  # [edge_num, hidden_num]
         else:
             x = self.mlp2(x)  # [edge_num, hidden_num]
-            x = torch.cat((x, x_skip), dim=1)  # Skip connection  shape: [edge_num, 2 * hidden_num]
+            x = torch.cat(
+                (x, x_skip), dim=1
+            )  # Skip connection  shape: [edge_num, 2 * hidden_num]
             x = self.mlp3(x)  # [edge_num, hidden_num]
         output = self.fc_out(x)  # [edge_num, output_dim]
         return output
@@ -199,14 +220,33 @@ class MLPDecoder(nn.Module):
     NOTE: Stole and modify the code from https://github.com/ethanfetaya/NRI/blob/master/modules.py
     """
 
-    def __init__(self, input_dim, msg_hidden_dim, msg_output_dim, hidden_dim, edge_type_num, dropout=0., bias=True):
+    def __init__(
+        self,
+        input_dim,
+        msg_hidden_dim,
+        msg_output_dim,
+        hidden_dim,
+        edge_type_num,
+        dropout=0.0,
+        bias=True,
+    ):
         super(MLPDecoder, self).__init__()
         self.msg_out_dim = msg_output_dim
         self.edge_type_num = edge_type_num
         self.dropout = dropout
 
-        self.msg_fc1 = nn.ModuleList([nn.Linear(2 * input_dim, msg_hidden_dim, bias=bias) for _ in range(edge_type_num)])
-        self.msg_fc2 = nn.ModuleList([nn.Linear(msg_hidden_dim, msg_output_dim, bias=bias) for _ in range(edge_type_num)])
+        self.msg_fc1 = nn.ModuleList(
+            [
+                nn.Linear(2 * input_dim, msg_hidden_dim, bias=bias)
+                for _ in range(edge_type_num)
+            ]
+        )
+        self.msg_fc2 = nn.ModuleList(
+            [
+                nn.Linear(msg_hidden_dim, msg_output_dim, bias=bias)
+                for _ in range(edge_type_num)
+            ]
+        )
         self.out_fc1 = nn.Linear(msg_output_dim, hidden_dim, bias=bias)
         self.out_fc2 = nn.Linear(hidden_dim, hidden_dim, bias=bias)
         self.out_fc3 = nn.Linear(hidden_dim, input_dim, bias=bias)
@@ -243,18 +283,26 @@ class MLPDecoder(nn.Module):
         # NOTE: Assumes that we have the same graph across all samples.
         # Node2edge
         pre_msg = self.node2edge(inputs, sp_send, sp_rec)
-        all_msgs = Variable(torch.zeros(pre_msg.size(0), self.msg_out_dim, device=inputs.device))  # [edge_num, msg_out_dim]
+        all_msgs = Variable(
+            torch.zeros(pre_msg.size(0), self.msg_out_dim, device=inputs.device)
+        )  # [edge_num, msg_out_dim]
         for i in range(self.edge_type_num):
             msg = F.relu(self.msg_fc1[i](pre_msg))
             msg = F.dropout(msg, self.dropout, training=self.training)
             msg = F.relu(self.msg_fc2[i](msg))
-            msg = msg * rel_type[:, i:i + 1]
+            msg = msg * rel_type[:, i : i + 1]
             all_msgs += msg
 
         # Aggregate all msgs to receiver
-        agg_msgs = self.edge2node(all_msgs, sp_send_t, sp_rec_t)  # [concept_num, msg_out_dim]
+        agg_msgs = self.edge2node(
+            all_msgs, sp_send_t, sp_rec_t
+        )  # [concept_num, msg_out_dim]
         # Output MLP
-        pred = F.dropout(F.relu(self.out_fc1(agg_msgs)), self.dropout, training=self.training)  # [concept_num, hidden_dim]
-        pred = F.dropout(F.relu(self.out_fc2(pred)), self.dropout, training=self.training)  # [concept_num, hidden_dim]
+        pred = F.dropout(
+            F.relu(self.out_fc1(agg_msgs)), self.dropout, training=self.training
+        )  # [concept_num, hidden_dim]
+        pred = F.dropout(
+            F.relu(self.out_fc2(pred)), self.dropout, training=self.training
+        )  # [concept_num, hidden_dim]
         pred = self.out_fc3(pred)  # [concept_num, embedding_dim]
         return pred

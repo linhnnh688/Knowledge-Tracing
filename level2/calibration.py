@@ -38,7 +38,9 @@ def expected_calibration_error(
     p = np.asarray(probs, dtype="float64")
     y = np.asarray(labels, dtype="float64")
     if p.size == 0 or p.shape != y.shape:
-        raise ValueError(f"probs/labels phải cùng độ dài và khác rỗng: {p.shape} vs {y.shape}")
+        raise ValueError(
+            f"probs/labels phải cùng độ dài và khác rỗng: {p.shape} vs {y.shape}"
+        )
     edges = np.linspace(0.0, 1.0, n_bins + 1)
     edges[-1] = edges[-1] + 1e-9
     idx = np.clip(np.digitize(p, edges[1:-1], right=False), 0, n_bins - 1)
@@ -56,15 +58,17 @@ def expected_calibration_error(
         gap = abs(avg_p - avg_y)
         ece += (cnt / n) * gap
         ace_terms.append(gap)
-        bins.append({
-            "bin": b,
-            "lo": float(edges[b]),
-            "hi": float(edges[b + 1]),
-            "n": cnt,
-            "avg_pred": avg_p,
-            "avg_label": avg_y,
-            "gap": gap,
-        })
+        bins.append(
+            {
+                "bin": b,
+                "lo": float(edges[b]),
+                "hi": float(edges[b + 1]),
+                "n": cnt,
+                "avg_pred": avg_p,
+                "avg_label": avg_y,
+                "gap": gap,
+            }
+        )
     return {
         "ece": float(ece),
         "ace": float(np.mean(ace_terms)) if ace_terms else float("nan"),
@@ -130,9 +134,13 @@ def reliability_plot(
         # raise "only length-1 arrays can be converted"), nên điểm được vẽ riêng bằng
         # ``scatter`` (``s`` là diện tích, đơn vị point²) với kích thước tỉ lệ số mẫu mỗi ngăn.
         sizes = np.clip(np.sqrt(np.asarray(ns, dtype="float64")) / 12.0, 3.0, 12.0)
-        ax.plot(xs, ys, linewidth=1.3,
-                label=f"{name} (ECE={cal['ece']:.3f}, n={int(np.sum(ns))})")
-        ax.scatter(xs, ys, s=sizes ** 2, zorder=3)
+        ax.plot(
+            xs,
+            ys,
+            linewidth=1.3,
+            label=f"{name} (ECE={cal['ece']:.3f}, n={int(np.sum(ns))})",
+        )
+        ax.scatter(xs, ys, s=sizes**2, zorder=3)
     ax.set_xlabel("xác suất dự đoán trung bình theo ngăn")
     ax.set_ylabel("tỉ lệ làm đúng quan sát được")
     ax.set_xlim(0, 1)
@@ -146,7 +154,11 @@ def reliability_plot(
     return out_path
 
 
-def save_reliability_rows(entries: Dict[str, Tuple[Sequence[float], Sequence[float]]], out_path, n_bins: int = 10) -> Path:
+def save_reliability_rows(
+    entries: Dict[str, Tuple[Sequence[float], Sequence[float]]],
+    out_path,
+    n_bins: int = 10,
+) -> Path:
     """Xuất ``reliability.csv`` (mỗi dòng = một ngăn của một mô hình) để vẽ lại bằng Excel/Bàn cờ."""
     import pandas as pd
 

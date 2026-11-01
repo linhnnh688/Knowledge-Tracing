@@ -36,7 +36,13 @@ class KTLoss(nn.Module):
             y_true = real_answers[answer_mask].cpu().detach().numpy()
             y_pred = pred_one[answer_mask].cpu().detach().numpy()
             auc = roc_auc_score(y_true, y_pred)  # may raise ValueError
-            output = torch.cat((pred_zero[answer_mask].reshape(-1, 1), pred_one[answer_mask].reshape(-1, 1)), dim=1)
+            output = torch.cat(
+                (
+                    pred_zero[answer_mask].reshape(-1, 1),
+                    pred_one[answer_mask].reshape(-1, 1),
+                ),
+                dim=1,
+            )
             label = real_answers[answer_mask].reshape(-1, 1)
             acc = accuracy(output, label)
             acc = float(acc.cpu().detach().numpy())
@@ -46,7 +52,9 @@ class KTLoss(nn.Module):
         # calculate NLL loss
         pred_one[answer_mask] = torch.log(pred_one[answer_mask])
         pred_zero[answer_mask] = torch.log(pred_zero[answer_mask])
-        pred_answers = torch.cat((pred_zero.unsqueeze(dim=1), pred_one.unsqueeze(dim=1)), dim=1)
+        pred_answers = torch.cat(
+            (pred_zero.unsqueeze(dim=1), pred_one.unsqueeze(dim=1)), dim=1
+        )
         # pred_answers shape: [batch_size, 2, seq_len - 1]
         nll_loss = nn.NLLLoss(ignore_index=-1)  # ignore masked values in real_answers
         loss = nll_loss(pred_answers, real_answers.long())
@@ -74,12 +82,11 @@ class VAELoss(nn.Module):
                 assert log_prior is not None
                 loss_kl = kl_categorical(prob, log_prior, self.concept_num)
             else:
-                loss_kl = kl_categorical_uniform(prob, self.concept_num, self.edge_type_num)
+                loss_kl = kl_categorical_uniform(
+                    prob, self.concept_num, self.edge_type_num
+                )
             if time_idx == 0:
                 loss = loss_nll + loss_kl
             else:
                 loss = loss + loss_nll + loss_kl
         return loss / time_stamp_num
-
-
-

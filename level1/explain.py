@@ -130,7 +130,11 @@ def annotate_evidence(
         device = next(model.parameters()).device
     model.eval()
     rows = _dataset_rows(loader)
-    has_graph = graph_ablation and hasattr(model, "graph") and isinstance(getattr(model, "graph"), torch.nn.Parameter)
+    has_graph = (
+        graph_ablation
+        and hasattr(model, "graph")
+        and isinstance(getattr(model, "graph"), torch.nn.Parameter)
+    )
     for rec in [r for bucket in buckets.values() for r in bucket]:
         pos, t = rec.get("pos"), rec.get("t")
         if pos is None or t is None or pos >= len(rows):
@@ -144,9 +148,14 @@ def annotate_evidence(
         batch = torch.LongTensor([feats]).to(device)
         qbatch = torch.LongTensor([qs]).to(device)
         p_recheck = float(_forward_pred(model, batch, qbatch, idx, device))
-        rec["evidence"] = {"ok": abs(p_recheck - rec["y_prob"]) <= tol, "p_recheck": p_recheck}
+        rec["evidence"] = {
+            "ok": abs(p_recheck - rec["y_prob"]) <= tol,
+            "p_recheck": p_recheck,
+        }
         if not rec["evidence"]["ok"]:
-            rec["evidence"]["reason"] = f"re-run p={p_recheck:.4f} != logged p={rec['y_prob']:.4f}"
+            rec["evidence"][
+                "reason"
+            ] = f"re-run p={p_recheck:.4f} != logged p={rec['y_prob']:.4f}"
             continue
         history = [h for h in rec["history"] if 0 <= h["t"] <= idx]
         flips = []
@@ -264,7 +273,9 @@ def collect_cases(
         try:
             annotate_evidence(model, loader, buckets, graph=graph, device=device)
         except Exception as exc:  # never break a training run over the extras
-            print(f"[explain] bỏ qua bằng chứng phản chứng: {type(exc).__name__}: {exc}")
+            print(
+                f"[explain] bỏ qua bằng chứng phản chứng: {type(exc).__name__}: {exc}"
+            )
     return buckets
 
 
@@ -285,7 +296,6 @@ def _select(rows, n_each, distinct_skills):
     return picked
 
 
-
 def format_cases(buckets, graph_note="transition graph (train only)") -> str:
     lines = []
     for label, rows in buckets.items():
@@ -296,13 +306,16 @@ def format_cases(buckets, graph_note="transition graph (train only)") -> str:
                 f"y={rec['y_true']}  p={rec['y_prob']:.3f}  pred={rec['y_pred']}"
             )
             hist_txt = ", ".join(
-                f"t{h['t']}:{h['skill_name']}={'OK' if h['correct']==1 else 'NG'}" for h in rec["history"]
+                f"t{h['t']}:{h['skill_name']}={'OK' if h['correct']==1 else 'NG'}"
+                for h in rec["history"]
             )
             lines.append(f"- history ({len(rec['history'])} steps): {hist_txt}")
             same = [h for h in rec["history"] if h["skill"] == rec["skill"]]
             if same:
                 rate = sum(h["correct"] for h in same) / len(same)
-                lines.append(f"- same-skill history: {len(same)} tries, accuracy={rate:.2f}")
+                lines.append(
+                    f"- same-skill history: {len(same)} tries, accuracy={rate:.2f}"
+                )
             else:
                 lines.append("- same-skill history: none (cold skill for this student)")
             if rec["neighbors"]:
@@ -345,7 +358,9 @@ def _evidence_lines(rec):
                 f"(opposite of all of them at once is not modelled)"
             )
         else:
-            lines.append("  - no past attempt on this skill in the window: p moves only via other skills")
+            lines.append(
+                "  - no past attempt on this skill in the window: p moves only via other skills"
+            )
     if "delta_graph" in ev:
         lines.append(
             f"- graph ablation for THIS prediction: A := 0 moves p {rec['y_prob']:.3f} -> "
@@ -374,7 +389,9 @@ def _explain_one(rec) -> str:
         if flips:
             strongest = flips[0]
             if abs(strongest["delta"]) < 1e-3:
-                parts.append("no single past attempt in the window moves p by more than 0.001")
+                parts.append(
+                    "no single past attempt in the window moves p by more than 0.001"
+                )
             else:
                 direction = "raises" if strongest["delta"] > 0 else "lowers"
                 parts.append(
@@ -384,15 +401,21 @@ def _explain_one(rec) -> str:
         if "delta_graph" in ev:
             dg = ev["delta_graph"]
             if abs(dg) < 1e-3:
-                parts.append("removing every edge leaves this score unchanged (|dp| < 0.001)")
+                parts.append(
+                    "removing every edge leaves this score unchanged (|dp| < 0.001)"
+                )
             else:
                 role = "raises" if dg > 0 else "lowers"
-                parts.append(f"the graph {role} this score by {abs(dg):.3f} "
-                             f"(p {rec['y_prob']:.3f} vs {ev['nograph_p']:.3f} with A := 0)")
+                parts.append(
+                    f"the graph {role} this score by {abs(dg):.3f} "
+                    f"(p {rec['y_prob']:.3f} vs {ev['nograph_p']:.3f} with A := 0)"
+                )
         same = [h for h in rec["history"] if h["skill"] == rec["skill"]]
         if same:
             rate = sum(h["correct"] for h in same) / len(same)
-            parts.append(f"same-skill record in window = {rate:.2f} over {len(same)} attempts")
+            parts.append(
+                f"same-skill record in window = {rate:.2f} over {len(same)} attempts"
+            )
         if parts:
             head = "Correct call:" if rec["y_pred"] == rec["y_true"] else "Wrong call:"
             return head + " " + "; ".join(parts) + "."

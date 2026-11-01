@@ -28,12 +28,12 @@ class UserSequence:
     """Một chuỗi tương tác của MỘT người học, đã ở không gian chỉ số của GRKT (1-based)."""
 
     user_id: object
-    probs: List[int]              # câu hỏi (problem_id đã ánh xạ), 1..n_probs
-    knows: List[List[int]]        # khái niệm của từng lượt, 1..n_knows (0 không xuất hiện)
-    corrs: List[int]              # 0/1
-    times: List[int]              # mốc thời gian NGUYÊN theo phút, đơn điệu không giảm
-    lags: List[int]               # thời gian làm bài (giây) — GRKT không dùng tới
-    skills0: List[int]            # khái niệm theo không gian 0-based của Cấp độ 1 (đối chiếu)
+    probs: List[int]  # câu hỏi (problem_id đã ánh xạ), 1..n_probs
+    knows: List[List[int]]  # khái niệm của từng lượt, 1..n_knows (0 không xuất hiện)
+    corrs: List[int]  # 0/1
+    times: List[int]  # mốc thời gian NGUYÊN theo phút, đơn điệu không giảm
+    lags: List[int]  # thời gian làm bài (giây) — GRKT không dùng tới
+    skills0: List[int]  # khái niệm theo không gian 0-based của Cấp độ 1 (đối chiếu)
 
     @property
     def length(self) -> int:
@@ -43,17 +43,19 @@ class UserSequence:
         """Định dạng upstream: mỗi lượt là (prob, [knows], corr(bool), time, lag)."""
         return [
             (int(p), [int(k) for k in kn], bool(c), int(t), int(lag))
-            for p, kn, c, t, lag in zip(self.probs, self.knows, self.corrs, self.times, self.lags)
+            for p, kn, c, t, lag in zip(
+                self.probs, self.knows, self.corrs, self.times, self.lags
+            )
         ]
 
     def as_dict(self) -> dict:
         return {
             "user_id": self.user_id,
             "probs": np.asarray(self.probs, dtype="int64"),
-            "knows": np.asarray(self.knows, dtype="int64"),          # [S, K]
-            "skills0": np.asarray(self.skills0, dtype="int64"),      # [S]
-            "corrs": np.asarray(self.corrs, dtype="int64"),          # [S]
-            "times": np.asarray(self.times, dtype="int64"),          # [S]
+            "knows": np.asarray(self.knows, dtype="int64"),  # [S, K]
+            "skills0": np.asarray(self.skills0, dtype="int64"),  # [S]
+            "corrs": np.asarray(self.corrs, dtype="int64"),  # [S]
+            "times": np.asarray(self.times, dtype="int64"),  # [S]
         }
 
 
@@ -130,14 +132,26 @@ def _user_delta_minutes(series: pd.DataFrame, mode: str) -> np.ndarray:
         return deltas
     if mode == "duration_ms":
         if "ms_first_response" not in series.columns:
-            raise KeyError("Cột 'ms_first_response' không tồn tại — không dùng được time_mode='duration_ms'")
-        ms = pd.to_numeric(series["ms_first_response"], errors="coerce").fillna(0.0).clip(lower=0.0)
+            raise KeyError(
+                "Cột 'ms_first_response' không tồn tại — không dùng được time_mode='duration_ms'"
+            )
+        ms = (
+            pd.to_numeric(series["ms_first_response"], errors="coerce")
+            .fillna(0.0)
+            .clip(lower=0.0)
+        )
         # Độ dài làm bài của lượt TRƯỚC xấp xỉ khoảng cách tới lượt sau; lượt đầu chưa có gì.
         return np.concatenate(([0.0], ms.to_numpy(dtype="float64")[:-1])) / 60000.0
     if mode == "timestamp_ms":
         if "timestamp_ms" not in series.columns:
-            raise KeyError("Cột 'timestamp_ms' không tồn tại — không dùng được time_mode='timestamp_ms'")
-        ts = pd.to_numeric(series["timestamp_ms"], errors="coerce").fillna(0.0).to_numpy(dtype="float64")
+            raise KeyError(
+                "Cột 'timestamp_ms' không tồn tại — không dùng được time_mode='timestamp_ms'"
+            )
+        ts = (
+            pd.to_numeric(series["timestamp_ms"], errors="coerce")
+            .fillna(0.0)
+            .to_numpy(dtype="float64")
+        )
         deltas = np.diff(ts, prepend=ts[0]) / 60000.0
         deltas[0] = 0.0
         return deltas
@@ -154,12 +168,16 @@ def resolve_time_mode(df: pd.DataFrame, time_mode: str, verbose: bool = True) ->
     if time_mode == "duration_ms" and "ms_first_response" not in df.columns:
         fallback = "timestamp_ms" if "timestamp_ms" in df.columns else "step"
         if verbose:
-            print(f"  [cảnh báo] CSV không có ms_first_response -> chuyển sang time_mode='{fallback}'")
+            print(
+                f"  [cảnh báo] CSV không có ms_first_response -> chuyển sang time_mode='{fallback}'"
+            )
         return fallback
     if time_mode == "timestamp_ms" and "timestamp_ms" not in df.columns:
         fallback = "duration_ms" if "ms_first_response" in df.columns else "step"
         if verbose:
-            print(f"  [cảnh báo] CSV không có timestamp_ms -> chuyển sang time_mode='{fallback}'")
+            print(
+                f"  [cảnh báo] CSV không có timestamp_ms -> chuyển sang time_mode='{fallback}'"
+            )
         return fallback
     return time_mode
 
@@ -231,14 +249,28 @@ def build_grkt_data(
         skills0 = series["skill"].to_numpy(dtype="int64")[:take]
         corrs = series["correct"].eq(1).to_numpy(dtype="int64")[:take]
         probs = series["prob"].to_numpy(dtype="int64")[:take]
-        times = _cumulative_times(_user_delta_minutes(series, time_mode)[:take], gap_cap_min)
+        times = _cumulative_times(
+            _user_delta_minutes(series, time_mode)[:take], gap_cap_min
+        )
         if has_ms:
-            lags = pd.to_numeric(
-                series["ms_first_response"].head(take), errors="coerce").fillna(0.0).clip(lower=0.0) / 1000.0
+            lags = (
+                pd.to_numeric(series["ms_first_response"].head(take), errors="coerce")
+                .fillna(0.0)
+                .clip(lower=0.0)
+                / 1000.0
+            )
         else:
             lags = np.zeros(take, dtype="float64")
         if positions < len(base_users):
-            _assert_align(positions, user_id, skills0, corrs, base_users, base_questions, base_answers)
+            _assert_align(
+                positions,
+                user_id,
+                skills0,
+                corrs,
+                base_users,
+                base_questions,
+                base_answers,
+            )
         knows = [[int(s + 1)] for s in skills0]
         sequences.append(
             UserSequence(
@@ -260,7 +292,9 @@ def build_grkt_data(
         )
 
     n_probs = int(df["prob"].max()) + 1
-    skill_lookup = {int(k): v for k, v in (getattr(base, "skill_lookup", {}) or {}).items()}
+    skill_lookup = {
+        int(k): v for k, v in (getattr(base, "skill_lookup", {}) or {}).items()
+    }
     gap_stats = _gap_stats(sequences)
     data = GRKTData(
         dataset=dataset,
@@ -280,10 +314,14 @@ def build_grkt_data(
         },
     )
     if verbose:
-        print(f"  GRKT data: {data.stats['users']} người học | {data.stats['interactions']} tương tác | "
-              f"n_knows={concept_num} | n_probs={n_probs} | chuỗi dài nhất={data.stats['max_seq_len_seen']}")
-        print(f"  time_mode={time_mode}, Δt phút: p50={data.stats['dt_p50']:.1f} "
-              f"p95={data.stats['dt_p95']:.1f} max={data.stats['dt_max']:.1f} (cap {gap_cap_min})")
+        print(
+            f"  GRKT data: {data.stats['users']} người học | {data.stats['interactions']} tương tác | "
+            f"n_knows={concept_num} | n_probs={n_probs} | chuỗi dài nhất={data.stats['max_seq_len_seen']}"
+        )
+        print(
+            f"  time_mode={time_mode}, Δt phút: p50={data.stats['dt_p50']:.1f} "
+            f"p95={data.stats['dt_p95']:.1f} max={data.stats['dt_max']:.1f} (cap {gap_cap_min})"
+        )
     return data
 
 
@@ -294,7 +332,9 @@ def _as_id(x):
         return x
 
 
-def _assert_align(pos, user_id, skills0, corrs, base_users, base_questions, base_answers):
+def _assert_align(
+    pos, user_id, skills0, corrs, base_users, base_questions, base_answers
+):
     """Bằng chứng Cấp độ 2 đang nhìn đúng người học + đúng nhãn như Cấp độ 1."""
     if _as_id(base_users[pos]) != _as_id(user_id):
         raise AssertionError(
@@ -305,13 +345,20 @@ def _assert_align(pos, user_id, skills0, corrs, base_users, base_questions, base
     s2 = [int(x) for x in skills0]
     c2 = [int(x) for x in corrs]
     if q1[: len(s2)] != s2:
-        raise AssertionError(f"Chuỗi khái niệm của user {user_id} khác Cấp độ 1 tại vị trí {pos}")
+        raise AssertionError(
+            f"Chuỗi khái niệm của user {user_id} khác Cấp độ 1 tại vị trí {pos}"
+        )
     if a1[: len(c2)] != c2:
-        raise AssertionError(f"Nhãn đúng/sai của user {user_id} khác Cấp độ 1 tại vị trí {pos}")
+        raise AssertionError(
+            f"Nhãn đúng/sai của user {user_id} khác Cấp độ 1 tại vị trí {pos}"
+        )
 
 
 def _gap_stats(sequences: Sequence[UserSequence]) -> dict:
-    deltas = np.asarray([b - a for s in sequences for a, b in zip(s.times[:-1], s.times[1:])], dtype="float64")
+    deltas = np.asarray(
+        [b - a for s in sequences for a, b in zip(s.times[:-1], s.times[1:])],
+        dtype="float64",
+    )
     if deltas.size == 0:
         return {"dt_p50": 0.0, "dt_p95": 0.0, "dt_max": 0.0, "dt_zero_frac": 1.0}
     return {
@@ -325,7 +372,9 @@ def _gap_stats(sequences: Sequence[UserSequence]) -> dict:
 # ---------------------------------------------------------------- đồ thị khái niệm
 
 
-def build_relevance_maps(sequences: Sequence[UserSequence], n_knows: int, cold_thresh: int = 5) -> dict:
+def build_relevance_maps(
+    sequences: Sequence[UserSequence], n_knows: int, cold_thresh: int = 5
+) -> dict:
     """Đếm đồng xuất hiện / tiên quyết theo công thức của upstream, CHỈ trên ``sequences``.
 
     Khác upstream: upstream chỉ dùng khái niệm đầu tiên của lượt làm bài (``knows[0]``);
@@ -375,7 +424,12 @@ def build_relevance_maps(sequences: Sequence[UserSequence], n_knows: int, cold_t
     return {
         "rel": rel.astype(np.float64),
         "pre": pre.astype(np.float64),
-        "counts": {"tt": float(tt.sum()), "tf": float(tf.sum()), "ft": float(ft.sum()), "ff": float(ff.sum())},
+        "counts": {
+            "tt": float(tt.sum()),
+            "tf": float(tf.sum()),
+            "ft": float(ft.sum()),
+            "ff": float(ff.sum()),
+        },
         "cold_thresh": cold_thresh,
         "sequences": len(sequences),
     }
@@ -404,7 +458,9 @@ def _shuffle_binary(mat: np.ndarray, rng: np.random.RandomState) -> np.ndarray:
     return out
 
 
-def graph_variant(maps: dict, kind: str, n_knows: int, thresh: float = 0.6, seed: int = 42) -> dict:
+def graph_variant(
+    maps: dict, kind: str, n_knows: int, thresh: float = 0.6, seed: int = 42
+) -> dict:
     """Trả về (rel_map, pre_map) dạng 0/1 cho một kiểu đồ thị, kèm số cạnh để báo cáo.
 
     * ``train``   : cạnh đồng xuất hiện + tiên quyết đếm từ tập train, ngưỡng ``thresh``
@@ -433,7 +489,9 @@ def graph_variant(maps: dict, kind: str, n_knows: int, thresh: float = 0.6, seed
         pre = np.zeros((nk, nk), dtype=np.float32)
     elif kind == "shuffled":
         rel = _shuffle_binary(binarize(maps["rel"], thresh), rng)
-        pre = _shuffle_binary(binarize(maps["pre"], thresh), np.random.RandomState(seed + 1))
+        pre = _shuffle_binary(
+            binarize(maps["pre"], thresh), np.random.RandomState(seed + 1)
+        )
     else:
         raise ValueError(f"Kiểu đồ thị không hợp lệ: {kind}")
     return {
@@ -448,7 +506,11 @@ def graph_variant(maps: dict, kind: str, n_knows: int, thresh: float = 0.6, seed
 
 def adjacency_from_graphs(rel_map: np.ndarray, pre_map: np.ndarray) -> np.ndarray:
     """Láng giềng 1-hop (hỗn hợp rel + pre hai chiều) dùng cho tiêu chí tính cục bộ."""
-    adj = ((np.asarray(rel_map) > 0) | (np.asarray(pre_map) > 0) | (np.asarray(pre_map).T > 0)).astype(np.float32)
+    adj = (
+        (np.asarray(rel_map) > 0)
+        | (np.asarray(pre_map) > 0)
+        | (np.asarray(pre_map).T > 0)
+    ).astype(np.float32)
     adj[0, :] = 0.0
     adj[:, 0] = 0.0
     np.fill_diagonal(adj, 0.0)
@@ -464,7 +526,11 @@ def split_sequences(data: GRKTData, split_payload: dict) -> Dict[str, dict]:
     for name in ("train_users", "val_users", "test_users"):
         users = [_as_id(u) for u in split_payload[name]]
         seqs = data.by_users(users)
-        out[name.replace("_users", "")] = {"user_ids": users, "sequences": seqs, "items": data.items_of(seqs)}
+        out[name.replace("_users", "")] = {
+            "user_ids": users,
+            "sequences": seqs,
+            "items": data.items_of(seqs),
+        }
     return out
 
 
@@ -485,7 +551,9 @@ def leak_report(
     te = set(split_sets["test"]["user_ids"])
     lines: List[str] = []
     lines.append("=== BÁO CÁO CHỐNG RÒ RÌ (Cấp độ 2 / GRKT) ===")
-    lines.append(f"File chuẩn hoá          : {data.dataset} | time_mode={data.time_mode}")
+    lines.append(
+        f"File chuẩn hoá          : {data.dataset} | time_mode={data.time_mode}"
+    )
     lines.append(
         f"Người học train/val/test: {len(tr)}/{len(va)}/{len(te)} "
         f"(split seed={seed}, tỉ lệ {train_ratio}/{val_ratio})"
@@ -494,7 +562,9 @@ def leak_report(
         f"Giám sát giao nhau      : train∩val={len(tr & va)} train∩test={len(tr & te)} val∩test={len(va & te)} "
         "(phải = 0)"
     )
-    n_int = {k: int(sum(s.length for s in v["sequences"])) for k, v in split_sets.items()}
+    n_int = {
+        k: int(sum(s.length for s in v["sequences"])) for k, v in split_sets.items()
+    }
     lines.append(f"Số tương tác            : {n_int}")
     lines.append(
         f"Không gian khái niệm    : n_knows={data.concept_num} (Cấp độ 1 + 1 cho padding), "
@@ -503,10 +573,18 @@ def leak_report(
     e_tr = int((maps_train["rel"] > 0).sum() + (maps_train["pre"] > 0).sum())
     e_va = int((maps_val["rel"] > 0).sum() + (maps_val["pre"] > 0).sum())
     lines.append(f"Số cạnh đồ thị từ train : {e_tr}")
-    lines.append(f"Số cạnh nếu dựng từ val : {e_va} (khác train => đồ thị phụ thuộc tập huấn luyện)")
+    lines.append(
+        f"Số cạnh nếu dựng từ val : {e_va} (khác train => đồ thị phụ thuộc tập huấn luyện)"
+    )
     for kind, info in graph_info.items():
-        lines.append(f"  biến thể {kind:9s}: rel={info['edges_rel']:6d} pre={info['edges_pre']:6d}")
-    lines.append("Nhãn hiện tại/tương lai : không dùng. GRKT chỉ dùng knows[i+1] và times[i+1] "
-                 "(danh tính + thời điểm câu hỏi kế tiếp, KHÔNG dùng kết quả) cho giai đoạn học/quên.")
-    lines.append("Padding                 : chỉ số 0 (khái niệm & câu hỏi); hàng/cột 0 của đồ thị luôn = 0.")
+        lines.append(
+            f"  biến thể {kind:9s}: rel={info['edges_rel']:6d} pre={info['edges_pre']:6d}"
+        )
+    lines.append(
+        "Nhãn hiện tại/tương lai : không dùng. GRKT chỉ dùng knows[i+1] và times[i+1] "
+        "(danh tính + thời điểm câu hỏi kế tiếp, KHÔNG dùng kết quả) cho giai đoạn học/quên."
+    )
+    lines.append(
+        "Padding                 : chỉ số 0 (khái niệm & câu hỏi); hàng/cột 0 của đồ thị luôn = 0."
+    )
     return "\n".join(lines)
