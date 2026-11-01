@@ -1,2 +1,2 @@
-graph,users,steps,consistency_strengthen,consistency_spread,locality,forget_slope,pearson_dt_dm,abs_delta_strengthen,abs_delta_learn_forget,abs_delta_retrieval
-train,150,9048,1.0,1.0,0.999999999704335,-0.0004098249772486655,-0.4918786301612466,0.0606859517331086,0.0002878582491719802,0.027263859460751216
+graph,users,steps,precedence,precedence_gap,n_precedence_edges,stability_spearman,stability_changed_frac,forget_slope,pearson_dt_dm,consistency_strengthen,consistency_spread,locality,abs_delta_strengthen,abs_delta_learn_forget,abs_delta_retrieval
+train,150,9048,0.3266273333978141,-0.0915996001817379,2642,0.9803955389831204,0.4559349593495935,-0.0004098249772486655,-0.4918786301612466,1.0,1.0,0.999999999704335,0.0606859517331086,0.0002878582491719802,0.027263859460751216

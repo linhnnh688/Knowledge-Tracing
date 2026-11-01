@@ -1,5 +1,5 @@
-model,model_type,graph,auc,acc,loss,val_auc,n_test,edges_rel,edges_pre,seed,seconds
-GRKT-train,GRKT,train,0.7958,0.7421,0.5156,0.8017,47358,2720,2642,42,0.0
-DKT,DKT,N/A,0.7851,0.7329,0.5282,,47358,0,0,42,0.0
-GKT-Transition,GKT,Transition,0.7722,0.7253,0.5414,,47358,0,0,42,0.0
-GKT-Zero,GKT,Zero,0.762,0.712,0.5505,,47358,0,0,42,0.0
+model,model_type,graph,auc,acc,loss,val_auc,n_test,edges_rel,edges_pre,seed,checkpoint_seed,seconds
+GRKT-train,GRKT,train,0.7958,0.7421,0.5156,0.8017,47358,2720,2642,42.0,42.0,0.0
+DKT,DKT,N/A,0.7851,0.7329,0.5282,,47358,0,0,,,0.0
+GKT-Transition,GKT,Transition,0.7722,0.7253,0.5414,,47358,0,0,,,0.0
+GKT-Zero,GKT,Zero,0.762,0.712,0.5505,,47358,0,0,,,0.0
