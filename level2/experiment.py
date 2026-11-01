@@ -13,8 +13,9 @@ Thứ tự các bước — trùng với các mục in ra màn hình:
    (train/dense/zero/shuffled) và in ``leak_report``.
 4. Huấn luyện GRKT cho từng biến thể; early stop theo val AUC toàn cục.
 5. Đường nền DKT/GKT trên cùng split (nạp checkpoint Cấp độ 1 nếu có).
-6. Ghi quỹ đạo mastery m(u,c,t) + hai tiêu chí hợp lý (hướng lan truyền, tính cục bộ) và
-   kiểm tra suy giảm theo thời gian.
+6. Ghi quỹ đạo mastery m(u,c,t) + tiêu chí THẬT (``precedence_gap``, ``stability_*``,
+   ``forget_slope``) + kiểm chứng cài đặt (``consistency_*``/``locality`` bị cấu trúc mô hình
+   ép ≡ 1, không dùng làm bằng chứng).
 7. Hiệu chỉnh dự đoán (ECE/Brier) cho mọi mô hình.
 8. Đa seed cho GRKT (split cố định, chỉ đổi khởi tạo + thứ tự batch).
 """
@@ -48,6 +49,7 @@ from .trajectory import (
     plot_mastery_heatmap,
     record_trajectories,
     save_trajectories,
+    stability_under_perturbation,
     trajectory_metrics_table,
 )
 
@@ -109,6 +111,7 @@ TABLE_COLUMNS: list = [
     "edges_rel",
     "edges_pre",
     "seed",
+    "checkpoint_seed",
     "seconds",
 ]
 
@@ -184,10 +187,10 @@ def run_dataset(
 
     Mặc định chỉ làm đúng những gì yêu cầu Cấp độ 2 nêu: train GRKT trên đồ thị ``train``,
     đánh giá trên cùng split với đường nền Cấp độ 1, và ghi quỹ đạo m(u,c,t) kèm tiêu chí hợp
-    lý. Ba thứ ngoài phạm vi đó phải bật thủ công — ``variants=GRAPH_VARIANTS`` cho ablation
-    cấu trúc đồ thị (yêu cầu Cấp độ 1, mỗi biến thể thêm một lần train), ``run_calibration``
-    cho ECE/Brier (đề bài chỉ cần MỘT phân tích nâng cao) và ``run_multi_seed`` (mỗi seed một
-    lần train; DKT/GKT đã có 3 seed ở Cấp độ 1 trên cùng split).
+    lý. Hai thứ ngoài phạm vi đó phải bật thủ công — ``variants=GRAPH_VARIANTS`` cho ablation
+    cấu trúc đồ thị (mỗi biến thể thêm một lần train) và ``run_calibration`` cho ECE/Brier (đề
+    bài chỉ cần MỘT phân tích nâng cao). ``run_multi_seed`` bật đa seed cho GRKT; notebook báo
+    cáo chỉ bật nó trên tập rẻ (assist2009) và ghi rõ tập còn lại chạy 1 seed.
 
     ``raw_path`` chỉ nên truyền khi chạy ĐÚNG MỘT tập dữ liệu (nó áp cho mọi tập trong vòng
     lặp của :func:`run_level2`). Với Junyi trên Kaggle thì không cần: ``ensure_canonical`` tự
@@ -487,6 +490,7 @@ def run_dataset(
 
     # ------------------------------------------------------------ 6. quỹ đạo mastery
     traj_runs: Dict[str, dict] = {}
+    stability_runs: Dict[str, dict] = {}
     traj_table = None
     if record_trajectory:
         print("\n>>> [C2-B6] Ghi quỹ đạo mastery m(u,c,t) và đo tiêu chí hợp lý ...")
@@ -506,6 +510,16 @@ def run_dataset(
                 verbose=False,
             )
             traj_runs[kind] = traj
+            stability_runs[kind] = stability_under_perturbation(
+                model,
+                splits["test"]["sequences"][:trajectory_users],
+                device=device,
+                batch_size=trajectory_batch,
+                concept_num=data.concept_num,
+                graph_kind=kind,
+                seed=split_seed,
+                verbose=verbose,
+            )
             save_trajectories(traj, plot_dir / f"traj_{kind}.npz")
             export_mastery_csv(
                 traj,
@@ -528,18 +542,32 @@ def run_dataset(
                 skill_lookup=data.skill_lookup,
             )
             model.cpu()
-        traj_table = trajectory_metrics_table(traj_runs, adj=adj)
+        traj_table = trajectory_metrics_table(
+            traj_runs,
+            adj=adj,
+            pre_map=train_graph["pre_map"],
+            stability=stability_runs,
+            seed=split_seed,
+        )
         traj_table.to_csv(save_dir / "trajectory_metrics.csv", index=False)
         out["trajectories"] = traj_runs
+        out["stability"] = stability_runs
         out["trajectory_table"] = traj_table
         out["artifacts"]["trajectory_metrics"] = str(
             save_dir / "trajectory_metrics.csv"
         )
         out["artifacts"]["trajectory_plots"] = str(plot_dir)
         print(
-            "\n=== TIÊU CHÍ HỢP LÝ CỦA QUỸ ĐẠO (in trên cùng tập 'láng giềng' của đồ thị train) ==="
+            "\n=== TIÊU CHÍ QUỸ ĐẠO (láng giềng/cạnh tiên quyết cố định theo đồ thị train) ==="
         )
         print(traj_table.to_string(index=False))
+        print(
+            "  * Tiêu chí THẬT (có thể sai): precedence, precedence_gap, stability_spearman,\n"
+            "    stability_changed_frac, forget_slope, pearson_dt_dm.\n"
+            "  * consistency_strengthen / consistency_spread / locality bị cấu trúc mô hình\n"
+            "    (Positive_Linear dương, k_hop=1) ép về 1 — chỉ là kiểm chứng cài đặt, KHÔNG\n"
+            "    dùng làm bằng chứng vai trò đồ thị."
+        )
 
     # ------------------------------------------------------------ 7. calibration
     cal = pd.DataFrame()
@@ -574,58 +602,86 @@ def run_dataset(
             % (ms_kind, split_seed)
         )
         rows = []
-        for s in seeds:
-            res = run_grkt_experiment(
-                data,
-                splits,
-                graphs[ms_kind],
-                graph_kind=ms_kind,
-                epochs=epochs,
-                batch_size=batch_size,
-                lr=lr,
-                patience=patience,
-                d_hidden=d_hidden,
-                k_hidden=k_hidden,
-                k_hop=k_hop,
-                alpha=alpha,
-                tau=tau,
-                thresh=bin_thresh,
-                seed=int(s),
-                dataset=spec.name,
-                device=device,
-                save_dir=None,
-                verbose=verbose,
+        paused = None
+        try:
+            for s in seeds:
+                s = int(s)
+                # Cùng quy ước tên với grkt_api: seed 42 dùng lại checkpoint của lần chạy
+                # chính (khỏi train lại), seed khác có file riêng để resume đúng seed.
+                suffix = "" if s == split_seed else f"-seed{s}"
+                seed_name = f"GRKT-{ms_kind}{suffix}"
+                final_ckpt = save_dir / f"{seed_name}.pt"
+                rolling_ckpt = save_dir / f"ckpt_{seed_name}.pt"
+                resume = None
+                if resume_grkt_ckpt:
+                    resume = (
+                        str(final_ckpt)
+                        if final_ckpt.exists()
+                        else (str(rolling_ckpt) if rolling_ckpt.exists() else None)
+                    )
+                res = run_grkt_experiment(
+                    data,
+                    splits,
+                    graphs[ms_kind],
+                    graph_kind=ms_kind,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    lr=lr,
+                    patience=patience,
+                    d_hidden=d_hidden,
+                    k_hidden=k_hidden,
+                    k_hop=k_hop,
+                    alpha=alpha,
+                    tau=tau,
+                    thresh=bin_thresh,
+                    seed=s,
+                    dataset=spec.name,
+                    device=device,
+                    save_dir=save_dir,
+                    resume_ckpt=resume,
+                    deadline=deadline,
+                    ckpt_every_min=ckpt_every_min,
+                    verbose=verbose,
+                )
+                # Bỏ hậu tố seed khỏi tên mô hình để groupby gộp đúng 3 seed thành MỘT dòng
+                # mean ± std; tên file checkpoint vẫn tách theo seed.
+                rows.append(
+                    {
+                        "model": f"GRKT-{ms_kind}",
+                        "seed": s,
+                        "test_auc": res["test_auc"],
+                        "test_acc": res["test_acc"],
+                        "test_loss": res["test_loss"],
+                    }
+                )
+                del res
+        except TrainingPaused as exc:
+            # Giữ kết quả các seed ĐÃ xong thay vì mất trắng vì seed đang dở; checkpoint của
+            # seed dở đã được train_grkt ghi trước khi raise.
+            paused = exc
+        if rows:
+            ms = pd.DataFrame(rows)
+            agg = (
+                ms.groupby("model")
+                .agg(
+                    auc_mean=("test_auc", "mean"),
+                    auc_std=("test_auc", "std"),
+                    acc_mean=("test_acc", "mean"),
+                    acc_std=("test_acc", "std"),
+                    loss_mean=("test_loss", "mean"),
+                    loss_std=("test_loss", "std"),
+                    n_seed=("seed", "count"),
+                )
+                .reset_index()
             )
-            rows.append(
-                {
-                    "model": res["name"],
-                    "seed": int(s),
-                    "test_auc": res["test_auc"],
-                    "test_acc": res["test_acc"],
-                    "test_loss": res["test_loss"],
-                }
-            )
-            del res
-        ms = pd.DataFrame(rows)
-        agg = (
-            ms.groupby("model")
-            .agg(
-                auc_mean=("test_auc", "mean"),
-                auc_std=("test_auc", "std"),
-                acc_mean=("test_acc", "mean"),
-                acc_std=("test_acc", "std"),
-                loss_mean=("test_loss", "mean"),
-                loss_std=("test_loss", "std"),
-                n_seed=("seed", "count"),
-            )
-            .reset_index()
-        )
-        # ddof=1 với n=3 cho std mẫu; ghi cả số seed để người đọc không nhầm với tổng thể
-        agg.to_csv(save_dir / "multiseed_metrics.csv", index=False)
-        out["multiseed_raw"] = ms
-        out["multiseed"] = agg
-        out["artifacts"]["multiseed"] = str(save_dir / "multiseed_metrics.csv")
-        print(agg.to_string(index=False))
+            # ddof=1 với n=3 cho std mẫu; ghi cả số seed để người đọc không nhầm với tổng thể
+            agg.to_csv(save_dir / "multiseed_metrics.csv", index=False)
+            out["multiseed_raw"] = ms
+            out["multiseed"] = agg
+            out["artifacts"]["multiseed"] = str(save_dir / "multiseed_metrics.csv")
+            print(agg.to_string(index=False))
+        if paused is not None:
+            raise paused
 
     summary = {
         "dataset": spec.name,
@@ -678,7 +734,11 @@ def _table_row(r: dict) -> dict:
         "n_test": int(r.get("test_n", 0)),
         "edges_rel": int(r.get("edges_rel", 0)),
         "edges_pre": int(r.get("edges_pre", 0)),
-        "seed": int(r.get("seed", 42)),
+        # seed đã TRAIN ra trọng số; None = checkpoint không ghi seed (không được đoán 42).
+        "seed": (None if r.get("seed") is None else int(r["seed"])),
+        "checkpoint_seed": (
+            None if r.get("ckpt_seed") is None else int(r["ckpt_seed"])
+        ),
         "seconds": round(float(r.get("train_seconds", 0.0)), 1),
     }
 
@@ -688,6 +748,8 @@ def run_level2(
     *,
     save_root=None,
     time_budget_min: Optional[float] = None,
+    variants_by_dataset: Optional[Dict[str, Sequence[str]]] = None,
+    multi_seed_datasets: Optional[Sequence[str]] = None,
     **kwargs,
 ) -> Dict[str, object]:
     """Lặp :func:`run_dataset` qua nhiều tập dữ liệu và nối bảng (yêu cầu ≥ 2 dataset).
@@ -695,17 +757,28 @@ def run_level2(
     ``time_budget_min`` là ngân sách của CẢ LẦN CHẠY: mốc dừng được tính MỘT lần ở đây rồi
     truyền xuống từng tập, nên tập thứ hai không được cấp lại đủ ngân sách và phiên Kaggle
     không bị kill giữa lúc ghi checkpoint.
+
+    ``variants_by_dataset`` / ``multi_seed_datasets`` cho phép giới hạn phần đắt tiền vào
+    tập rẻ (thường là assist2009): ablation đồ thị và đa seed chỉ chạy nơi còn ngân sách
+    GPU, tập còn lại giữ cấu hình mặc định (``variants=("train",)``, 1 seed) và điều này
+    phải được ghi rõ trong báo cáo.
     """
     deadline = (
         (time.time() + float(time_budget_min) * 60.0) if time_budget_min else None
     )
     runs: Dict[str, dict] = {}
     frames = []
+    ms_set = set(multi_seed_datasets) if multi_seed_datasets is not None else None
     for name in datasets:
         print("\n" + "#" * 72)
         print(f"# TẬP DỮ LIỆU: {name}")
         print("#" * 72)
-        run = run_dataset(name, save_root=save_root, deadline=deadline, **kwargs)
+        ds_kwargs = dict(kwargs)
+        if variants_by_dataset and name in variants_by_dataset:
+            ds_kwargs["variants"] = tuple(variants_by_dataset[name])
+        if ms_set is not None:
+            ds_kwargs["run_multi_seed"] = name in ms_set
+        run = run_dataset(name, save_root=save_root, deadline=deadline, **ds_kwargs)
         runs[name] = run
         t = run["table"].copy()
         t.insert(0, "dataset", name)

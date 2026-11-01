@@ -127,7 +127,7 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
 | `level2/dataset_spec.py` | Một dạng CSV chuẩn hoá duy nhất (`CANONICAL_COLUMNS`) cho mọi tập dữ liệu; ba spec `assist2009` / `assist2009_smoke` / `junyi`, chuẩn hoá Junyi, dò file trong `/kaggle/input`, in cột thật khi tên cột đổi |
 | `level2/grkt_data.py` | Đổi bundle Cấp độ 1 → chuỗi GRKT (1-based, trục phút có chặn), **đối chiếu từng người học** với Cấp độ 1, đếm `rel/pre` chỉ từ train, sinh biến thể đồ thị, in `leak_report` |
 | `level2/grkt_api.py` | `make_args`/`build_grkt`/`train_grkt`/`evaluate_grkt`/`run_grkt_experiment` — thay `GRKT/Runner.py` (k-fold trên cửa sổ ⇒ rò rỉ người học) |
-| `level2/trajectory.py` | Ghi m(u,c,t) (`m_pre`, `m_tilde`, `m_strong`), xuất npz/CSV, heatmap + đường cong, 4 tiêu chí hợp lý |
+| `level2/trajectory.py` | Ghi m(u,c,t) (`m_pre`, `m_tilde`, `m_strong`), xuất npz/CSV, heatmap + đường cong, tiêu chí thật (`precedence_gap`, `stability_*`, `forget_slope`) + kiểm chứng cài đặt |
 | `level2/calibration.py` | ECE / ACE / Brier + reliability diagram |
 | `level2/baselines.py` | Nạp checkpoint Cấp độ 1 (`outputs/level1/*.pt`) và đánh giá DKT/GKT trên cùng split; train lại nếu checkpoint không khớp |
 | `level2/experiment.py` | `run_dataset` / `run_level2`: 8 bước B1→B8 cho một (hoặc nhiều) tập dữ liệu |
@@ -192,10 +192,12 @@ Pipeline thực nghiệm trong package `level2/` (notebook chỉ điều phối)
      trọng số + trạng thái Adam + epoch + **đúng batch đang dở** + thứ tự batch + best state.
      Session bị kill bất ngờ mất tối đa 10 phút GPU. Ghi qua file tạm rồi `os.replace` nên
      kill giữa lúc ghi không làm hỏng checkpoint cũ.
-   * `TIME_BUDGET_MIN=600` (10 giờ) là mốc dừng chủ động, tính **một lần** cho cả lần chạy
+   * `TIME_BUDGET_MIN=120` (mặc định, dành cho phiên resume khi quota GPU gần cạn; đặt `600`
+     cho lần chạy đầy đủ từ đầu) là mốc dừng chủ động, tính **một lần** cho cả lần chạy
      (`run_level2`) rồi dùng cho mọi tập. Hết ngân sách, GRKT ghi checkpoint rồi raise
      `TrainingPaused`; nếu tất cả biến thể GRKT đã xong, `level2_metrics.csv` (các dòng GRKT)
-     cũng được ghi trước khi raise. `0`/`None` = không giới hạn.
+     cũng được ghi trước khi raise. `0`/`None` = không giới hạn. Ngân sách **không** biết quota
+     tuần của Kaggle — khi quota sắp cạn phải tự hạ số này.
    * Quy trình: **phiên trước** chạy §8.5 → tải `level2_output.zip` (chứa `ckpt_GRKT-*.pt`,
      `GRKT-*.pt`, `split.json`); **phiên sau** upload zip đó thành **private Kaggle Dataset**
      → `Add Input` → đặt `RESUME_ZIP="/kaggle/input/<slug>/level2_output.zip"` (để `None` nếu

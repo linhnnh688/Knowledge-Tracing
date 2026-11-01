@@ -20,18 +20,18 @@ Mục tiêu đọc xong:
 | File | Dòng | Vai trò |
 |---|---:|---|
 | [level1/paths.py](file:///D:/workspace/Knowledge-Tracing/level1/paths.py#L1) | 14 | `repo_root()` + `ensure_gkt_on_path()` — chèn `GKT/` vào `sys.path` để import `processing`, `models`, `metrics` của upstream |
-| [level1/pipeline.py](file:///D:/workspace/Knowledge-Tracing/level1/pipeline.py#L1) | 426 | Toàn bộ API Cấp độ 1: nạp dữ liệu, chia split, dựng model, train, evaluate, lưu checkpoint |
-| [level1/explain.py](file:///D:/workspace/Knowledge-Tracing/level1/explain.py#L1) | 426 | Chọn 5 case đúng + 5 case sai và sinh bằng chứng phản chứng (flip một lượt, bỏ toàn bộ cạnh) |
-| [level1/dashboard.py](file:///D:/workspace/Knowledge-Tracing/level1/dashboard.py#L1) | 130 | Xuất `learner_view.json` + widget chọn người học; lưu `state_norm` theo từng khái niệm |
-| `level1/gikt.py`, `level1/gikt_data.py` | 75 + 149 | Bản port GIKT cũ; **không nằm trên đường chạy** (`run_gikt_experiment` raise `NotImplementedError`) |
-| [level2/dataset_spec.py](file:///D:/workspace/Knowledge-Tracing/level2/dataset_spec.py#L1) | 840 | Hợp đồng CSV chuẩn hoá, 3 spec dữ liệu, chuẩn hoá Junyi theo mảnh, dò file Kaggle |
-| [level2/grkt_data.py](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L1) | 512 | Đổi bundle Cấp độ 1 thành chuỗi GRKT 1-based, đối chiếu từng người học, đếm `rel/pre` chỉ từ train |
-| [level2/grkt_api.py](file:///D:/workspace/Knowledge-Tracing/level2/grkt_api.py#L1) | 684 | `make_args` / `train_grkt` / `evaluate_grkt` / `run_grkt_experiment` — thay `GRKT/Runner.py` |
-| [level2/baselines.py](file:///D:/workspace/Knowledge-Tracing/level2/baselines.py#L1) | 512 | Nạp checkpoint DKT/GKT Cấp độ 1 (hoặc train lại có resume) trên **cùng split** |
-| [level2/trajectory.py](file:///D:/workspace/Knowledge-Tracing/level2/trajectory.py#L1) | 564 | Ghi `m_pre/m_tilde/m_strong`, 4 tiêu chí hợp lý, xuất npz/CSV/PNG |
-| [level2/calibration.py](file:///D:/workspace/Knowledge-Tracing/level2/calibration.py#L1) | 161 | ECE / ACE / Brier + reliability diagram |
-| [level2/archive.py](file:///D:/workspace/Knowledge-Tracing/level2/archive.py#L1) | 88 | Đóng gói `level2_out/` thành zip để tải về và resume phiên sau |
-| [level2/experiment.py](file:///D:/workspace/Knowledge-Tracing/level2/experiment.py#L1) | 557 | `run_dataset` (B1→B8) và `run_level2` (nhiều tập, một deadline chung) |
+| [level1/pipeline.py](file:///D:/workspace/Knowledge-Tracing/level1/pipeline.py#L1) | 466 | Toàn bộ API Cấp độ 1: nạp dữ liệu, chia split, dựng model, train, evaluate, lưu checkpoint (tên file mang seed khi seed ≠ 42) |
+| [level1/explain.py](file:///D:/workspace/Knowledge-Tracing/level1/explain.py#L1) | 449 | Chọn 5 case đúng + 5 case sai và sinh bằng chứng phản chứng (flip một lượt, bỏ toàn bộ cạnh) |
+| [level1/dashboard.py](file:///D:/workspace/Knowledge-Tracing/level1/dashboard.py#L1) | 140 | Xuất `learner_view.json` + widget chọn người học; lưu `state_norm` theo từng khái niệm |
+| `level1/gikt.py`, `level1/gikt_data.py` | 75 + 155 | Bản port GIKT cũ; **không nằm trên đường chạy** (`run_gikt_experiment` raise `NotImplementedError`) |
+| [level2/dataset_spec.py](file:///D:/workspace/Knowledge-Tracing/level2/dataset_spec.py#L1) | 1086 | Hợp đồng CSV chuẩn hoá, 3 spec dữ liệu, chuẩn hoá Junyi theo mảnh, dò file Kaggle |
+| [level2/grkt_data.py](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L1) | 590 | Đổi bundle Cấp độ 1 thành chuỗi GRKT 1-based, đối chiếu từng người học, đếm `rel/pre` chỉ từ train |
+| [level2/grkt_api.py](file:///D:/workspace/Knowledge-Tracing/level2/grkt_api.py#L1) | 756 | `make_args` / `train_grkt` / `evaluate_grkt` / `run_grkt_experiment` — thay `GRKT/Runner.py` |
+| [level2/baselines.py](file:///D:/workspace/Knowledge-Tracing/level2/baselines.py#L1) | 688 | Nạp checkpoint DKT/GKT Cấp độ 1 (hoặc train lại có resume) trên **cùng split**; `checkpoint_seed()` truy nguồn seed |
+| [level2/trajectory.py](file:///D:/workspace/Knowledge-Tracing/level2/trajectory.py#L1) | 897 | Ghi `m_pre/m_tilde/m_strong`; tiêu chí thật (`precedence_gap`, `stability_*`, `forget_slope`) + kiểm chứng cài đặt; xuất npz/CSV/PNG |
+| [level2/calibration.py](file:///D:/workspace/Knowledge-Tracing/level2/calibration.py#L1) | 173 | ECE / ACE / Brier + reliability diagram |
+| [level2/archive.py](file:///D:/workspace/Knowledge-Tracing/level2/archive.py#L1) | 106 | Đóng gói `level2_out/` thành zip để tải về và resume phiên sau |
+| [level2/experiment.py](file:///D:/workspace/Knowledge-Tracing/level2/experiment.py#L1) | 790 | `run_dataset` (B1→B8) và `run_level2` (nhiều tập, một deadline chung) |
 | [kaggle_level1.ipynb](file:///D:/workspace/Knowledge-Tracing/kaggle_level1.ipynb) | 27 cell | Config + gọi package; không chứa logic |
 | [kaggle_level2.ipynb](file:///D:/workspace/Knowledge-Tracing/kaggle_level2.ipynb) | 32 cell | Config + resume zip + gọi `run_level2` + đóng gói |
 
@@ -58,9 +58,9 @@ kaggle_level2.ipynb
 │       B3 build_relevance_maps + graph_variant + leak_report
 │       B4 grkt_api.run_grkt_experiment ──► GRKT/model/GRKT.py
 │       B5 baselines.level1_baseline ──► level1.pipeline.build_model/_epoch_loop
-│       B6 trajectory.record_trajectories + 4 tiêu chí
+│       B6 trajectory.record_trajectories + tiêu chí thật/kiểm chứng cài đặt
 │       B7 calibration (tuỳ chọn)
-│       B8 multi-seed (tuỳ chọn)
+│       B8 multi-seed (assist2009)
 └─ level2.archive.package_output ──► level2_output.zip
 ```
 
@@ -708,21 +708,32 @@ Lưu ý kỹ thuật:
 * giá trị thô lưu ở `*_raw`; bản không đuôi là `sigmoid(raw)` để vẽ/so sánh;
 * GRKT không chặn mastery trong [0,1]; sigmoid là biến đổi đơn điệu, không đổi dấu của hiệu.
 
-Bốn tiêu chí:
+Bốn tiêu chí cũ, **phân loại lại theo bản sửa P0/F1**: ba cột đầu KHÔNG phải bằng chứng thực
+nghiệm mà là kiểm chứng cài đặt, vì chúng bằng 1 theo cấu trúc của GRKT (mọi trọng số
+`Positive_Linear` qua `softmax` nên dương, lan truyền `relu` và chỉ 1-hop):
 
 | Tiêu chí | Công thức | Cách đọc |
 |---|---|---|
-| `strengthen` | tỉ lệ bước mà `sign(m_strong - m_pre)` đúng chiều với kết quả | gần 1 là đúng theo cấu trúc; nếu ≠ 1 thì hook ghi hoặc tiền xử lý sai |
-| `spread` | như trên nhưng tại láng giềng 1-hop, trừ khái niệm đang làm | số đo **thật sự có thể sai**; so `train`/`shuffled`/`dense` |
-| `locality` | `Σ|Δm|` trong tập đang làm ∪ láng giềng / `Σ|Δm|` toàn bộ | đồ thị zero cho 1.0 một cách tầm thường; đọc cùng `spread` |
-| `forget_slope` | hồi quy trung bình `Δm_học_quên` theo Δt (5 ngăn) | kỳ vọng ≤ 0; dương nghĩa là "không làm gì cũng giỏi lên" |
+| `strengthen` | tỉ lệ bước mà `sign(m_strong - m_pre)` đúng chiều với kết quả | **kiểm chứng cài đặt**: kỳ vọng = 1; ≠ 1 là lỗi hook/tiền xử lý |
+| `spread` | như trên nhưng tại láng giềng 1-hop, trừ khái niệm đang làm | **kiểm chứng cài đặt**: cũng bằng 1 theo cấu trúc; KHÔNG phân biệt được `train` với `shuffled`. `None` ở `zero` vì không có gì để lan |
+| `locality` | `Σ|Δm|` trong tập đang làm ∪ láng giềng / `Σ|Δm|` toàn bộ | **kiểm chứng cài đặt**: bằng 1 theo cấu trúc (`k_hop=1`), kể cả đồ thị zero |
+| `forget_slope` | hồi quy trung bình `Δm_học_quên` theo Δt (5 ngăn) | **tiêu chí thật**: kỳ vọng ≤ 0; dương nghĩa là "không làm gì cũng giỏi lên" |
+
+Hai tiêu chí **thật** thêm ở P0/F1 (có thể sai, dùng làm bằng chứng):
+
+| Tiêu chí | Cách tính | Cách đọc |
+|---|---|---|
+| `precedence` / `precedence_gap` | với mỗi cạnh `c → d` của `pre_map`, tại các bước trả lời ĐÚNG `d` và cả hai khái niệm đã luyện trước đó: tỉ lệ `m_pre[i,c] ≥ m_pre[i,d]`; baseline hoán vị đích giữ nguyên bậc ra | **gap dương** mới là bằng chứng đồ thị tiên quyết có tác dụng; gap ≈ 0 là mô hình "cao đều", không phải học cấu trúc |
+| `stability_spearman` / `stability_changed_frac` | lật đúng/sai bước áp chót (L−2), chạy lại forward, so `m_strong[L−1]` với bản gốc trên toàn bộ khái niệm | Spearman gần 1 = ổn định; `changed_frac` cao hơn ở đồ thị có cạnh so với `zero` = thay đổi lan theo cấu trúc. Bước áp chót được chọn để còn một bước lan; lật bước cuối thì mọi biến thể giống nhau |
 
 `stage_attribution` đo độ lớn trung bình của ba giai đoạn (`strengthen`, `learn_forget`,
-`retrieval`), phục vụ phần biện luận mô hình học từ đâu.
+`retrieval`), phục vụ phần biện luận mô hình học từ đâu. `abs_delta_*` chỉ trả lời "thay đổi
+nằm ở giai đoạn nào", không phải bằng chứng "đồ thị tốt".
 
-`trajectory_metrics_table` **dùng chung `adj` của đồ thị train cho mọi biến thể**. Có chủ đích:
-"láng giềng" phải là một tập cố định thì `spread`/`locality` mới so sánh được. Với biến thể
-`zero`, `spread=None` (không có thay đổi trên láng giềng) và `locality=1`.
+`trajectory_metrics_table` **dùng chung `adj` và `pre_map` của đồ thị train cho mọi biến thể**.
+Có chủ đích: "láng giềng" và "tập cạnh tiên quyết" phải cố định thì các cột mới so sánh được
+giữa các đồ thị. Với biến thể `zero`, `spread=None` (không có thay đổi trên láng giềng) và
+`locality=1` — đúng như cấu trúc, không phải kết quả.
 
 Sản phẩm:
 
@@ -747,13 +758,17 @@ Sản phẩm:
 Đầu vào là `base_probs` (DKT/GKT đã thu ở B5) cộng probs GRKT lấy từ `predict_grkt`. Vì
 `base_probs` luôn được thu khi `run_baselines=True`, bật B7 không cần chạy lại đường nền.
 
-### 3.10 B8 — đa seed (tuỳ chọn)
+### 3.10 B8 — đa seed (bật cho assist2009)
 
-Chọn `train` nếu có, nếu không lấy biến thể đầu tiên. Chạy `run_grkt_experiment` với
-`save_dir=None` để **không ghi đè** checkpoint chính. Kết quả gộp bằng `groupby("model")`,
-`std` mẫu (`ddof=1`) với `n_seed` ghi kèm.
+Chọn `train` nếu có, nếu không lấy biến thể đầu tiên. Chạy `run_grkt_experiment` cho từng seed
+với **checkpoint riêng theo seed** (`GRKT-train.pt` cho seed 42, `GRKT-train-seed123.pt`…),
+`deadline` và `resume_ckpt` dùng chung: seed đang chạy dở resume tiếp đúng batch, seed 42 dùng
+lại checkpoint của lần chạy chính. Kết quả gộp bằng `groupby("model")`, `std` mẫu (`ddof=1`)
+với `n_seed` ghi kèm; nếu dừng giữa chừng, các seed đã xong vẫn được ghi vào
+`multiseed_metrics.csv` trước khi raise `TrainingPaused`.
 
-Mỗi seed là một lần train đầy đủ; đây là lý do mặc định tắt.
+Mỗi seed là một lần train đầy đủ, nên `run_level2` chỉ bật B8 cho `assist2009`
+(`multi_seed_datasets`); Junyi giữ 1 seed và giới hạn đó phải ghi rõ trong báo cáo.
 
 ### 3.11 `run_level2` — nhiều tập, một deadline
 
@@ -881,7 +896,7 @@ random_split(seed=42, 0.6/0.2/0.2)           load_kt_data(seed=42, 0.6/0.2/0.2)
 | Metric | AUC/ACC toàn cục | AUC/ACC toàn cục (cùng mask) |
 | Early stop | val AUC, patience 5 | val AUC, patience 3 (notebook) |
 | Checkpoint | cuối train | cuối epoch + giữa epoch + fingerprint |
-| Giải thích | phản chứng flip + bỏ cạnh | quỹ đạo mastery + 4 tiêu chí |
+| Giải thích | phản chứng flip + bỏ cạnh | quỹ đạo mastery + tiêu chí thật (`precedence_gap`, `stability_*`) |
 | Resume | không | có, qua zip nhiều phiên |
 | Sản phẩm chính | `cases.md`, `learner_view.json` | `trajectory_metrics.csv`, `traj_*.npz` |
 
@@ -918,12 +933,13 @@ random_split(seed=42, 0.6/0.2/0.2)           load_kt_data(seed=42, 0.6/0.2/0.2)
 | `BATCH_SIZE` | 32 | 16 |
 | `MAX_SEQ_LEN` | 200 | 50 |
 | `MAX_USERS` | `None` (toàn bộ) | 300 |
-| `VARIANTS` | `("train",)` (ablation tắt) | `("train",)` |
+| `VARIANTS` | `("train", "zero")`, chỉ `ABLATION_DATASETS=("assist2009",)` | `("train",)` (smoke không nằm trong ablation) |
 | `RUN_BASELINES` | `True` | `True` |
+| `USE_COMMITTED_CKPTS` | `False` (train lại seed 42) | `False` |
 | `RUN_CALIBRATION` | `False` | `False` |
-| `RUN_MULTI_SEED` | `False` | `False` |
+| `RUN_MULTI_SEED` | `True`, chỉ `MULTI_SEED_DATASETS=("assist2009",)` | `True` nhưng tập smoke không nằm trong danh sách |
 | `RESUME_GRKT_CKPT` | `True` | `True` |
-| `TIME_BUDGET_MIN` | 600 (chặn thêm bởi đồng hồ phiên) | 30 |
+| `TIME_BUDGET_MIN` | 120 cho phiên resume (~3 giờ quota còn lại); 600 khi chạy đầy đủ từ đầu — luôn bị chặn thêm bởi đồng hồ phiên | 30 |
 | `CKPT_EVERY_MIN` | 10 | 10 |
 | `D_HIDDEN` / `K_HIDDEN` / `K_HOP` | 128 / 16 / 1 | như trái |
 | `LR` | 1e-3 | 1e-3 |
@@ -939,6 +955,10 @@ random_split(seed=42, 0.6/0.2/0.2)           load_kt_data(seed=42, 0.6/0.2/0.2)
 `TIME_BUDGET_MIN` bị chặn thêm bởi thời gian còn lại của phiên:
 `min(TIME_BUDGET_MIN, SESSION_LIMIT_H·60 - đã_chạy - SESSION_SAFETY_MIN)`. Nếu đọc đồng hồ
 phiên thất bại, notebook bỏ chặn và tính từ lúc chạy cell §3.
+
+> Ngân sách không biết **quota tuần** của Kaggle (~30 giờ GPU): khi quota gần cạn mà khởi động
+> phiên mới (đồng hồ phiên lại đầy 12 giờ), phải tự hạ `TIME_BUDGET_MIN` (120 cho ~3 giờ còn
+> lại) — nếu để 600, kernel bị cắt giữa chừng và cell §3 không kịp tạo `level2_output.zip`.
 
 ---
 
@@ -960,22 +980,28 @@ phiên thất bại, notebook bỏ chặn và tính từ lúc chạy cell §3.
 
 | Cột | Đọc thế nào |
 |---|---|
-| `consistency_strengthen` | phải gần 1; ≠ 1 là lỗi hook/tiền xử lý |
-| `consistency_spread` | so giữa `train` và `shuffled`; `None` với `zero` |
-| `locality` | đọc cùng `spread`, không đọc một mình |
-| `forget_slope` | kỳ vọng ≤ 0 |
-| `abs_delta_*` | mô hình học chủ yếu từ củng cố hay từ thời gian |
+| `precedence` / `precedence_gap` | **tiêu chí thật**: gap > 0 mới là bằng chứng đồ thị tiên quyết có tác dụng; gap ≈ 0 = không khác baseline hoán vị |
+| `stability_spearman` / `stability_changed_frac` | **tiêu chí thật**: Spearman gần 1 = ổn định; `changed_frac` cao hơn `zero` = thay đổi lan theo cấu trúc |
+| `forget_slope` | **tiêu chí thật**: kỳ vọng ≤ 0 |
+| `consistency_strengthen` | kiểm chứng cài đặt: phải = 1; ≠ 1 là lỗi hook/tiền xử lý |
+| `consistency_spread` | kiểm chứng cài đặt: cũng = 1 theo cấu trúc, KHÔNG phân biệt `train` với `shuffled`; `None` với `zero` |
+| `locality` | kiểm chứng cài đặt: = 1 theo cấu trúc (`k_hop=1`) |
+| `abs_delta_*` | mô hình học chủ yếu từ củng cố hay từ thời gian — không phải bằng chứng đồ thị |
 
 ### 6.3 Kiểm tra đối chiếu bắt buộc
 
 1. **DKT trên ASSISTments phải tái hiện 0.7866 ± 0.005.** Lệch nghĩa là split hoặc
-   `max_seq_len` khác Cấp độ 1.
+   `max_seq_len` khác Cấp độ 1. (Từ P0/F2, đường nền mặc định được **train lại seed 42** vì
+   checkpoint Cấp độ 1 đã bị vòng đa seed ghi đè bằng seed 456; khi đó dùng dung sai 0.02 và
+   hiểu đây là kiểm tra split/cửa sổ, không phải kiểm tra trọng số.)
 2. **`train∩val = train∩test = val∩test = 0`** trong `leak_report.txt`.
 3. **Số cạnh `train` > 0.** Bằng 0 thì GRKT-train chạy y hệt GRKT-zero và mọi kết luận về đồ
    thị vô nghĩa (đã có cảnh báo trong `experiment.py`).
 4. **`Identity == Zero`** trên Cấp độ 1 là kết quả đã biết; nếu khác nhiều, nghi ngờ
    `graph_type` bị truyền sai.
-5. **`consistency_strengthen ≈ 1`.** Nếu không, kiểm tra hook `rec` và thứ tự cập nhật.
+5. **`consistency_strengthen = consistency_spread = locality = 1`.** Đây là kiểm chứng cài
+   đặt: nếu khác 1, kiểm tra hook `rec` và thứ tự cập nhật. Ngược lại, **`precedence_gap > 0`**
+   và **`stability_changed_frac` của `zero` ≈ 0 / thấp hơn `train`** mới là bằng chứng thật.
 
 ---
 

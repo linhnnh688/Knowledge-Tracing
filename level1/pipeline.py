@@ -342,7 +342,11 @@ def run_experiment(
     if save_dir:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
-        ckpt = save_dir / f"{name}.pt"
+        # Seed 42 giữ tên chuẩn (level2/baselines.py nạp "DKT.pt"); seed khác thêm hậu tố.
+        # Không có hậu tố thì vòng đa seed (§4.5) ghi đè checkpoint seed-42 bằng trọng số
+        # của seed chạy cuối, trong khi bảng chính vẫn ghi seed=42 -> trộn seed âm thầm.
+        fname = f"{name}.pt" if int(seed) == 42 else f"{name}-seed{int(seed)}.pt"
+        ckpt = save_dir / fname
         torch.save(model.state_dict(), ckpt)
         result["ckpt"] = str(ckpt)
     result["model"] = model.cpu()

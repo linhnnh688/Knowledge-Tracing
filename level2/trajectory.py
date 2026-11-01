@@ -21,6 +21,17 @@ trọng số softmax dương, nhân với trạng thái ẩn đã kẹp ±10). �
 thành thạo của DKT/GKT Cấp độ 1, mọi đầu ra ở đây dùng ``sigmoid(m)`` — một phép biến đổi
 đơn điệu nên không đổi thứ tự, không đổi dấu của các hiệu vi phân, và không đổi kết luận
 của các tiêu chí bên dưới. Giá trị thô cũng được lưu để đối chiếu.
+
+Phân loại tiêu chí (quan trọng khi viết báo cáo):
+
+* **Kiểm chứng cài đặt** — ``consistency_strengthen``, ``consistency_spread``, ``locality``.
+  Ba số này BẰNG 1 theo cấu trúc của GRKT (mọi ``Positive_Linear`` có trọng số dương, cập
+  nhật ``h += ±relu(...)``, và ``k_hop=1``), nên chúng chỉ có thể phát hiện lỗi hook/tiền
+  xử lý. Chúng KHÔNG chứng minh vai trò của đồ thị và KHÔNG phải "tiêu chí hợp lý" theo
+  nghĩa đề bài.
+* **Tiêu chí thật** — ``precedence_gap`` (nhất quán tiên quyết so với hoán vị cạnh) và
+  ``stability_spearman`` (ổn định khi lật một kết quả làm bài có bước kế tiếp), cùng
+  ``forget_slope``/``pearson_dt_dm``. Ba nhóm này có thể sai thật và là bằng chứng cấp 2.
 """
 
 from __future__ import annotations
@@ -32,6 +43,14 @@ import numpy as np
 import torch
 
 EPS = 1e-9
+
+#: Ba số đo bị cấu trúc mô hình ép về 1 — chỉ dùng để kiểm chứng cài đặt, không dùng làm
+#: bằng chứng vai trò đồ thị (xem docstring module và GAP_LEVEL2.md §F1).
+INSTALLATION_CHECK_COLUMNS = (
+    "consistency_strengthen",
+    "consistency_spread",
+    "locality",
+)
 
 
 # ---------------------------------------------------------------- ghi quỹ đạo
@@ -65,6 +84,7 @@ def record_trajectories(
     seed: int = 0,
     concept_num: Optional[int] = None,
     graph_kind: str = "train",
+    perturb: Optional[str] = None,
     verbose: bool = True,
 ) -> Dict[str, object]:
     """Chạy forward một lượt trên ``sequences`` và ghi m(u, c, t) cho từng người học.
@@ -72,6 +92,10 @@ def record_trajectories(
     ``sequences`` là danh sách ``level2.grkt_data.UserSequence`` (thông thường lấy từ
     ``split_sets[...]["sequences"]``). Kết quả là dict ``{"users": [...], "concept_num":
     int, "graph_kind": str}`` với mỗi người học là các mảng ``[S_u, NK]`` đã cắt bỏ padding.
+
+    ``perturb="flip_penultimate"`` lật đúng/sai của bước áp chót (bước cuối cùng còn có
+    bước kế tiếp để lan truyền), dùng cho tiêu chí ổn định — xem
+    :func:`stability_under_perturbation`.
 
     Ghi chú: GRKT dùng ``F.gumbel_softmax(..., hard=True)`` nên chiều "học thêm" giữa hai
     bước là ngẫu nhiên ngay ở chế độ eval. Vì vậy cần ``seed`` cố định để quỹ đạo tái lập
@@ -89,7 +113,7 @@ def record_trajectories(
     seqs = list(sequences)
     if max_users is not None:
         seqs = seqs[: int(max_users)]
-    items = [s.as_grkt_items() for s in seqs]
+    items = [_items_with_perturbation(s, perturb) for s in seqs]
 
     users: List[dict] = []
     offset = 0
@@ -142,6 +166,23 @@ def _sigmoid(m: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.clip(m, -30.0, 30.0)))
 
 
+def _items_with_perturbation(seq, perturb: Optional[str]) -> List[tuple]:
+    """Chuỗi upstream, có thể lật kết quả bước áp chót (giữ nguyên độ dài)."""
+    items = seq.as_grkt_items()
+    if perturb in (None, "none"):
+        return items
+    if perturb != "flip_penultimate":
+        raise ValueError(
+            f"perturb không hợp lệ: {perturb!r} (chỉ nhận None hoặc 'flip_penultimate')"
+        )
+    idx = len(items) - 2
+    if idx < 0:
+        return items  # chuỗi 1 bước: không có bước kế tiếp để lan truyền, giữ nguyên
+    prob, knows, corr, time, lag = items[idx]
+    items[idx] = (prob, knows, not corr, time, lag)
+    return items
+
+
 def _batch_with_meta(items: List[list], seqs: List, batch_size: int):
     """Giữ nguyên thứ tự người học để mảng ghi được khớp với ``user_id``."""
     for i in range(0, len(items), batch_size):
@@ -154,20 +195,23 @@ def directional_consistency(
 ) -> dict:
     """Hướng thay đổi mastery có đi đúng chiều với kết quả làm bài không.
 
-    Hai số đo, phân giải hai cơ chế khác nhau:
+    **CẢ HAI số đo đều là kiểm chứng cài đặt, không phải bằng chứng vai trò đồ thị.**
+    GRKT cộng/trừ state bằng tensor đã ``relu()``, còn mọi trọng số của ``know_master_proj``
+    / ``agg_*`` / ``gain_*`` / ``loss_*`` đều dương (``Positive_Linear`` + ``softmax``);
+    với ``k_hop=1`` phép lan truyền chỉ chạm đúng các láng giềng 1-hop. Vì vậy:
 
-    * ``strengthen`` — tại ĐÚNG khái niệm vừa làm: ``Δm = m_strong - m_pre`` phải
-      tăng khi làm đúng và giảm khi làm sai. GRKT cộng/trừ state bằng tensor đã ``relu()``
-      nên bất đẳng thức này ĐÚNG THEO CẤU TRÚC; số đo dùng để kiểm chứng cài đặt
-      (nếu ≠ 1 thì hook ghi quỹ đạo hoặc tiền xử lý đã sai).
-    * ``spread`` — tại các khái niệm LÁNG GIỀNG 1-hop của khái niệm vừa làm (không kể nó).
-      Đây là số đo thật sự có thể sai: chỉ lan truyền trên cạnh ĐÚNG của đồ thị kiến thức
-      mới cho phép ảnh hưởng đúng chiều lan sang khái niệm liên quan. So sánh
-      ``train`` / ``shuffled`` / ``dense`` ở số đo này chính là bằng chứng cấp 2 rằng cấu
-      trúc đồ thị có tác dụng (điều Cấp độ 1 chưa chứng minh được).
+    * ``strengthen`` — tại ĐÚNG khái niệm vừa làm: ``Δm = m_strong - m_pre`` tăng khi làm
+      đúng và giảm khi làm sai **theo cấu trúc**;
+    * ``spread`` — tại các khái niệm LÁNG GIỀNG 1-hop: ``Δm`` cùng dấu với kết quả làm bài
+      **cũng theo cấu trúc** (ma trận trọng số dương ⇒ không thể đảo dấu), và bằng 0 ngoài
+      1-hop.
+
+    Cả hai chỉ có thể phát hiện lỗi hook/tiền xử lý (kỳ vọng = 1). Muốn đo tác dụng thật
+    của cấu trúc đồ thị, dùng :func:`precedence_consistency`,
+    :func:`stability_under_perturbation` hoặc so ``abs_delta_*`` giữa các biến thể.
 
     Trả về tỉ lệ trên các cặp (bước, khái niệm) CÓ thay đổi khác 0; không có mẫu nào thì
-    trả ``None`` (thường xảy ra với đồ thị ``zero``: không cạnh nên không lan truyền).
+    trả ``None`` (xảy ra với đồ thị ``zero``: không cạnh nên không lan truyền).
     """
     ok_strong = tot_strong = 0
     ok_spread = tot_spread = 0
@@ -212,12 +256,13 @@ def directional_consistency(
 
 
 def locality(traj: Dict[str, object], adj: Optional[np.ndarray] = None) -> dict:
-    """Thay đổi mastery có bị giữ quanh khái niệm đang làm bài hay tản ra toàn đồ thị.
+    """Tỉ lệ thay đổi mastery nằm trong {khái niệm đang làm ∪ láng giềng 1-hop}.
 
-    ``locality = Σ_{c ∈ đang làm ∪ N(đang làm)} |Δm_c| / Σ_c |Δm_c``.  Không có cạnh
-    (đồ thị ``zero``) thì mẫu số chỉ còn đúng khái niệm đang làm → 1.0 một cách tầm thường;
-    vì vậy chỉ số này có ý nghĩa khi ĐỌC CÙNG với ``directional_consistency.spread``: đồ
-    thị tốt là đồ thị lan toả vừa phải và đúng chiều, không phải đồ thị ít lan toả nhất.
+    ``locality = Σ_{c ∈ đang làm ∪ N(đang làm)} |Δm_c| / Σ_c |Δm_c|``. Với ``k_hop=1``,
+    ``Δm`` ngoài tập này **bằng 0 theo cấu trúc** ⇒ ``locality ≡ 1`` trên mọi đồ thị có
+    cạnh. Đây là kiểm chứng cài đặt (kỳ vọng = 1), KHÔNG phải bằng chứng về vai trò đồ thị
+    và không phân biệt được ``train`` với ``shuffled``. Muốn đo độ lan toả thật, dùng
+    ``abs_delta_retrieval``/``stability_changed_frac`` giữa các biến thể.
     """
     num = den = 0.0
     per_step: List[float] = []
@@ -248,6 +293,210 @@ def locality(traj: Dict[str, object], adj: Optional[np.ndarray] = None) -> dict:
         "n_steps": len(per_step),
         "locality_median": float(np.median(per_step)) if per_step else None,
     }
+
+
+def precedence_consistency(
+    traj: Dict[str, object],
+    pre_map: Optional[np.ndarray],
+    n_permutations: int = 5,
+    seed: int = 42,
+) -> dict:
+    """Nhất quán tiên quyết: mastery khái niệm TIÊN QUYẾT có cao hơn khái niệm PHỤ thuộc?
+
+    Với mỗi cạnh ``c → d`` của ``pre_map`` (``c`` là tiên quyết của ``d``), xét trạng thái
+    ``m_pre[i]`` — trạng thái mô hình dùng để dự đoán bước ``i``, trước khi bước đó làm tăng
+    mastery của ``d``. Đếm tỉ lệ ``m_pre[i, c] ≥ m_pre[i, d]`` trên các bước người học trả
+    lời ĐÚNG ``d``, với điều kiện cả ``c`` lẫn ``d`` đã từng được người đó làm trước bước
+    ``i`` (khái niệm chưa luyện có prior giống nhau nên chỉ tạo tie vô nghĩa).
+
+    Đây là tiêu chí **có thể sai thật**: không bị ép bởi dấu của trọng số như ``spread``.
+    Để biết "cao" có ý nghĩa hay chỉ là ngẫu nhiên, so với baseline hoán vị đích của các
+    cạnh (giữ nguyên số cạnh ra của mỗi đỉnh): ``precedence_gap = precedence −
+    precedence_permuted``. Gap dương mới là bằng chứng cấu trúc tiên quyết có tác dụng.
+
+    Trả ``None`` cho các số đo nếu đồ thị rỗng hoặc không có mẫu.
+    """
+    empty = {
+        "precedence": None,
+        "precedence_permuted": None,
+        "precedence_gap": None,
+        "precedence_tie_frac": None,
+        "n_precedence_samples": 0,
+        "n_precedence_edges": 0,
+    }
+    if pre_map is None:
+        return empty
+    pre = np.asarray(pre_map) > 0
+    if pre.ndim != 2 or pre.shape[0] != pre.shape[1]:
+        raise ValueError(f"pre_map phải là ma trận vuông, nhận {pre.shape}")
+    pre[0, :] = False
+    pre[:, 0] = False
+    np.fill_diagonal(pre, False)
+    src, dst = np.nonzero(pre)
+    if src.size == 0:
+        return empty
+
+    lookups = [_sources_by_dst(src, dst)]
+    rng = np.random.RandomState(seed)
+    for _ in range(max(0, int(n_permutations))):
+        lookups.append(_sources_by_dst(src, rng.permutation(dst)))
+
+    stats = []
+    for lut in lookups:
+        ok = tot = ties = 0
+        for user in traj["users"]:
+            m_pre = user["m_pre"]
+            knows, corrs = user["knows"], user["corrs"]
+            nk = m_pre.shape[1]
+            active = np.zeros(nk, dtype=bool)
+            for i in range(len(corrs)):
+                if int(corrs[i]):
+                    for d in {int(k) for k in knows[i] if k > 0}:
+                        sources = lut.get(d)
+                        if sources is None or not active[d]:
+                            continue
+                        src_arr = sources[active[sources]]
+                        if src_arr.size == 0:
+                            continue
+                        vals = m_pre[i, src_arr]
+                        md = m_pre[i, d]
+                        ok += int((vals >= md).sum())
+                        ties += int((vals == md).sum())
+                        tot += int(src_arr.size)
+                for k in knows[i]:
+                    if k > 0:
+                        active[int(k)] = True
+        stats.append((ok, tot, ties))
+
+    base_ok, base_tot, base_ties = stats[0]
+    if base_tot == 0:
+        return empty
+    perm = [
+        ok / tot for ok, tot, _ in stats[1:] if tot > 0
+    ]
+    prec = base_ok / base_tot
+    perm_mean = float(np.mean(perm)) if perm else None
+    return {
+        "precedence": prec,
+        "precedence_permuted": perm_mean,
+        "precedence_gap": (prec - perm_mean) if perm_mean is not None else None,
+        "precedence_tie_frac": base_ties / base_tot,
+        "n_precedence_samples": int(base_tot),
+        "n_precedence_edges": int(src.size),
+    }
+
+
+def _sources_by_dst(src: np.ndarray, dst: np.ndarray) -> Dict[int, np.ndarray]:
+    """``{đích: mảng nguồn}`` cho một tập cạnh (dùng để tra nhanh cạnh vào của mỗi đỉnh)."""
+    buckets: Dict[int, List[int]] = {}
+    for s, d in zip(src.tolist(), dst.tolist()):
+        buckets.setdefault(int(d), []).append(int(s))
+    return {d: np.asarray(v, dtype="int64") for d, v in buckets.items()}
+
+
+@torch.no_grad()
+def stability_under_perturbation(
+    model,
+    sequences: Sequence,
+    device=None,
+    batch_size: int = 16,
+    max_users: Optional[int] = 150,
+    seed: int = 42,
+    concept_num: Optional[int] = None,
+    graph_kind: str = "train",
+    verbose: bool = True,
+) -> dict:
+    """Đổi kết quả một bước làm bài thì trạng thái tri thức cuối chuỗi thay đổi bao nhiêu?
+
+    Lật đúng/sai của bước **áp chót** (``L-2``) rồi chạy lại forward; so vector mastery
+    ``m_strong[L-1]`` với lần chạy gốc. Bước áp chót được chọn vì nó còn một bước kế tiếp
+    để phần thay đổi lan qua cơ chế truy xuất trên đồ thị — lật bước cuối sẽ không lan đi
+    đâu và mọi biến thể (kể cả ``zero``) sẽ cho cùng kết quả.
+
+    Hai số đo, đều CÓ THỂ SAI THẬT và phụ thuộc cấu trúc đồ thị:
+
+    * ``stability_spearman`` — tương quan hạng Spearman giữa hai vector mastery trên toàn
+      bộ khái niệm (bỏ padding). Càng gần 1 càng ổn định.
+    * ``stability_changed_frac`` — tỉ lệ khái niệm có mastery thay đổi. Đồ thị có cạnh
+      lan thay đổi sang láng giềng ⇒ tỉ lệ này cao hơn đồ thị ``zero``.
+
+    GRKT dùng ``gumbel_softmax`` ngay khi eval nên ``seed`` phải cố định; hàm tự gọi
+    :func:`record_trajectories` hai lần với cùng ``seed`` để hai lượt forward nhận cùng
+    chuỗi ngẫu nhiên.
+    """
+    seqs = list(sequences)
+    if max_users is not None:
+        seqs = seqs[: int(max_users)]
+    kwargs = dict(
+        device=device,
+        batch_size=batch_size,
+        concept_num=concept_num,
+        graph_kind=graph_kind,
+        seed=seed,
+        verbose=False,
+    )
+    base = record_trajectories(model, seqs, **kwargs)
+    flipped = record_trajectories(model, seqs, perturb="flip_penultimate", **kwargs)
+
+    rhos, changed, deltas, n_used = [], [], [], 0
+    for before, after in zip(base["users"], flipped["users"]):
+        if before["m_strong"].shape != after["m_strong"].shape:
+            continue
+        if before["m_strong"].shape[0] < 2:
+            continue  # không có bước áp chót để lật
+        m0 = before["m_strong"][-1, 1:]
+        m1 = after["m_strong"][-1, 1:]
+        if m0.size < 3:
+            continue
+        rho = _spearman(m0, m1)
+        if rho is not None:
+            rhos.append(rho)
+        diff = np.abs(m1 - m0)
+        changed.append(float((diff > 1e-6).mean()))
+        deltas.append(float(diff.mean()))
+        n_used += 1
+    if verbose:
+        print(
+            f"  [stability] lật bước áp chót trên {n_used} người học: "
+            f"Spearman={_fmt(rhos)} | đổi={_fmt(changed)}"
+        )
+    return {
+        "stability_spearman": float(np.mean(rhos)) if rhos else None,
+        "stability_changed_frac": float(np.mean(changed)) if changed else None,
+        "stability_abs_delta": float(np.mean(deltas)) if deltas else None,
+        "n_stability_users": int(n_used),
+        "perturbation": "flip_penultimate",
+    }
+
+
+def _fmt(values) -> str:
+    return f"{np.mean(values):.4f}" if values else "n/a"
+
+
+def _spearman(a: np.ndarray, b: np.ndarray) -> Optional[float]:
+    """Tương quan hạng Spearman với xử lý tie bằng hạng trung bình; ``None`` nếu hằng số."""
+    ra = _average_ranks(a)
+    rb = _average_ranks(b)
+    if ra.std() <= EPS or rb.std() <= EPS:
+        return None
+    return float(np.corrcoef(ra, rb)[0, 1])
+
+
+def _average_ranks(x: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, dtype="float64")
+    order = np.argsort(x, kind="mergesort")
+    ranks = np.empty(x.size, dtype="float64")
+    ranks[order] = np.arange(1, x.size + 1, dtype="float64")
+    sorted_x = x[order]
+    i = 0
+    while i < x.size:
+        j = i + 1
+        while j < x.size and sorted_x[j] == sorted_x[i]:
+            j += 1
+        if j - i > 1:
+            ranks[order[i:j]] = (i + 1 + j) / 2.0
+        i = j
+    return ranks
 
 
 def forgetting_monotonicity(traj: Dict[str, object], n_buckets: int = 5) -> dict:
@@ -352,36 +601,58 @@ def stage_attribution(traj: Dict[str, object]) -> dict:
 
 
 def trajectory_metrics_table(
-    runs: Dict[str, Dict[str, object]], adj: Optional[np.ndarray] = None
+    runs: Dict[str, Dict[str, object]],
+    adj: Optional[np.ndarray] = None,
+    pre_map: Optional[np.ndarray] = None,
+    stability: Optional[Dict[str, dict]] = None,
+    precedence_permutations: int = 5,
+    seed: int = 42,
 ):
     """Bảng tiêu chí cho nhiều lần chạy ``{tên biến thể đồ thị: trajectory dict}``.
 
-    Trả về ``pandas.DataFrame`` với các cột: graph, steps, strengthen, spread, locality,
-    forget_slope, d_strengthen, d_learn_forget, d_retrieval.  ``adj`` là mặt nạ láng giềng
-    1-hop của biến thể ``train`` (``level2.grkt_data.adjacency_from_graphs``) — dùng chung
-    một ``adj`` cho MỌI biến thể để chỉ số so sánh được trên cùng một tập "láng giềng".
+    Cột **tiêu chí thật** (có thể sai, dùng làm bằng chứng): ``precedence``,
+    ``precedence_gap``, ``stability_spearman``, ``stability_changed_frac``,
+    ``forget_slope``, ``pearson_dt_dm``. Cột **kiểm chứng cài đặt** (kỳ vọng = 1, không
+    dùng làm bằng chứng): ``consistency_strengthen``, ``consistency_spread``, ``locality``.
+
+    ``adj`` là mặt nạ láng giềng 1-hop của biến thể ``train`` và ``pre_map`` là đồ thị
+    tiên quyết nhị phân của ``train`` (``level2.grkt_data.graph_variant``). Cả hai dùng
+    CHUNG cho mọi biến thể để "tập láng giềng"/"tập cạnh tiên quyết" cố định, nhờ đó cột
+    so sánh được giữa các đồ thị. ``stability`` là ``{biến thể: kết quả
+    stability_under_perturbation}``; thiếu thì các cột stability để ``NaN``.
     """
     import pandas as pd
 
     rows = []
+    stability = stability or {}
     for name, traj in runs.items():
-        # Chủ đích dùng LẠI adj của đồ thị train cho mọi biến thể: "láng giềng" phải là một
-        # tập cố định thì số đo mới so sánh được giữa các đồ thị. Với biến thể zero/shuffled,
-        # thay đổi mastery trên tập láng giềng ấy xấp xỉ 0 => spread = None, locality = 1.
+        # Chủ đích dùng LẠI adj/pre_map của đồ thị train cho mọi biến thể: "láng giềng" và
+        # "cạnh tiên quyết" phải là tập cố định thì số đo mới so sánh được giữa các đồ thị.
         dc = directional_consistency(traj, adj)
         lo = locality(traj, adj)
         fm = forgetting_monotonicity(traj)
         sa = stage_attribution(traj)
+        # Tính RIÊNG cho từng biến thể: m_pre phụ thuộc đồ thị, nên "nhất quán tiên quyết"
+        # mới là phép so giữa các đồ thị.
+        prec = precedence_consistency(
+            traj, pre_map, n_permutations=precedence_permutations, seed=seed
+        )
+        st = stability.get(name) or stability.get(str(traj.get("graph_kind", name))) or {}
         rows.append(
             {
                 "graph": str(traj.get("graph_kind", name)),
                 "users": len(traj["users"]),
                 "steps": dc["n_steps"],
+                "precedence": prec["precedence"],
+                "precedence_gap": prec["precedence_gap"],
+                "n_precedence_edges": prec["n_precedence_edges"],
+                "stability_spearman": st.get("stability_spearman"),
+                "stability_changed_frac": st.get("stability_changed_frac"),
+                "forget_slope": fm["slope"],
+                "pearson_dt_dm": fm["pearson_dt_vs_dm"],
                 "consistency_strengthen": dc["strengthen"],
                 "consistency_spread": dc["spread"],
                 "locality": lo["locality"],
-                "forget_slope": fm["slope"],
-                "pearson_dt_dm": fm["pearson_dt_vs_dm"],
                 "abs_delta_strengthen": sa["mean_abs_delta_strengthen"],
                 "abs_delta_learn_forget": sa["mean_abs_delta_learn_forget"],
                 "abs_delta_retrieval": sa["mean_abs_delta_retrieval"],

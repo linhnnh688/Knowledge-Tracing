@@ -48,6 +48,7 @@ from .grkt_api import (  # noqa: F401
     train_grkt,
 )
 from .trajectory import (  # noqa: F401
+    INSTALLATION_CHECK_COLUMNS,
     directional_consistency,
     export_mastery_csv,
     forgetting_monotonicity,
@@ -55,8 +56,10 @@ from .trajectory import (  # noqa: F401
     locality,
     plot_mastery_curves,
     plot_mastery_heatmap,
+    precedence_consistency,
     record_trajectories,
     save_trajectories,
+    stability_under_perturbation,
     stage_attribution,
     trajectory_metrics_table,
 )

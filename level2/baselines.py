@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -125,6 +126,44 @@ def load_level1_state(model, ckpt_path: Path, device) -> bool:
             f"  [checkpoint] {ckpt_path.name} không nạp được ({type(exc).__name__}: {exc}) -> train lại"
         )
         return False
+
+
+def checkpoint_seed(ckpt_path) -> Optional[int]:
+    """Seed đã train ra checkpoint, đọc từ tên file hoặc metadata; ``None`` nếu không rõ.
+
+    Ba nguồn, theo thứ tự tin cậy: hậu tố ``-seed{s}.pt`` (do ``level1.pipeline.run_experiment``
+    đặt cho seed ≠ 42), ``<tên>.json`` cạnh file (fingerprint ghi khi Cấp độ 2 tự train lại),
+    rồi ``checkpoint_seeds.json`` trong cùng thư mục (khai báo thủ công cho checkpoint cũ).
+
+    ``None`` phải được coi là "KHÔNG BIẾT", không phải 42: checkpoint Cấp độ 1 từng bị vòng
+    đa seed ghi đè bằng seed cuối cùng (xem GAP_LEVEL2.md §F2).
+    """
+    if not ckpt_path:
+        return None
+    path = Path(ckpt_path)
+    m = re.search(r"-seed(\d+)\.pt$", path.name)
+    if m:
+        return int(m.group(1))
+    meta = path.with_suffix(".json")
+    if meta.exists():
+        try:
+            payload = json.loads(meta.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            payload = {}
+        fingerprint = payload.get("fingerprint") if isinstance(payload, dict) else None
+        if isinstance(fingerprint, dict) and fingerprint.get("seed") is not None:
+            return int(fingerprint["seed"])
+    sidecar = path.parent / "checkpoint_seeds.json"
+    if sidecar.exists():
+        try:
+            mapping = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            mapping = {}
+        if isinstance(mapping, dict):
+            value = mapping.get(path.name, mapping.get(path.stem))
+            if value is not None:
+                return int(value)
+    return None
 
 
 def collect_level1_probs(
@@ -519,9 +558,15 @@ def level1_baseline(
                 seed=seed,
             )
         )
-        loaded = load_level1_state(model, ckpt, device) if ckpt else False
-        if not loaded and final_ckpt is not None:
-            loaded = load_retrained_baseline(model, final_ckpt, fingerprint, device)
+        loaded_from = None
+        if ckpt and load_level1_state(model, ckpt, device):
+            loaded_from = ckpt
+        elif final_ckpt is not None and load_retrained_baseline(
+            model, final_ckpt, fingerprint, device
+        ):
+            loaded_from = final_ckpt
+        loaded = loaded_from is not None
+        ckpt_seed = None
         resume_state = None
         if not loaded and rolling_ckpt is not None and rolling_ckpt.exists():
             payload = torch.load(rolling_ckpt, map_location="cpu", weights_only=False)
@@ -531,8 +576,21 @@ def level1_baseline(
             ):
                 resume_state = payload
         if loaded:
+            ckpt_seed = checkpoint_seed(loaded_from)
+            if ckpt_seed is None:
+                print(
+                    f"  [checkpoint-seed] {name}: KHÔNG xác định được seed của "
+                    f"{loaded_from.name} -> bảng ghi seed=None. Sửa bằng cách train lại "
+                    "đường nền (baseline_ckpt_dir=None) hoặc khai báo checkpoint_seeds.json."
+                )
+            elif int(ckpt_seed) != int(seed):
+                print(
+                    f"  [checkpoint-seed] {name}: checkpoint là seed {ckpt_seed}, KHÁC "
+                    f"split_seed={seed} -> dòng này không cùng seed khởi tạo với GRKT; "
+                    "phải ghi rõ trong báo cáo."
+                )
             if verbose:
-                print(f"  [baseline] {name}: dùng checkpoint {ckpt or final_ckpt}")
+                print(f"  [baseline] {name}: dùng checkpoint {loaded_from}")
             history, best_val_auc = {}, None
         else:
             if not allow_retrain:
@@ -589,6 +647,7 @@ def level1_baseline(
                 )
                 if rolling_ckpt is not None and rolling_ckpt.exists():
                     rolling_ckpt.unlink()
+            ckpt_seed = int(seed)  # trọng số vừa train trong lần chạy này
         if collect_probs:
             got = collect_level1_probs(
                 model, bundle["test_loader"], model_type, device=device
@@ -609,7 +668,12 @@ def level1_baseline(
             "test_auc": test_metrics["auc"],
             "test_acc": test_metrics["acc"],
             "history": history,
-            "seed": seed,
+            # ``seed`` = seed đã TRAIN ra trọng số đang được đánh giá (không phải split seed).
+            # ``None`` = checkpoint cũ không ghi seed — bảng phải để trống thay vì đoán 42.
+            "seed": int(ckpt_seed) if ckpt_seed is not None else None,
+            "split_seed": int(seed),
+            "ckpt_seed": ckpt_seed,
+            "ckpt_source": str(loaded_from) if loaded_from is not None else None,
             "from_checkpoint": bool(loaded),
         }
         if got is not None:

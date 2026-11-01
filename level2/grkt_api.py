@@ -571,7 +571,13 @@ def run_grkt_experiment(
     train_items = split_sets["train"]["items"]
     val_items = split_sets["val"]["items"]
     test_items = split_sets["test"]["items"]
-    name = f"GRKT-{graph_kind}"
+    # Seed 42 giữ tên cũ (GRKT-<graph>.pt) để không phá sản phẩm đã có; seed khác mang hậu tố
+    # riêng, nếu không vòng đa seed sẽ ghi đè checkpoint của lần chạy chính và resume sai seed.
+    name = (
+        f"GRKT-{graph_kind}"
+        if int(seed) == 42
+        else f"GRKT-{graph_kind}-seed{int(seed)}"
+    )
 
     # Vân tay dữ liệu/cấu hình: load_state_dict chỉ bắt khác kiến trúc, KHÔNG bắt khác split,
     # đồ thị hay batch_size — trong khi resume sai split sẽ cho kết quả không tái lập được.
@@ -697,7 +703,7 @@ def run_grkt_experiment(
     test_metrics = evaluate_grkt(model, test_items, device=device)
 
     result = {
-        "name": f"GRKT-{graph_kind}",
+        "name": name,
         "model_type": "GRKT",
         "graph_type": graph_kind,
         "concept_num": grkt_data.concept_num,
@@ -712,6 +718,9 @@ def run_grkt_experiment(
         "edges_rel": int(rel.sum()) if hasattr(rel, "sum") else 0,
         "edges_pre": int(pre.sum()) if hasattr(pre, "sum") else 0,
         "resumed_from": loaded_from,
+        # None = trọng số vừa train trong lần chạy này; int = nạp từ checkpoint đã kiểm
+        # fingerprint (seed trùng với ``seed`` nên không thể lệch split/khởi tạo).
+        "ckpt_seed": int(seed) if loaded_from else None,
         "args": args,
     }
     if save_dir is not None:
