@@ -762,6 +762,10 @@ def run_level2(
     tập rẻ (thường là assist2009): ablation đồ thị và đa seed chỉ chạy nơi còn ngân sách
     GPU, tập còn lại giữ cấu hình mặc định (``variants=("train",)``, 1 seed) và điều này
     phải được ghi rõ trong báo cáo.
+
+    Có mặt ``variants_by_dataset`` thì bảng khai báo là nguồn quyết định: tập **không** có
+    trong bảng nhận đúng ``("train",)``, không thừa hưởng ``variants`` truyền qua ``kwargs``.
+    Nhờ vậy bật ablation cho tập rẻ không âm thầm train thêm biến thể nặng ở tập còn lại.
     """
     deadline = (
         (time.time() + float(time_budget_min) * 60.0) if time_budget_min else None
@@ -774,8 +778,10 @@ def run_level2(
         print(f"# TẬP DỮ LIỆU: {name}")
         print("#" * 72)
         ds_kwargs = dict(kwargs)
-        if variants_by_dataset and name in variants_by_dataset:
-            ds_kwargs["variants"] = tuple(variants_by_dataset[name])
+        if variants_by_dataset is not None:
+            # Tập ngoài bảng PHẢI nhận đúng một biến thể; nếu thừa hưởng `variants` toàn cục
+            # thì khai báo ablation cho assist2009 sẽ kéo theo GRKT-zero ở junyi (hàng giờ GPU).
+            ds_kwargs["variants"] = tuple(variants_by_dataset.get(name, ("train",)))
         if ms_set is not None:
             ds_kwargs["run_multi_seed"] = name in ms_set
         run = run_dataset(name, save_root=save_root, deadline=deadline, **ds_kwargs)
