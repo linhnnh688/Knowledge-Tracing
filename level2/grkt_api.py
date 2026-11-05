@@ -10,9 +10,12 @@ Lý do không dùng ``Runner.py``:
   tensor trên GPU và làm hết VRAM sau vài epoch. Ở đây chỉ snapshot ``state_dict()`` về
   CPU, giống ``level1.pipeline.train_one``.
 
-Giữ nguyên tối đa đường dẫn tính toán của upstream: ``get_feed_dict``/``feature2tensor``
-(Batch tự đệm theo chuỗi dài nhất trong batch), ``train_an_epoch``/``eval_an_epoch``,
-``AUC``/``ACC`` của ``GRKT/metric.py``. Chỉ vòng lặp epoch/checkpoint là của Cấp độ 2.
+Giữ nguyên đường tính của upstream: ``get_feed_dict``/``feature2tensor`` (Batch tự đệm theo
+chuỗi dài nhất trong batch), ``GRKT.forward`` và ``BaseModel.loss`` (BCE). Không dùng
+``train_an_epoch``/``eval_an_epoch``/``fit``/``test`` của ``Runner``: vòng lặp epoch, early
+stopping và checkpoint/resume là của Cấp độ 2. AUC/ACC/NLL được tính lại **toàn cục** bằng
+sklearn (``roc_auc_score``; BCE kẹp ``[1e-6, 1-1e-6]``) giống ``level1.pipeline._epoch_loop``,
+**không** dùng ``GRKT/metric.py`` vì metric upstream chấm theo batch/feed.
 """
 
 from __future__ import annotations

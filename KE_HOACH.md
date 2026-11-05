@@ -338,9 +338,36 @@ dòng, và timestamp được đổi qua `parsed - pd.Timestamp(0, tz="UTC")` th
 `astype("int64")` (cách cũ trả số rất âm trên pandas 2 và raise trên pandas 3 khi có NaT).
 
 **Không đổi**: kiến trúc mô hình, công thức loss (BCE), `get_feed_dict`/`feature2tensor`
-(đệm batch), định nghĩa AUC/ACC trong `GRKT/metric.py`. Hai tham số lệch mặc định upstream
-được ghi rõ trong docstring `level2/grkt_api.make_args`: `thresh` 0.6 → 0.5, `alpha` giữ
-0.01 nhưng đi cùng trục phút.
+(đệm batch). **Không dùng** `GRKT/metric.py`: AUC/ACC/NLL được tính lại toàn cục bằng sklearn
+(`roc_auc_score`; BCE kẹp `[1e-6, 1-1e-6]`) giống `level1.pipeline._epoch_loop` — lý do ghi
+trong docstring `level2/grkt_api.py`. Hai tham số lệch mặc định upstream được ghi rõ trong
+docstring `level2/grkt_api.make_args`: `thresh` 0.6 → 0.5, `alpha` giữ 0.01 nhưng đi cùng
+trục phút.
+
+#### Khai báo chỉnh sửa mã nguồn mở GKT / DKT (Cấp độ 1)
+
+Bản gốc: Nakagawa et al., *Graph-based Knowledge Tracing: Modeling Student Proficiency Using
+Graph Neural Network* (WI 2019) — <https://dl.acm.org/doi/10.1145/3350546.3352513>, mã vendored
+từ <https://github.com/jhljx/Graph-based-Knowledge-Tracing>. Các biểu thức lõi `_aggregate` /
+`_update` / `_predict` của GKT giữ nguyên; thay đổi dưới đây là giao thức dữ liệu, ablation và
+hook đọc trạng thái.
+
+| # | File | Sửa gì | Vì sao |
+| --- | --- | --- | --- |
+| 1 | `GKT/processing.py:58-60` | Thêm `seed`, `max_seq_len=200`, `min_seq_len=3`; cắt mỗi chuỗi còn 200 bước; bỏ người học < 3 tương tác | Khớp cấu hình Cấp độ 2 và giới hạn bộ nhớ; upstream bỏ người < 2 tương tác, không seed, không cắt |
+| 2 | `GKT/processing.py:156` | `random_split` nhận `torch.Generator().manual_seed(seed)`; notebook gọi `train_ratio=0.6` | Split theo người học tái lập được, cùng seed 42 cho mọi mô hình và mọi seed train; upstream không seed nên split đổi mỗi lần chạy |
+| 3 | `GKT/processing.py:114-152` | Giữ `user_ids` và `skill_lookup` trên dataset | Cần cho `save_split`, dashboard và case study; upstream không lưu |
+| 4 | `GKT/processing.py:185-197`, `GKT/utils.py:19-55` | Thêm graph type `Identity`, `Zero`, `Shuffled`; `Shuffled` hoán vị đích trên support của Transition (chỉ từ train) | Ablation cấu trúc đồ thị (YEU_CAU §7); upstream chỉ có Dense/Transition/DKT |
+| 5 | `GKT/models.py:47-55`, `GKT/models.py:92`, `GKT/models.py:217` | Mở allowlist graph type cho `Identity`/`Zero`/`Shuffled` | Constructor và `_aggregate` chấp nhận ba biến thể mới; công thức aggregate/update giữ nguyên |
+| 6 | `GKT/models.py:406-457` | Thêm `return_state=True` trả danh sách `h_t` | Dashboard/case study cần trạng thái ẩn; mặc định `False` nên train/eval không đổi |
+| 7 | `GKT/models.py:725-732` | DKT: `feature_lens` về CPU, `clamp(min=1)`, `pad_packed_sequence(..., total_length=...)` | Chạy được trên CPU và giữ đúng độ dài sau padding; không đổi kiến trúc LSTM |
+| 8 | `GKT/metrics.py:31` | Kẹp `pred_one` vào `[1e-6, 1-1e-6]` trước khi `log` | Tránh `log(0)` khi xác suất bão hoà; loss vẫn là NLL như upstream |
+| 9 | *không sửa upstream* — `level1/pipeline.py:154-257` | Vòng lặp epoch riêng, clip grad 10, early stop theo val AUC; AUC/ACC tính **toàn cục** | `GKT/train.py` tính AUC từng batch rồi lấy trung bình; đây là sửa có chủ đích, áp dụng cho mọi mô hình Cấp độ 1 |
+| 10 | *không sửa upstream* — `level1/pipeline.py:136` | Dựng GKT với `binary=True` | Khớp feature `2*skill + correct`; default upstream là `binary=False` |
+| 11 | `GKT/layers.py`, `GKT/train.py`, `GKT/README.md` | Chỉ format lại (black/markdown); không thêm tham số hay hàm | `GKT/train.py` **không được notebook dùng**; notebook Cấp 1 huấn luyện qua `level1/pipeline.py` |
+
+Khi viết mục "khai báo AI/mã nguồn mở", trích dẫn cả hai: mã gốc GKT/GRKT (kèm URL) và bảng
+sửa đổi tương ứng ở trên; nêu rõ model core là của tác giả, còn giao thức thực nghiệm là của nhóm.
 
 ### Giai đoạn 3 — Cấp độ 3 (tuần 7–9) → trần 10
 
