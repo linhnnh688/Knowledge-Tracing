@@ -123,11 +123,19 @@ class ScaledDotProductAttention(nn.Module):
             q / self.temperature, k.transpose(1, 2)
         )  # [n_head, mask_number, concept_num]
         if mask is not None:
+            # -1e9 vẫn hữu hạn nên softmax không sinh 0/0; tránh torch.finfo.min vì có thể
+            # tạo -inf rồi NaN gradient khi cả hàng bị che.
             attn = attn.masked_fill(mask == 0, -1e9)
-        # pay attention to add training=self.training!
+        # Chuẩn hoá theo trục khái niệm (dim=-1): mỗi hàng là phân phối trên láng giềng, cùng
+        # thang với đồ thị tĩnh đã chuẩn hoá hàng (Transition/Dense). Chuẩn hoá theo head
+        # (dim=0) cho tổng trọng số mỗi hàng ~concept_num/2, khuếch đại đầu vào GRU và làm
+        # suy luận đồ thị mất ổn định.
+        attn = F.softmax(attn, dim=-1)
+        # Chốt an toàn cuối: logits hỏng (NaN/inf) không được lan sang trọng số mô hình.
+        attn = torch.nan_to_num(attn, nan=0.0, posinf=0.0, neginf=0.0)
         attn = F.dropout(
-            F.softmax(attn, dim=0), self.dropout, training=self.training
-        )  # pay attention that dim=-1 is not as good as dim=0!
+            attn, self.dropout, training=self.training
+        )
         return attn
 
 

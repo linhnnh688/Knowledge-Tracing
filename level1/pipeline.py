@@ -165,17 +165,35 @@ def _epoch_loop(model, loader, model_type, device, kt_loss, optimizer=None):
     model.train(train)
     losses = []
     all_preds, all_labels = [], []
+    n_batches = 0
+    bad_loss_batches = 0
+    bad_grad_batches = 0
+    bad_preds = 0
     context = torch.enable_grad() if train else torch.no_grad()
     with context:
         for batch in loader:
+            n_batches += 1
             pred, answers = _forward(model, model_type, batch, device)
             loss, _, _ = kt_loss(pred, answers)
-            if train:
+            loss_finite = bool(torch.isfinite(loss).item())
+            if train and loss_finite:
                 optimizer.zero_grad()
                 loss.backward()
-                clip_grad_norm_(model.parameters(), 10.0)
-                optimizer.step()
-            losses.append(float(loss.detach().cpu()))
+                if all(
+                    p.grad is None or bool(torch.isfinite(p.grad).all().item())
+                    for p in model.parameters()
+                ):
+                    clip_grad_norm_(model.parameters(), 10.0)
+                    optimizer.step()
+                else:
+                    # clip_grad_norm_ chia cho tổng norm; một gradient NaN sẽ biến MỌI tham số
+                    # thành NaN. Bỏ bước cập nhật của batch hỏng để giữ trọng số hữu hạn.
+                    bad_grad_batches += 1
+                    optimizer.zero_grad(set_to_none=True)
+            if loss_finite:
+                losses.append(float(loss.detach().cpu()))
+            else:
+                bad_loss_batches += 1
             real = answers[:, 1:]
             mask = real != -1
             if model_type == "GIKT":
@@ -183,8 +201,28 @@ def _epoch_loop(model, loader, model_type, device, kt_loss, optimizer=None):
                 mask = mask & (questions[:, 1:] > 0)
             else:
                 mask = mask & (batch[1].to(device)[:, 1:] != -1)
-            all_preds.append(pred[mask].detach().cpu().numpy())
-            all_labels.append(real[mask].detach().cpu().numpy())
+            batch_pred = pred[mask].detach()
+            batch_true = real[mask]
+            keep = torch.isfinite(batch_pred)
+            if not bool(keep.all().item()):
+                bad_preds += int((~keep).sum().item())
+                batch_pred = batch_pred[keep]
+                batch_true = batch_true[keep]
+            all_preds.append(batch_pred.cpu().numpy())
+            all_labels.append(batch_true.cpu().numpy())
+    if n_batches and bad_loss_batches == n_batches:
+        raise RuntimeError(
+            f"[{model_type}] toàn bộ {n_batches} batch có loss không hữu hạn — dừng run này "
+            "thay vì lưu checkpoint rác. Kiểm tra dữ liệu vào (features/questions); nếu đang "
+            "resume từ checkpoint cũ thì xoá ckpt_* của run đó rồi chạy lại."
+        )
+    if bad_loss_batches or bad_grad_batches or bad_preds:
+        print(
+            f"  [cảnh báo NaN] {model_type} ({'train' if train else 'eval'}): "
+            f"loss hỏng {bad_loss_batches}/{n_batches} batch, "
+            f"gradient hỏng {bad_grad_batches} batch, "
+            f"dự đoán hỏng {bad_preds} — các batch/vị trí này bị bỏ, trọng số giữ hữu hạn."
+        )
     # Global AUC / Accuracy over the whole loader (not mean of per-batch AUCs)
     y_pred = np.concatenate(all_preds) if all_preds else np.array([])
     y_true = np.concatenate(all_labels) if all_labels else np.array([])
@@ -197,6 +235,10 @@ def _epoch_loop(model, loader, model_type, device, kt_loss, optimizer=None):
         "loss": float(np.mean(losses) if losses else 0.0),
         "auc": auc,
         "acc": acc,
+        "batches": n_batches,
+        "bad_loss_batches": bad_loss_batches,
+        "bad_grad_batches": bad_grad_batches,
+        "bad_preds": bad_preds,
     }
 
 

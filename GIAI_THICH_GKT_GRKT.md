@@ -133,7 +133,7 @@ Kết quả mỗi mẫu (một người học) là **ba list song song, cùng đ
 A[i,j] = P(khái niệm kế tiếp = j | hiện tại = i)   (hàng i tổng = 1)
 ```
 
-**MHA** (`models.py:328`): query = embedding của `q_t`, key = embedding của *tất cả* khái niệm. Mask tự chú ý (không cho `c = q_t`) bằng `-1e9`, rồi softmax. Kết quả là `edge_types` ma trận attention `[E_types, C, C]`, các hàng ứng với `q_t` được ghi lại để dùng/visualize.
+**MHA** (`models.py:328`): query = embedding của `q_t`, key = embedding của *tất cả* khái niệm. Mask tự chú ý (không cho `c = q_t`) bằng `-1e9`, rồi softmax **theo trục khái niệm** (`dim=-1`, `layers.py`): mỗi hàng là phân phối trên láng giềng (tổng = 1), cùng thang với `Transition`/`Dense` đã chuẩn hoá hàng. Bản vendored dùng `dim=0` (chuẩn hoá theo head) nên mỗi hàng có tổng ~`C/2`, làm đầu vào GRU bị khuếch đại và suy luận đồ thị mất ổn định. Kết quả là `edge_types` ma trận attention `[E_types, C, C]`, các hàng ứng với `q_t` được ghi lại để dùng/visualize.
 
 **VAE** (`models.py:396` + `layers.MLPEncoder/MLPDecoder`): với mỗi lần làm bài, dựng danh sách cạnh **liên quan tới `q_t`** (cả hai chiều, bỏ self-loop) → encoder dự đoán logits loại cạnh `[edge_num, edge_types]` → Gumbel-softmax → decoder tái tạo embedding khái niệm. Loss phụ:
 

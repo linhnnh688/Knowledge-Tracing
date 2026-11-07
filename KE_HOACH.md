@@ -262,6 +262,13 @@ Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**.
       `level1_output.zip` — seed 42 là `<tên>.pt`, các seed khác là `<tên>-seed<s>.pt`; sổ đã ghi
       "done" mà thiếu file thì dựng lại từ `ckpt_*` (dùng `best_state`, đúng cả khi early-stop)
       thay vì train lại.
+- [x] **Sửa lỗi `ValueError: Input contains NaN` khi train (2026-11-07):** `KTLoss` đổi sang
+      `NLLLoss(reduction="sum") / số vị trí hợp lệ` để batch toàn padding không còn 0/0;
+      `ScaledDotProductAttention` chuẩn hoá softmax theo trục khái niệm (`dim=-1`) với mask
+      `-1e9` hữu hạn và `nan_to_num`, nên trọng số mỗi hàng ~1 giống đồ thị tĩnh thay vì
+      ~`C/2`; `_epoch_loop` kiểm tra hữu hạn của loss/gradient/dự đoán, **bỏ batch hỏng thay vì
+      để `clip_grad_norm_` nhân NaN cho mọi tham số**, in cảnh báo kèm số batch và raise khi cả
+      epoch hỏng. Chỉ nhánh MHA dùng attention nên DKT và các GKT tĩnh giữ nguyên số liệu.
 
 ### Giai đoạn 2 — Cấp độ 2 (tuần 5–7) → trần 8.5
 

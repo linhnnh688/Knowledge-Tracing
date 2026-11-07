@@ -56,8 +56,15 @@ class KTLoss(nn.Module):
             (pred_zero.unsqueeze(dim=1), pred_one.unsqueeze(dim=1)), dim=1
         )
         # pred_answers shape: [batch_size, 2, seq_len - 1]
-        nll_loss = nn.NLLLoss(ignore_index=-1)  # ignore masked values in real_answers
-        loss = nll_loss(pred_answers, real_answers.long())
+        # reduction="mean" chia cho số vị trí hợp lệ, nên một batch mà mọi vị trí đều là padding
+        # (-1) sẽ thành 0/0 = NaN. NaN đó đi qua clip_grad_norm_ (nhân NaN cho mọi gradient)
+        # và làm hỏng vĩnh viễn trọng số của cả run. Tự chia bằng số vị trí hợp lệ để tránh 0/0.
+        valid = int(answer_mask.sum())
+        if valid == 0:
+            loss = pred_answers.sum() * 0.0
+        else:
+            nll_loss = nn.NLLLoss(ignore_index=-1, reduction="sum")
+            loss = nll_loss(pred_answers, real_answers.long()) / valid
         return loss, auc, acc
 
 
