@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -750,6 +750,7 @@ def run_level2(
     time_budget_min: Optional[float] = None,
     variants_by_dataset: Optional[Dict[str, Sequence[str]]] = None,
     multi_seed_datasets: Optional[Sequence[str]] = None,
+    on_dataset_done: Optional[Callable[[str, dict], None]] = None,
     **kwargs,
 ) -> Dict[str, object]:
     """Lặp :func:`run_dataset` qua nhiều tập dữ liệu và nối bảng (yêu cầu ≥ 2 dataset).
@@ -766,6 +767,9 @@ def run_level2(
     Có mặt ``variants_by_dataset`` thì bảng khai báo là nguồn quyết định: tập **không** có
     trong bảng nhận đúng ``("train",)``, không thừa hưởng ``variants`` truyền qua ``kwargs``.
     Nhờ vậy bật ablation cho tập rẻ không âm thầm train thêm biến thể nặng ở tập còn lại.
+
+    ``on_dataset_done(name, run)`` được gọi ngay sau khi một tập hoàn tất (notebook dùng để
+    đóng zip, giữ lại kết quả của tập trước nếu tập sau hết ngân sách hoặc phiên bị kill).
     """
     deadline = (
         (time.time() + float(time_budget_min) * 60.0) if time_budget_min else None
@@ -789,6 +793,8 @@ def run_level2(
         t = run["table"].copy()
         t.insert(0, "dataset", name)
         frames.append(t)
+        if on_dataset_done is not None:
+            on_dataset_done(name, run)
     combined = pd.concat(frames, ignore_index=True)
     if save_root is not None:
         p = Path(save_root) / "level2_all_datasets.csv"

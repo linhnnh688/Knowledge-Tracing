@@ -245,6 +245,21 @@ Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**.
 
 **Cột mốc hoàn thành:** Notebook [kaggle_level1.ipynb](file:///d:/workspace/Knowledge-Tracing/kaggle_level1.ipynb) và [kaggle_gkt.ipynb](file:///d:/workspace/Knowledge-Tracing/kaggle_gkt.ipynb) đã chạy trơn tru, xuất toàn bộ kết quả Cấp độ 1.
 
+- [x] **Notebook báo cáo + resume + đánh giá lại:** `kaggle_level1_full.ipynb` (các cấu hình
+      trong `TRAIN_MODELS` × 5 seed) checkpoint cuối mỗi epoch, ngân sách 9 giờ, tự đóng
+      `level1_output.zip`; khi đã có kết quả, attach lại chính zip đó và đặt `EVAL_ONLY=True` để
+      chỉ đánh giá + dashboard, không train thêm.
+- [x] **Chọn cấu hình theo ngân sách GPU:** `TRAIN_MODELS` ở §0.2 quyết định cấu hình nào được
+      train; mặc định **`["DKT", "GKT-MHA"]`** (2 cấu hình × 5 seed = 10 run) đủ yêu cầu §5
+      (một baseline không đồ thị + một mô hình đồ thị), `None` = đủ 8 cấu hình (40 run). GKT-MHA
+      dùng `MultiHeadAttention` suy luận đồ thị động (`graph=None`, `graph_model` dựng trong
+      `level1/pipeline.py:build_model`); các ô phân tích tự bỏ qua mô hình không được train.
+- [x] **Lưu toàn bộ checkpoint:** trọng số cuối của **mọi run đã xong** (`len(TRAIN_MODELS)` × 5;
+      mặc định 10 file, 40 khi chạy đủ 8 cấu hình) được giữ trong `checkpoints/` và trong
+      `level1_output.zip` — seed 42 là `<tên>.pt`, các seed khác là `<tên>-seed<s>.pt`; sổ đã ghi
+      "done" mà thiếu file thì dựng lại từ `ckpt_*` (dùng `best_state`, đúng cả khi early-stop)
+      thay vì train lại.
+
 ### Giai đoạn 2 — Cấp độ 2 (tuần 5–7) → trần 8.5
 
 Mã nguồn trong package `level2/` và notebook `kaggle_level2.ipynb` đã viết xong; **số liệu
@@ -275,6 +290,14 @@ kiểm chứng local chỉ dùng dữ liệu tổng hợp + `assist2009_smoke`).
       Dataset) + `RESUME_ZIP` + `RESUME_GRKT_CKPT=True` để chạy tiếp đúng epoch/batch còn lại.
       Fingerprint trong checkpoint chặn resume sai split/đồ thị/siêu tham số hoặc `batch_size`
       (`level2/grkt_api.py`, `level2/baselines.py`, notebook §0.3 và §8.4).
+- [x] **Đánh giá lại không train:** `EVAL_ONLY=True` + attach `level2_moderate_output.zip`;
+      notebook kiểm tra đủ checkpoint GRKT (kể cả đa seed) và đường nền rồi nạp để đánh giá +
+      dashboard; thiếu file nào báo đúng đường dẫn thay vì âm thầm train lại.
+- [x] **Giữ toàn bộ checkpoint + tự đóng zip:** `GRKT-<graph>.pt` cho từng biến thể, thêm
+      `-seed<s>` cho seed khác 42, và `baselines/<tên>.pt` (+ `.json` fingerprint) cho đường nền;
+      `ckpt_*` chỉ tồn tại khi run còn dở. `run_level2` gọi `on_dataset_done` sau **mỗi tập**,
+      notebook dùng hook đó đóng `level2_moderate_output.zip`, nên kết quả assist2009 vẫn còn
+      nếu junyi hết ngân sách; zip cũng được đóng lại sau khi ghi bảng tổng hợp ở §3.
 - [x] Export mastery \(m_{u,c,t}\): `trajectories/traj_<graph>.npz` + `mastery_<graph>.csv`
       (dạng dài), heatmap khái niệm × thời điểm và đường cong mastery theo bước.
 - [x] Metric quỹ đạo (định nghĩa trong `level2/trajectory.py`):
@@ -422,6 +445,7 @@ Mọi người vẫn train/eval được mô hình của mình trên cùng data 
 | Quiz không đủ 400 tương tác | Thêm người / cho làm 2 phiên; không bịa nhãn |
 | Tranh luận split pyKT vs paper GRKT | Giữ **một** split nhóm cho mọi so sánh chính; appendix chạy config gốc GRKT |
 | Đồ thị ASSIST quá dày/nhiễu | Ngưỡng cạnh; so sánh vài cách tạo cạnh (mở rộng nhiệm vụ 1) |
+| Phiên Kaggle 12 giờ cắt ngang Cấp độ 1 (đã gặp: chạy quá 12 giờ, mất toàn bộ output vì bản cũ chỉ đóng zip ở cuối) | `kaggle_level1_full.ipynb`: checkpoint cuối **mỗi epoch**, sổ `runs_progress.json` ghi ngay từng run, bỏ qua run đã xong, resume từ zip/cây output, ngân sách `TIME_BUDGET_MIN=540` + chặn theo đồng hồ phiên, tự đóng `level1_output.zip` sau mỗi nhóm seed và khi dừng/lỗi; seed 42 chạy trước để bảng chính có sớm; trọng số cuối của **mọi run thuộc `TRAIN_MODELS`** (mặc định 2×5 = 10, đủ 8×5 = 40 khi `TRAIN_MODELS=None`) được giữ (`<tên>.pt` seed 42, `<tên>-seed<s>.pt` seed khác), thiếu file thì dựng lại từ `ckpt_*` bằng `best_state`. Đã mô phỏng control-flow, `run_one`, retention và package/restore bằng stub: PASS; chưa chạy lại trên Kaggle GPU |
 
 ---
 

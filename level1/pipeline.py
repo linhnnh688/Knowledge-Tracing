@@ -114,14 +114,23 @@ def build_model(
     device=None,
 ):
     ensure_gkt_on_path()
-    from models import DKT, GKT
+    from models import DKT, GKT, MultiHeadAttention
 
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if model_type == "DKT":
         model = DKT(2 * concept_num, hid_dim, concept_num, dropout=dropout, bias=True)
     elif model_type == "GKT":
-        if graph is not None:
+        graph_model = None
+        if graph_type == "MHA":
+            # MHA suy luận đồ thị động trong lúc chạy nên GKT yêu cầu graph=None.
+            graph = None
+            graph_model = MultiHeadAttention(
+                edge_types, concept_num, emb_dim, emb_dim, dropout=dropout
+            )
+            if device.type == "cuda":
+                graph_model = graph_model.cuda()
+        elif graph is not None:
             graph = graph.to(device)
         model = GKT(
             concept_num,
@@ -130,7 +139,7 @@ def build_model(
             edge_types,
             graph_type,
             graph=graph,
-            graph_model=None,
+            graph_model=graph_model,
             dropout=dropout,
             bias=True,
             binary=True,
