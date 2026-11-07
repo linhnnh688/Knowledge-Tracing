@@ -399,41 +399,44 @@ def run_dataset(
                 print(
                     f"  [resume] không có {final_ckpt.name} lẫn {rolling_ckpt.name} -> train từ đầu"
                 )
-        res = run_grkt_experiment(
-            data,
-            splits,
-            graphs[kind],
-            graph_kind=kind,
-            epochs=epochs,
-            batch_size=batch_size,
-            lr=lr,
-            patience=patience,
-            d_hidden=d_hidden,
-            k_hidden=k_hidden,
-            k_hop=k_hop,
-            alpha=alpha,
-            tau=tau,
-            thresh=bin_thresh,
-            seed=split_seed,
-            dataset=spec.name,
-            device=device,
-            save_dir=save_dir,
-            resume_ckpt=(str(resume) if resume is not None else None),
-            deadline=deadline,
-            ckpt_every_min=ckpt_every_min,
-            verbose=verbose,
-        )
+        try:
+            res = run_grkt_experiment(
+                data,
+                splits,
+                graphs[kind],
+                graph_kind=kind,
+                epochs=epochs,
+                batch_size=batch_size,
+                lr=lr,
+                patience=patience,
+                d_hidden=d_hidden,
+                k_hidden=k_hidden,
+                k_hop=k_hop,
+                alpha=alpha,
+                tau=tau,
+                thresh=bin_thresh,
+                seed=split_seed,
+                dataset=spec.name,
+                device=device,
+                save_dir=save_dir,
+                resume_ckpt=(str(resume) if resume is not None else None),
+                deadline=deadline,
+                ckpt_every_min=ckpt_every_min,
+                verbose=verbose,
+            )
+        except TrainingPaused:
+            # Hết ngân sách giữa biến thể này. Checkpoint của nó đã được train_grkt ghi trước
+            # khi raise; phần còn thiếu là BẢNG của các biến thể đã train xong — không ghi thì
+            # phiên sau và §3.1 không thấy tập này đã đo được gì.
+            _write_partial_table(save_dir, grkt_results)
+            raise
         grkt_results.append(res)
     out["grkt_results"] = grkt_results
 
     # Hết ngân sách ngay sau GRKT: ghi bảng của những gì đã có rồi dừng, thay vì chạy đường
     # nền/quỹ đạo và bị Kaggle kill giữa chừng (checkpoint GRKT vẫn còn để phiên sau train tiếp).
     if deadline is not None and time.time() >= deadline:
-        table = pd.DataFrame(
-            [_table_row(r) for r in grkt_results], columns=TABLE_COLUMNS
-        )
-        table = table.sort_values("auc", ascending=False)
-        table.to_csv(save_dir / "level2_metrics.csv", index=False)
+        _write_partial_table(save_dir, grkt_results)
         raise TrainingPaused(
             f"[{spec.name}] hết ngân sách thời gian sau GRKT. Đã ghi {save_dir/'level2_metrics.csv'} "
             f"(chỉ các dòng GRKT) và checkpoint trong {save_dir}. Phiên sau attach lại zip, đặt "
@@ -454,26 +457,33 @@ def run_dataset(
                 f"  [baseline] {spec.name} không có checkpoint Cấp độ 1 -> huấn luyện lại "
                 f"{baseline_epochs or epochs} epoch (trọng số ghi vào {save_dir}/baselines)"
             )
-        got = level1_baseline(
-            shared,
-            specs=BASELINE_SPECS,
-            ckpt_dir=ckpt_dir,
-            epochs=int(baseline_epochs or epochs),
-            batch_size=batch_size,
-            max_seq_len=max_seq_len,
-            min_seq_len=min_seq,
-            train_ratio=train_ratio,
-            val_ratio=val_ratio,
-            lr=lr,
-            seed=split_seed,
-            device=device,
-            allow_retrain=allow_retrain_baselines,
-            collect_probs=True,
-            shared_graph_type="Transition",
-            save_dir=save_dir,
-            deadline=deadline,
-            verbose=verbose,
-        )
+        try:
+            got = level1_baseline(
+                shared,
+                specs=BASELINE_SPECS,
+                ckpt_dir=ckpt_dir,
+                epochs=int(baseline_epochs or epochs),
+                batch_size=batch_size,
+                max_seq_len=max_seq_len,
+                min_seq_len=min_seq,
+                train_ratio=train_ratio,
+                val_ratio=val_ratio,
+                lr=lr,
+                seed=split_seed,
+                device=device,
+                allow_retrain=allow_retrain_baselines,
+                collect_probs=True,
+                shared_graph_type="Transition",
+                save_dir=save_dir,
+                deadline=deadline,
+                verbose=verbose,
+            )
+        except TrainingPaused:
+            # Đường nền hết ngân sách giữa chừng. Bảng GRKT vẫn PHẢI nằm trên đĩa: không có nó
+            # thì phiên sau (và cell §3.1 kiểm tra sản phẩm P0) không biết tập này đã đo được
+            # gì, còn checkpoint đường nền thì đã được train_baseline_resumable ghi trước đó.
+            _write_partial_table(save_dir, grkt_results)
+            raise
         base_results, base_probs = got["results"], got["probs"]
     out["baseline_results"] = base_results
 
@@ -489,6 +499,16 @@ def run_dataset(
     print(table.to_string(index=False))
 
     # ------------------------------------------------------------ 6. quỹ đạo mastery
+    if deadline is not None and time.time() >= deadline:
+        # Bảng so sánh và mọi checkpoint đã an toàn trên đĩa; phần còn lại (quỹ đạo, hiệu
+        # chỉnh, đa seed) chỉ là phân tích. Dừng ở đây có nghĩa là phiên sau nạp lại toàn bộ
+        # trọng số (skipped_training) và chạy thẳng phần phân tích, không tốn GPU train lại.
+        raise TrainingPaused(
+            f"[{spec.name}] hết ngân sách sau BẢNG SO SÁNH. Đã ghi {save_dir/'level2_metrics.csv'} "
+            f"({len(table)} dòng) + checkpoint GRKT/đường nền. CHƯA chạy quỹ đạo mastery, hiệu "
+            "chỉnh và đa seed. Phiên sau attach lại zip: trọng số được nạp (không train lại) nên "
+            "§6-§8 chạy ngay; đặt TIME_BUDGET_MIN lớn hơn nếu muốn trọn vẹn trong một phiên."
+        )
     traj_runs: Dict[str, dict] = {}
     stability_runs: Dict[str, dict] = {}
     traj_table = None
@@ -741,6 +761,25 @@ def _table_row(r: dict) -> dict:
         ),
         "seconds": round(float(r.get("train_seconds", 0.0)), 1),
     }
+
+
+def _write_partial_table(save_dir, rows: List[dict]) -> Optional[pd.DataFrame]:
+    """Ghi ``level2_metrics.csv`` từ những dòng đã có (thường chỉ GRKT) khi phải dừng sớm.
+
+    Gọi trước mỗi lần raise :class:`~level2.grkt_api.TrainingPaused`: bảng trên đĩa là thứ
+    notebook §3.1 và phiên sau dùng để biết tập này đã đo được gì, nên dừng mà không ghi
+    bảng đồng nghĩa với mất dấu kết quả dù checkpoint vẫn còn.
+
+    ``rows`` rỗng thì KHÔNG ghi: file 0 dòng khiến §3.1 và ``_rebuild_combined`` tưởng tập
+    này đã có bảng, che mất cảnh báo "chưa đo được gì".
+    """
+    if not rows:
+        print("  [bảng] chưa có kết quả nào -> không ghi level2_metrics.csv")
+        return None
+    table = pd.DataFrame([_table_row(r) for r in rows], columns=TABLE_COLUMNS)
+    table = table.sort_values("auc", ascending=False)
+    table.to_csv(Path(save_dir) / "level2_metrics.csv", index=False)
+    return table
 
 
 def run_level2(

@@ -543,3 +543,90 @@ sản phẩm P0 vẫn còn; cell §3 tự đóng gói `level2_output.zip` khi `T
 `COLD_THRESH=5`, `SPLIT_SEED=42`, `D_HIDDEN/K_HIDDEN/K_HOP/ALPHA/LR` như cũ. Riêng bật
 `RUN_GRAPH_ABLATIONS=True` + `VARIANTS=("train","zero")` (chỉ assist2009) và
 `RUN_MULTI_SEED=True` **không** ảnh hưởng fingerprint của biến thể `train`.
+
+---
+
+## 9. Nhật ký review trước khi chạy Kaggle — 2026-11-07 (`kaggle_level2_full.ipynb`)
+
+Phạm vi: đối chiếu `kaggle_level2_full.ipynb` + `level2/` với `YEU_CAU.md` §5 (cấp độ 2), §6,
+§7, tập trung vào bốn tính chất: **có checkpoint**, **resume được từ output**, **luôn xuất
+output định kỳ**, **train xong đính kèm output/model để đánh giá không train lại**.
+
+### 9.1 Đã xác minh ĐẠT (không phải gap)
+
+| Tính chất | Cơ chế | Ở đâu |
+|---|---|---|
+| Checkpoint giữa epoch | mỗi `ckpt_every_s` (= `CKPT_EVERY_MIN` 10 phút) và cuối mỗi epoch, ghi weights + optimizer + epoch + batch + best_state; resume nạp lại đúng thứ tự batch và vị trí | `level2/grkt_api.py:266` `_save` (329), ghi định kỳ (395-398), cuối epoch (426) |
+| Ghi checkpoint không hỏng khi bị kill | `_atomic_torch_save`: file tạm rồi `os.replace` | `level2/grkt_api.py:184` |
+| Dừng chủ động trước khi Kaggle kill | hết `deadline` → `_save(...)` **rồi mới** raise `TrainingPaused` | `grkt_api.py:376-377`; đường nền `baselines.py:627`; chốt theo tập `experiment.py:382, 433, 499` |
+| Resume không trộn cấu hình | `fingerprint` (dataset, graph_kind, n_knows/n_probs, n_train/val/test, n_steps_train, batch_size, d/k_hidden, k_hop, alpha, tau, thresh, **seed**, lr, edges) → `_check_fingerprint` raise khi khác | `grkt_api.py:251`; vân tay ghi ở `run_grkt_experiment:507` |
+| Ngân sách một lần cho cả vòng | `run_level2` tính MỘT `deadline` tuyệt đối rồi truyền xuống từng tập, tập sau không được cấp lại ngân sách | `experiment.py:772` |
+| Khôi phục từ output phiên trước | `_restore_from_zip` (chặn zip-slip, đòi tiền tố `level2_moderate/`, không ghi đè file mới hơn) + `_restore_from_tree`; `_quarantine_junyi` cách ly artifact Junyi chạy toàn bộ thay vì xoá; `run_config.json` khoá cấu hình | notebook §0.3 |
+| `EVAL_ONLY` không train lại | §3 liệt kê **đúng đường dẫn** checkpoint thiếu (`GRKT-<biến thể>.pt`, `GRKT-<biến thể>-seed<N>.pt`, `baselines/<tên>.pt`) rồi mới chạy; đường nền thiếu checkpoint thì bỏ qua âm thầm chứ không crash (`allow_retrain=False`) | notebook §3; `baselines.py:473` |
+| assist2009 không bị `MAX_USERS=3000` cắt | `ASSIST2009.raw_file=None` + CSV đã commit → `ensure_canonical` trả về trước bước lấy mẫu người học, nên split giống hệt Cấp độ 1 | `dataset_spec.py:862` |
+| API hai bên khớp nhau | audit AST trên `level1/*.py` + `level2/*.py` + 17 cell code của notebook (tên hàm, kwargs, số tham số vị trí, import tương đối): **0 lỗi, 0 ghi chú** | script kiểm tra tĩnh |
+
+### 9.2 Năm lỗ hổng tìm thấy hôm nay — đã vá
+
+| # | Lỗ hổng | Hậu quả nếu để nguyên | Đã vá |
+|---|---|---|---|
+| 1 | `package_output` mở zip thẳng ở chế độ `"w"` | Phiên bị kill **giữa lúc đóng gói** cắt đôi zip tốt của lần trước → mất toàn bộ checkpoint, không resume được | `archive.py:83`: ghi `<tên>.part` → `testzip()` → `os.replace`; dọn `.part` sót; bỏ qua file bị replace ngay giữa lúc nén; khoá theo đường dẫn zip để luồng nền và lời gọi thủ công không giẫm nhau |
+| 2 | `DEFAULT_SKIP` loại `junyi_canonical.csv` + `.meta.json` khỏi **mọi** zip | Resume/`EVAL_ONLY` bắt buộc attach lại Junyi thô ~3 GB và chuẩn hoá lại; thêm một cửa lệch dữ liệu giữa hai phiên | `DEFAULT_SKIP` = rỗng (`archive.py:26`); `LIGHT_SKIP` (`archive.py:30`) chỉ dùng cho report pack ở §12. Tập con 3.000 người cho CSV ~vài chục MB, nằm gọn trong `max_mb=150`; bản chạy toàn bộ (~1 GB) vẫn bị loại nhưng lý do in ra kèm hậu quả |
+| 3 | Zip chỉ được tạo khi `TrainingPaused` / lỗi / xong một tập | Kill **cứng** (hết quota GPU 30 h/tuần, rớt kết nối, quá 12 h) không cho khối `except` chạy → checkpoint có trên đĩa mà không có zip, mất trắng | `PeriodicPackager` (`archive.py:205`): luồng nền daemon đóng gói mỗi `PACK_EVERY_MIN=20` phút, bỏ qua khi cây thư mục không đổi (`tree_signature`), không bao giờ ném lỗi ra luồng chính; notebook §3 `packager.start()` trước `run_level2` và `finally: packager.stop(final_pack=False)` |
+| 4 | Không chốt `deadline` trước B6/B7; đường nền dừng giữa chừng thì **không** ghi `level2_metrics.csv` | Tập đó không có bảng nào trên đĩa: §3.1 báo "chưa có", người đọc không biết GRKT đã đo được gì, báo cáo thiếu số dù checkpoint đầy đủ | `experiment.py`: `try/except TrainingPaused` quanh `level1_baseline` + `_write_partial_table` (`experiment.py:759`); chốt `deadline` ngay sau bảng so sánh, trước quỹ đạo (`experiment.py:499`) |
+| 5 | §10 so `fingerprint.seed` của **mọi** checkpoint với `SPLIT_SEED` | `GRKT-train-seed123.pt` / `-seed456.pt` (đa seed, hợp lệ) bị báo "artifact không khớp cấu hình phải được cách ly/xoá" → nguy cơ xoá nhầm kết quả P0-3 | notebook §10 đọc seed kỳ vọng từ tên file (`-seed(\d+)\.pt$`), in kèm chú thích "khác 42 là ĐÚNG" |
+
+### 9.3 Ngân sách GPU — **ước tính**, chưa có số đo
+
+Mọi artifact hiện có đều `seconds = 0.0` (GAP **F5** chưa đóng) vì chúng được **nạp lại** chứ
+không train, nên kho số liệu không có thời gian đo nào. Hai mốc suy ra:
+
+* **Mốc thấp** — ước tính cũ ở §8.2: GRKT assist2009 5 epoch ≈ 10 phút ⇒ ~2 phút/epoch ⇒
+  20 epoch ≈ 40 phút.
+* **Mốc cao** — 27 giờ GPU của lần chạy 5 epoch trước (§8.1), phân bổ theo
+  `interactions × K`: assist2009 `237.943 × 123 = 2,93e7`, junyi toàn bộ
+  `4.019.325 × 200 = 8,04e8` (tỉ lệ 1 : 27,5) ⇒ assist2009 ≈ 0,95 h cho 5 epoch ⇒
+  ~11 phút/epoch ⇒ 20 epoch ≈ 3,8 giờ.
+
+Khối lượng của cấu hình hiện tại (`EPOCHS=20`, `GRAPH_ABLATION_DATASETS=("assist2009",)`,
+`MULTI_SEED_DATASETS=("assist2009",)`, `SEEDS=[42,123,456]`, junyi cap 3.000 người):
+
+| Việc | Số lần train | Mốc thấp | Mốc cao |
+|---|---:|---:|---:|
+| GRKT assist2009: `train` + `zero` + seed 123 + seed 456 (seed 42 nạp lại ckpt) | 4 | 2,7 h | 15,2 h |
+| GRKT junyi tập con (chỉ biến thể `train`, 1 seed) | 1 | 1,2 h | 6,9 h |
+| Đường nền DKT / GKT-Transition / GKT-Zero × 20 epoch × 2 tập | 6 | 1,0 h | 1,5 h |
+| B6 quỹ đạo + `stability_*`, B7 calibration, §9 dashboard | 0 (inference) | 0,3 h | 0,7 h |
+| **Tổng** | **11** | **≈ 5 h** | **≈ 24 h** |
+
+Junyi tập con quy về assist2009: `4.019.325 × 3.000 / 46.229 ≈ 261.000` tương tác
+(≈ 1,1× assist2009) và `K = 200` (1,63×) ⇒ ≈ **1,8×** chi phí mỗi epoch của assist2009.
+
+Hệ quả: `TIME_BUDGET_MIN = 540` (9 h) **đủ cho mốc thấp trong một phiên**, còn mốc cao cần
+2-3 phiên và ăn gần hết quota 30 h/tuần. Lần train tươi đầu tiên sẽ ghi `seconds` thật (đóng
+F5) và cho phép ngoại suy chính xác ngay sau epoch 1 — nếu epoch 1 của assist2009 vượt
+~11 phút thì phải hạ `EPOCHS` hoặc tách phiên trước khi chạy tiếp junyi.
+
+### 9.4 Quy trình nhiều phiên (đề xuất)
+
+1. **Phiên 1** — `EVAL_ONLY=False`, `TIME_BUDGET_MIN=540`. Thứ tự tập là
+   `["assist2009","junyi"]`, nên toàn bộ P0 (ablation `train` vs `zero`, đa seed 3 seed) nằm ở
+   tập chạy **trước**: junyi hết ngân sách cũng không mất điểm P0. Tải
+   `level2_moderate_output.zip` ngay khi §3 dừng, kể cả khi dừng là `TrainingPaused`.
+2. **Phiên 2** — attach zip của phiên 1 vào `/kaggle/input` (§0.3 tự dò), **giữ nguyên cấu
+   hình** (`run_config.json` sẽ chặn nếu đổi), `RESUME_GRKT_CKPT=True`. GRKT đã train xong được
+   nạp (`skipped_training`), phần dở train tiếp từ `ckpt_GRKT-*.pt` đúng batch còn lại.
+3. **Phiên 3** (khi đã đủ trọng số) — `EVAL_ONLY=True`: chỉ đánh giá + dashboard + §12 đóng gói.
+   Không cần attach Junyi thô vì zip đã có `junyi_canonical.csv` + `.meta.json` (vá ở mục 2).
+
+### 9.5 Còn hở, cần quyết định trước khi trích số
+
+* **Đa seed chỉ có trên assist2009** (junyi 1 seed) ⇒ `YEU_CAU` §7 "trung bình + độ lệch chuẩn
+  của ít nhất 3 seed" mới đạt **một phần**. Chi phí đóng: thêm 2 lần train GRKT trên tập con
+  junyi ≈ 2,4 h (mốc thấp) tới 13,8 h (mốc cao). Không đóng thì phải ghi rõ giới hạn này trong
+  báo cáo.
+* **Ablation đồ thị cũng chỉ trên assist2009** — cùng tình trạng, cùng cách ghi chú.
+* **`seconds = 0.0`** trong artifact cũ vẫn còn cho tới khi có một lần train tươi (F5).
+* **Ba tiêu chí `consistency_strengthen` / `consistency_spread` / `locality` vẫn = 1,0 do cấu
+  trúc mô hình** (F1) — chỉ là kiểm chứng cài đặt; bằng chứng thật là `precedence_gap`,
+  `stability_spearman`, `forget_slope`, `pearson_dt_dm` và ΔAUC(`train` − `zero`).
