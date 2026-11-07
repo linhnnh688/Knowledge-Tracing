@@ -1,6 +1,3 @@
-dataset,file,mb,format,seed,n_train,n_test,n_steps_train,batch_size,d_hidden,edges_rel,edges_pre,epochs_cap,error
-assist2009,GRKT-train-seed123.pt,10.41,grkt-final-v1,123,2330,778,142299,32,128,2720,2642,20,
-assist2009,GRKT-train-seed456.pt,10.41,grkt-final-v1,456,2330,778,142299,32,128,2720,2642,20,
-assist2009,GRKT-train.pt,10.4,grkt-final-v1,42,2330,778,142299,32,128,2720,2642,20,
-assist2009,GRKT-zero.pt,10.4,grkt-final-v1,42,2330,778,142299,32,128,0,0,20,
-junyi,GRKT-train.pt,3.69,grkt-final-v1,42,1800,600,152579,32,128,17866,10173,20,
+version https://git-lfs.github.com/spec/v1
+oid sha256:54a20ccff1b60446abe574fb6eeb7edd5fee2da892591fe4bece9eab5c91df58
+size 544

@@ -1,4 +1,3 @@
-﻿Tiêu chí,Số dự đoán test,Số dự đoán được phủ,Tỉ lệ
-Có cạnh đi ra (out-degree > 0),47358,47117,0.9949111026648085
-Có cạnh đi vào (in-degree > 0),47358,46744,0.9870349254613793
-Có ít nhất một cạnh (out hoặc in),47358,47341,0.9996410321381816
+version https://git-lfs.github.com/spec/v1
+oid sha256:789631b47305e64cc02c1979706788ed0550ac9960bad8c8f50d1655114a2e3c
+size 286

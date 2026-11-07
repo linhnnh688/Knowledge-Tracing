@@ -1,11 +1,3 @@
-﻿Chỉ số,Giá trị
-file,skill_builder_data.csv
-sha256,f4b8791ae5968b884b77ab3b08adec48130503ec57f3113158c9a5af88af3374
-size_mb,78.85
-rows,525534
-users,4217
-skills,123
-problems,26688
-correct_rate,0.6794707859053839
-missing_skill_rows,66326
-users_lt3,269
+version https://git-lfs.github.com/spec/v1
+oid sha256:ce5882f40b56a41b90bfa790939b78cda879c9add835798332912fcb0eec4a26
+size 259

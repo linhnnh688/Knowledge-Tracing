@@ -1,5 +1,3 @@
-model,model_type,graph,auc,acc,loss,val_auc,n_test,edges_rel,edges_pre,seed,checkpoint_seed,seconds
-GRKT-train,GRKT,train,0.7896,0.8017,0.4378,0.7938,48844,17866,10173,42,,1984.2
-DKT,DKT,N/A,0.7501,0.7864,0.4623,0.752,48844,0,0,42,42.0,0.0
-GKT-Zero,GKT,Zero,0.7225,0.7821,0.4798,0.728,48844,0,0,42,42.0,0.0
-GKT-Transition,GKT,Transition,0.7202,0.78,0.479,0.7208,48844,0,0,42,42.0,0.0
+version https://git-lfs.github.com/spec/v1
+oid sha256:6481eb96fad12be6587db99d7a66240cec87b55ccc5a4200cfe362989aa8eeba
+size 384
