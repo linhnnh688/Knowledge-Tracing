@@ -247,8 +247,11 @@ Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**.
 
 - [x] **Notebook báo cáo + resume + đánh giá lại:** `kaggle_level1_full.ipynb` (các cấu hình
       trong `TRAIN_MODELS` × 5 seed) checkpoint cuối mỗi epoch, ngân sách 9 giờ, tự đóng
-      `level1_output.zip`; khi đã có kết quả, attach lại chính zip đó và đặt `EVAL_ONLY=True` để
-      chỉ đánh giá + dashboard, không train thêm.
+      `level1_output.zip` (quick run: `level1_quick_output.zip`); khi đã có kết quả, tạo Kaggle
+      Dataset private từ chính zip đó → **Add Input** → đặt `EVAL_ONLY=True` → Run All: cell §3
+      kiểm tra `runs_progress.json` + `checkpoints/DKT.pt` + `checkpoints/GKT-MHA.pt` rồi bỏ hẳn
+      vòng train, §4–§10 chỉ nạp trọng số seed 42 và tính lại bảng/hình/dashboard (§0.4 của
+      notebook). `level1_report_pack.zip` không dùng để đánh giá lại vì thiếu checkpoint/sổ.
 - [x] **Chọn cấu hình theo ngân sách GPU:** `TRAIN_MODELS` ở §0.2 quyết định cấu hình nào được
       train; mặc định **`["DKT", "GKT-MHA"]`** (2 cấu hình × 5 seed = 10 run) đủ yêu cầu §5
       (một baseline không đồ thị + một mô hình đồ thị), `None` = đủ 8 cấu hình (40 run). GKT-MHA
