@@ -269,6 +269,15 @@ Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**.
       ~`C/2`; `_epoch_loop` kiểm tra hữu hạn của loss/gradient/dự đoán, **bỏ batch hỏng thay vì
       để `clip_grad_norm_` nhân NaN cho mọi tham số**, in cảnh báo kèm số batch và raise khi cả
       epoch hỏng. Chỉ nhánh MHA dùng attention nên DKT và các GKT tĩnh giữ nguyên số liệu.
+- [x] **Sửa lỗi lệch device khi đánh giá lại từ checkpoint (2026-11-07):** `one_hot_feat`/`one_hot_q`
+      của `GKT` là tensor thường (không phải `Parameter`/buffer) nên `.to(device)`, `.cuda()` và
+      `load_state_dict` đều không di chuyển chúng. Notebook dựng mô hình trên CPU trong
+      `_load_seed_model` rồi `.to(device)` ở §5/§7/§8 ⇒ `F.embedding` nhận index ở CUDA và bảng
+      one-hot ở CPU, run Kaggle chết ở cell hiệu chuẩn sau khi đã train xong 10 run
+      (`RuntimeError` tại `GKT/models.py:_aggregate`). Nay hai bảng được tạo theo device của input
+      qua `_one_hot_tables(device)` và cache lại, nên `state_dict` không đổi — checkpoint cũ
+      (`DKT.pt`, `GKT-MHA.pt`, …) vẫn nạp `strict=True` và mô hình chuyển CPU↔CUDA bao nhiêu lần
+      cũng được.
 
 ### Giai đoạn 2 — Cấp độ 2 (tuần 5–7) → trần 8.5
 

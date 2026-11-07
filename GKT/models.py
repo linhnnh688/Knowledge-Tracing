@@ -69,11 +69,11 @@ class GKT(nn.Module):
             self.graph_model = graph_model
 
         # one-hot feature and question
-        one_hot_feat = torch.eye(self.res_len * self.concept_num)
-        self.one_hot_feat = one_hot_feat.cuda() if self.has_cuda else one_hot_feat
-        self.one_hot_q = torch.eye(self.concept_num, device=self.one_hot_feat.device)
-        zero_padding = torch.zeros(1, self.concept_num, device=self.one_hot_feat.device)
-        self.one_hot_q = torch.cat((self.one_hot_q, zero_padding), dim=0)
+        # Hai bảng eye() này là tensor thường, không phải parameter/buffer, nên .to(device),
+        # .cuda() và load_state_dict đều KHÔNG di chuyển chúng: dựng mô hình trên CPU (khi nạp
+        # checkpoint) rồi .to("cuda") sẽ forward với bảng vẫn nằm ở CPU -> RuntimeError lệch
+        # device. Vì vậy tạo bảng theo device của input và cache lại.
+        self._one_hot_cache = {}
         # concept and concept & response embeddings
         self.emb_x = nn.Embedding(self.res_len * concept_num, embedding_dim)
         # last embedding is used for padding, so dim + 1
@@ -132,6 +132,28 @@ class GKT(nn.Module):
         # prediction layer
         self.predict = nn.Linear(hidden_dim, 1, bias=bias)
 
+    def _one_hot_tables(self, device):
+        r"""
+        Return:
+            one_hot_feat: [res_len * concept_num, res_len * concept_num]
+            one_hot_q: [concept_num + 1, concept_num], hàng cuối là padding
+        """
+        cache = self._one_hot_cache
+        if cache.get("device") != device:
+            cache = {
+                "device": device,
+                "feat": torch.eye(self.res_len * self.concept_num, device=device),
+                "q": torch.cat(
+                    (
+                        torch.eye(self.concept_num, device=device),
+                        torch.zeros(1, self.concept_num, device=device),
+                    ),
+                    dim=0,
+                ),
+            }
+            self._one_hot_cache = cache
+        return cache["feat"], cache["q"]
+
     # Aggregate step, as shown in Section 3.2.1 of the paper
     def _aggregate(self, xt, qt, ht, batch_size):
         r"""
@@ -151,9 +173,8 @@ class GKT(nn.Module):
         qt_mask = torch.ne(qt, -1)  # [batch_size], qt != -1
         x_idx_mat = torch.arange(self.res_len * self.concept_num, device=xt.device)
         x_embedding = self.emb_x(x_idx_mat)  # [res_len * concept_num, embedding_dim]
-        masked_feat = F.embedding(
-            xt[qt_mask], self.one_hot_feat
-        )  # [mask_num, res_len * concept_num]
+        one_hot_feat, _ = self._one_hot_tables(xt.device)
+        masked_feat = F.embedding(xt[qt_mask], one_hot_feat)  # [mask_num, res_len * concept_num]
         res_embedding = masked_feat.mm(x_embedding)  # [mask_num, embedding_dim]
         mask_num = res_embedding.shape[0]
 
@@ -352,9 +373,8 @@ class GKT(nn.Module):
             next_qt,
             self.concept_num * torch.ones_like(next_qt, device=yt.device),
         )
-        one_hot_qt = F.embedding(
-            next_qt.long(), self.one_hot_q
-        )  # [batch_size, concept_num]
+        _, one_hot_q = self._one_hot_tables(yt.device)
+        one_hot_qt = F.embedding(next_qt.long(), one_hot_q)  # [batch_size, concept_num]
         # dot product between yt and one_hot_qt
         pred = (yt * one_hot_qt).sum(dim=1)  # [batch_size, ]
         return pred

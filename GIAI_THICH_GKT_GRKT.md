@@ -151,7 +151,7 @@ L_vae = mean_t [ NLL_gaussian(rec_t, emb_c) + KL(q(z|x) || prior) ]
 |---|---|
 | `emb_x` | `nn.Embedding(res_len*C, E)` — embedding của `(khái niệm, đáp án)` |
 | `emb_c` | `nn.Embedding(C+1, E, padding_idx=-1)` — embedding khái niệm; hàng cuối = vector 0 cho padding |
-| `one_hot_feat`, `one_hot_q` | ma trận one-hot dùng cho `F.embedding` (tra cứu thay cho one-hot thật) |
+| `_one_hot_tables(device)` | hai ma trận one-hot dùng cho `F.embedding` (tra cứu thay cho one-hot thật), **tạo theo device của input và cache** — nếu để làm thuộc tính thường như bản gốc thì `.to(device)` không di chuyển chúng và mô hình nạp từ checkpoint trên CPU sẽ lỗi lệch device |
 | `f_self` | MLP `H+E → H → H` (2 lớp + BatchNorm) |
 | `f_neighbor_list` | với đồ thị tĩnh: **2** MLP (`in`, `out`); với `MHA`/`VAE`: **`edge_types`** MLP `2(H+E) → H` |
 | `erase_add_gate` | `EraseAddGate(H, C)` — cổng xoá/thêm, trọng số riêng từng khái niệm |
