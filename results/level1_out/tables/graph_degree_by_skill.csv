@@ -1,0 +1,124 @@
+﻿skill,skill_name,out_degree,in_degree,test_targets
+0,Box and Whisker,7,0,597
+1,Circle Graph,21,1,1408
+2,Histogram as Table or Graph,7,2,340
+3,Number Line,10,2,317
+4,Scatter Plot,6,4,371
+5,Stem and Leaf Plot,6,4,679
+6,Table,11,6,1241
+7,Venn Diagram,14,5,2618
+8,Mean,12,4,579
+9,Median,15,8,1001
+10,Mode,13,5,380
+11,Range,26,8,749
+12,Counting Methods,7,9,894
+13,Probability of Two Distinct Events,10,7,1290
+14,Probability of a Single Event,29,8,1269
+15,Interior Angles Figures with More than 3 Sides,4,8,119
+16,Interior Angles Triangle,4,2,105
+17,Congruence,13,9,80
+18,Complementary and Supplementary Angles,20,5,231
+19,Angles on Parallel Lines Cut by a Transversal,16,4,178
+20,Pythagorean Theorem,13,6,606
+21,Nets of 3D Figures,9,4,26
+22,Unit Conversion Within a System,8,11,236
+23,Effect of Changing Dimensions of a Shape Prportionally,3,4,78
+24,nan,7,8,718
+25,Area Circle,11,14,94
+26,Circumference ,7,6,140
+27,Perimeter of a Polygon,7,8,86
+28,Reading a Ruler or Scale,1,0,0
+29,Calculations with Similar Figures,19,15,347
+30,Conversion of Fraction Decimals Percents,21,19,3265
+31,Equivalent Fractions,7,7,455
+32,Ordering Positive Decimals,17,14,1222
+33,Ordering Fractions,16,8,1285
+34,Ordering Integers,13,6,590
+35,Ordering Real Numbers,4,1,239
+36,Rounding,8,9,219
+37,Addition Whole Numbers,17,15,681
+38,Division Fractions,12,11,474
+39,Estimation,6,6,193
+40,Fraction Of,8,7,63
+41,Least Common Multiple,14,11,337
+42,Multiplication Fractions,18,9,642
+43,Multiplication Whole Numbers,2,4,19
+44,Percent Of,15,22,1843
+45,Subtraction Whole Numbers,10,18,814
+46,Square Root,10,9,812
+47,nan,8,10,436
+48,Finding Percents,14,11,824
+49,Proportion,18,17,1201
+50,Scale Factor,3,3,36
+51,Unit Rate,9,8,444
+52,Scientific Notation,13,10,256
+53,Divisibility Rules,10,13,405
+54,Prime Number,7,6,71
+55,Absolute Value,20,15,1004
+56,Exponents,17,18,716
+57,nan,5,3,35
+58,Pattern Finding ,15,17,583
+59,nan,12,5,142
+60,nan,6,5,64
+61,nan,1,7,17
+62,nan,3,1,17
+63,nan,13,14,69
+64,nan,0,0,0
+65,nan,8,7,13
+66,nan,8,16,35
+67,D.4.8-understanding-concept-of-probabilities,5,6,11
+68,Absolute Value,4,6,31
+69,Algebraic Simplification,4,2,42
+70,Algebraic Solving,6,5,62
+71,Choose an Equation from Given Information,1,3,14
+72,Intercept,1,1,16
+73,Linear Equations,1,1,16
+74,Percent Discount,2,2,10
+75,Percents,3,3,26
+76,Rate,4,3,22
+77,Slope,3,1,16
+78,Multiplication and Division Positive Decimals,3,16,278
+79,Addition and Subtraction Integers,9,30,2133
+80,Addition and Subtraction Positive Decimals,3,15,686
+81,Multiplication and Division Integers,6,15,933
+82,Addition and Subtraction Fractions,17,21,1653
+83,Reflection,4,10,52
+84,Rotations,3,7,44
+85,Translations,7,11,45
+86,Area Irregular Figure,3,1,11
+87,Area Parallelogram,3,2,2
+88,Area Rectangle,5,9,427
+89,Area Trapezoid,6,7,133
+90,Area Triangle,3,3,66
+91,Surface Area Cylinder,3,3,6
+92,Surface Area Rectangular Prism,4,9,48
+93,Volume Cylinder,2,8,20
+94,Volume Rectangular Prism,5,7,29
+95,Volume Sphere,1,2,12
+96,"Order of Operations +,-,/,* () positive reals",3,25,235
+97,Order of Operations All,6,14,544
+98,Equation Solving Two or Fewer Steps,10,29,2282
+99,Equation Solving More Than Two Steps,5,6,394
+100,"Angles - Obtuse, Acute, and Right",0,1,42
+101,Greatest Common Factor,1,4,7
+102,Computation with Real Numbers,1,3,0
+103,Write Linear Equation from Ordered Pairs,4,7,27
+104,Write Linear Equation from Situation,1,5,18
+105,Recognize Linear Pattern,0,0,17
+106,Write Linear Equation from Graph,2,12,329
+107,Finding Slope From Situation,1,1,0
+108,Finding Slope From Equation,0,0,0
+109,Finding Slope from Ordered Pairs,1,1,0
+110,Distributive Property,0,1,13
+111,Midpoint,0,0,0
+112,Polynomial Factors,2,3,0
+113,Recognize Quadratic Pattern,0,0,0
+114,Solving Systems of Linear Equations,1,3,42
+115,Quadratic Formula to Solve Quadratic Equation,0,1,0
+116,"Parts of a Polyomial, Terms, Coefficient, Monomial, Exponent, Variable",0,0,0
+117,Interpreting Coordinate Graphs ,0,2,0
+118,nan,0,4,31
+119,Solving for a variable,1,7,97
+120,Simplifying Expressions positive exponents,0,0,0
+121,Solving Inequalities,0,5,96
+122,Solving Systems of Linear Equations by Graphing,0,2,42

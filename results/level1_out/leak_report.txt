@@ -1,0 +1,24 @@
+BÁO CÁO CHỐNG RÒ RỈ DỮ LIỆU — CẤP ĐỘ 1
+Thời điểm: 2026-11-07T08:21:00Z
+Dữ liệu: skill_builder_data.csv | sha256=f4b8791ae5968b884b77ab3b08adec48130503ec57f3113158c9a5af88af3374
+Git commit: 2e8110a4c006304fba44b595a57e0a078dc3b718
+
+1) Chia tập theo người học (seed=42, 0.6/0.2/0.2)
+   train/val/test = 2330/776/778 người học
+   giao train∩val = train∩test = val∩test = 0 (đã assert).
+
+2) Đồ thị Transition chỉ xây từ tập train
+   support(counts_train > 0) == support(graph > 0): True
+   số cạnh (đã bỏ self-loop): 884
+   row-normalized (mỗi hàng khác 0 có tổng = 1): True
+   tổng khối lượng chuyển tiếp toàn dữ liệu (bỏ self-loop): 25554
+   khối lượng chỉ đến từ người học ngoài train (val+test): 189 (0.74% toàn bộ) — các cạnh này KHÔNG có trong đồ thị.
+   khối lượng chuyển tiếp của người ngoài train rơi vào cạnh có trong train: 10110/10299 (98.2%).
+
+3) Nhãn dịch đúng 1 bước
+   kiểm tra ngẫu nhiên 200 chuỗi: feature_t = 2*skill_t + correct_t -> True
+   mô hình dự đoán vị trí t+1 từ input đến t; không dùng nhãn tương lai.
+
+4) Test loader không shuffle (shuffle=False trong GKT/processing.py) -> vị trí case khớp dữ liệu.
+
+KẾT LUẬN: Không có người học nào xuất hiện ở hai tập; đồ thị không chứa chuyển tiếp chỉ quan sát được ở val/test; nhãn không bị dùng làm đặc trưng.

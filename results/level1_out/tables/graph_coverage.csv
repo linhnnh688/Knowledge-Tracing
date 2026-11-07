@@ -1,0 +1,4 @@
+﻿Tiêu chí,Số dự đoán test,Số dự đoán được phủ,Tỉ lệ
+Có cạnh đi ra (out-degree > 0),47358,47117,0.9949111026648085
+Có cạnh đi vào (in-degree > 0),47358,46744,0.9870349254613793
+Có ít nhất một cạnh (out hoặc in),47358,47341,0.9996410321381816

@@ -1,0 +1,4 @@
+﻿Tập,Số người học,Số tương tác (sau cắt)
+train,2330,142299
+val,776,47508
+test,778,48136

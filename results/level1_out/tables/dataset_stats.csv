@@ -1,0 +1,11 @@
+﻿Chỉ số,Giá trị
+file,skill_builder_data.csv
+sha256,f4b8791ae5968b884b77ab3b08adec48130503ec57f3113158c9a5af88af3374
+size_mb,78.85
+rows,525534
+users,4217
+skills,123
+problems,26688
+correct_rate,0.6794707859053839
+missing_skill_rows,66326
+users_lt3,269
