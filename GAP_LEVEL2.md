@@ -7,6 +7,10 @@
 > `level2_metrics.csv` / `trajectory_metrics.csv` / `summary.json` / `split.json`, và so trực tiếp
 > split Cấp độ 1 với Cấp độ 2.
 
+> **Cập nhật 2026-11-07:** trạng thái theo artifact `results/level2_moderate/` nằm ở **§10**; các
+> mục §0–§8 phản ánh lần rà `outputs/level2/` ngày 01/11 và không còn đúng cho artifact mới (ví dụ
+> calibration và multiseed đã có, còn `seconds` vẫn bằng 0).
+
 ---
 
 ## 0. Kết luận nhanh
@@ -151,11 +155,11 @@ Ba số 1,0 đầu tiên là **triệu chứng của F1**, không phải kết q
 | # | Yêu cầu | Trạng thái | Bằng chứng / vấn đề |
 |---|---|---|---|
 | L2.1 | Trực quan hoá trạng thái tri thức theo **khái niệm** và theo **thời gian** | **THỎA** | `trajectories/heatmap_train.png` (concept × step, màu `sigmoid(m)`), `curves_train.png` (đường mastery của 4 KC/user), `mastery_train.csv` (bảng dài `m_pre/m_strong/m_tilde`), `traj_train.npz` (150 user × 3 mốc). Có cho **cả hai** tập. |
-| L2.2 | Định nghĩa và đo **≥ 2 tiêu chí hợp lý** của quỹ đạo | **KHÔNG ĐẠT** | 4 tiêu chí có mã (`trajectory.py:152-323`) và có số, nhưng 3/4 **bị đóng băng ở 1,0** (F1). Thực chất chỉ còn `forget_slope` + `pearson_dt_dm` của **cùng một** tiêu chí (suy giảm theo thời gian), và cả hai đều rất nhỏ/mất nghĩa vì `dt_zero_frac` = 0,53 / 0,88. Thiếu 2 tiêu chí mà đề nêu tên: **nhất quán tiên quyết** và **ổn định với thay đổi nhỏ trong lịch sử**. |
+| L2.2 | Định nghĩa và đo **≥ 2 tiêu chí hợp lý** của quỹ đạo | **MỘT PHẦN** *(cập nhật sau chạy — xem §10.5)* | Trước chạy chỉ có 4 tiêu chí, 3/4 đóng băng ở 1,0 (F1). Bản chạy cuối đo **6 tiêu chí thật**: `precedence`, `precedence_gap`, `stability_spearman`, `stability_changed_frac`, `forget_slope`, `pearson_dt_dm`; 3 chỉ số cài đặt (`consistency_*`, `locality`) vẫn = 1 và đã tách riêng. Tuy vậy **`precedence_gap` âm** ở cả hai tập nên tiêu chí tiên quyết không đạt về kết luận; quên trên Junyi bị giới hạn bởi `dt_zero_frac=0,881`. |
 | L2.3 | Triển khai/tái lập **1 phương pháp graph-aware công bố từ 2024** | **THỎA** (có điều kiện) | GRKT (Cui et al., KDD 2024), vendored trong `GRKT/`; 7 chỗ sửa được khai báo (`KE_HOACH.md` mục "Khai báo chỉnh sửa", notebook §1). Điều kiện: chỉ **5 epoch**, trong khi upstream mặc định `--epoch 500` + early stop (`GRKT/BaseModel.py:30`), còn đường nền chạy 20 epoch ⇒ so sánh chưa cân (F4). |
 | L2.4 | Đánh giá trên **≥ 2 tập công khai** với **cùng quy trình chia + cùng chỉ số** | **MỘT PHẦN** | Cùng mã `load_kt_data`, cùng `split_seed=42`, cùng AUC/ACC/NLL, cùng `max_seq_len=200` ⇒ phần "cùng quy trình" ở mức **giao thức** đạt. Nhưng tiền xử lý **khác nhau có chủ đích**: assist2009 `min_interactions=3` vs junyi `10`; junyi còn cap **200/1.326** khái niệm và bỏ 75% lượt (F3). Phải khai báo rõ trong báo cáo, nếu không sẽ bị coi là hai quy trình khác nhau. |
-| L2.5 | Vai trò **cấu trúc** đồ thị (bằng chứng thay thế cho Cấp 1) | **CHƯA THỎA** | Chỉ train `train`; không có dòng `dense`/`zero`/`shuffled` trong `level2_metrics.csv` hay `trajectory_metrics.csv`. Notebook §5.1/§5.2 có in hướng dẫn so `train` vs `zero` nhưng dữ liệu không tồn tại. |
-| L2.6 | So sánh quỹ đạo có đồ thị vs không đồ thị *(mở rộng, không bắt buộc)* | **CHƯA** | Không có `traj_zero`; cũng không ghi quỹ đạo của DKT/GKT (chỉ GRKT). |
+| L2.5 | Vai trò **cấu trúc** đồ thị (bằng chứng thay thế cho Cấp 1) | **MỘT PHẦN** *(cập nhật sau chạy — xem §10.4)* | Bản chạy cuối có `train` + `zero` trên assist2009: ΔAUC = **+0,0132**, NLL giảm 0,0094, `abs_delta_retrieval` 0,0335 → 0. Nhưng chỉ **1 seed, 1 tập**; Junyi không chạy `zero`; không có `dense`/`shuffled`. |
+| L2.6 | So sánh quỹ đạo có đồ thị vs không đồ thị *(mở rộng, không bắt buộc)* | **MỘT PHẦN** *(cập nhật sau chạy)* | Có `trajectory_metrics.csv` cho cả `train` và `zero` trên assist2009 (150 người): `precedence` 0,3418 vs 0,2015, `changed_frac` 0,4459 vs 0,0081. Vẫn không ghi quỹ đạo cho DKT/GKT. |
 
 ### 2.2. Chống rò rỉ (§6 — áp dụng mọi cấp)
 
@@ -630,3 +634,175 @@ F5) và cho phép ngoại suy chính xác ngay sau epoch 1 — nếu epoch 1 c�
 * **Ba tiêu chí `consistency_strengthen` / `consistency_spread` / `locality` vẫn = 1,0 do cấu
   trúc mô hình** (F1) — chỉ là kiểm chứng cài đặt; bằng chứng thật là `precedence_gap`,
   `stability_spearman`, `forget_slope`, `pearson_dt_dm` và ΔAUC(`train` − `zero`).
+
+---
+
+## 10. Nhật ký review kết quả chạy — 2026-11-07 (`results/level2_moderate`)
+
+Phạm vi: đối chiếu artifact với `YEU_CAU.md` §5 (Cấp độ 2), §6, §7, §8. Mọi số đọc từ CSV/JSON
+trên đĩa. Lần chạy: notebook `2026-11-07a`, commit `154d4e4`, **một phiên** 09:48–16:06 UTC
+(6 h 18 phút, Tesla T4), `EVAL_ONLY=False`, `USE_COMMITTED_CKPTS=False`.
+
+### 10.1 Cấu hình thực tế
+
+| Thông số | Giá trị |
+|---|---|
+| Tập | `assist2009` (đầy đủ), `junyi` (tập con `max_users=3000`, `top_concepts=200`, `min_interactions=10`) |
+| Biến thể GRKT | assist2009: `train` + `zero`; junyi: `train` |
+| Seed | 42, 123, 456; **đa seed và ablation chỉ trên assist2009** |
+| Huấn luyện | 20 epoch cap, patience 5, batch 32, seq 200, lr 1e-3, `d_hidden=128`, `k_hidden=16`, `k_hop=1` |
+| Đường nền | DKT, GKT-Transition, GKT-Zero, **train lại từ đầu** trong cùng phiên (`from_checkpoint=false`) |
+| Ngân sách | `TIME_BUDGET_MIN=540`; phiên chạy thực tế 378 phút → không bị `TrainingPaused` |
+| Số lần train | 11 (4 GRKT assist + 1 GRKT junyi + 6 baseline) — khớp ước tính §9.3 (11) |
+
+### 10.2 Đối chiếu `YEU_CAU.md`
+
+| Yêu cầu | Bằng chứng trên đĩa | Kết luận |
+|---|---|---|
+| §5: phương pháp graph-aware công bố ≥ 2024 | GRKT (KDD 2024), `level2/grkt_api.py` + checkpoint `GRKT-*.pt` | **ĐẠT** |
+| §5: ≥ 2 tập công khai, cùng quy trình/chỉ số | assist2009 + junyi, cùng `load_kt_data`, split seed 42, cùng AUC/ACC/NLL | **ĐẠT**, nhưng Junyi là **tập con 4,1 % người học** |
+| §5: cùng quy trình chia với Cấp 1 | split 2.330/776/778 và 142.299/47.508/48.136 **trùng khít** Cấp 1 | **ĐẠT theo số đo**; `same_split=null` chỉ vì `split.json` Cấp 1 là LFS pointer |
+| §5/§7: trực quan mastery theo khái niệm × thời gian | `trajectories/heatmap_train.png`, `heatmap_zero.png`, `mastery_*.csv`, dashboard 60 dòng (40 người) | **ĐẠT** |
+| §7: định nghĩa + đo ≥ 2 tiêu chí quỹ đạo | 6 tiêu chí thật (`precedence`, `precedence_gap`, `stability_spearman`, `stability_changed_frac`, `forget_slope`, `pearson_dt_dm`) | **ĐẠT về đo lường** — xem 10.5 về kết luận |
+| §6.2: đồ thị chỉ từ train | `graphs_train_only.npz`, `leak_report.txt`; cạnh train 14.024 vs val 11.081 (assist), 52.391 vs 36.557 (junyi) | **ĐẠT** |
+| §6.4: train/val/test rời nhau | `leak_report.txt`: giao = 0 ở cả hai tập | **ĐẠT** |
+| §7: AUC / ACC / NLL | `level2_all_datasets.csv`, `*/level2_metrics.csv` | **ĐẠT** |
+| §7: mean ± std ≥ 3 seed | assist2009 GRKT 3 seed; **junyi 1 seed; baseline 1 seed** | **MỘT PHẦN** |
+| §7: ablation đồ thị | `train` vs `zero` trên assist2009 | **ĐẠT một phần** (1 seed, 1 tập) |
+| §7: một phân tích nâng cao | calibration Brier/ECE/ACE + reliability | **ĐẠT** |
+| §8: dashboard Cấp độ 2 | `dashboard/learner_dashboard_summary.csv` (60 dòng = 20 người × 3 cấu hình), `learner_dashboard_steps.csv`, `learner_dashboard.json`, hình | **ĐẠT** |
+| §8: báo cáo 12–18 trang + slide + bảng phân công | Báo cáo kỹ thuật đã có (`BAO_CAO.md`); slide + bảng phân công chưa có | **MỘT PHẦN** |
+| GAP F5: thời gian train được ghi | GRKT có `seconds`; **baseline ghi 0,0 dù đã train 11–20 epoch** | **MỘT PHẦN** |
+
+### 10.3 Kết quả dự đoán
+
+Seed 42 (`level2_all_datasets.csv`):
+
+| Tập | Mô hình | AUC | Acc | NLL | Val AUC | n_test | Thời gian |
+|---|---|---:|---:|---:|---:|---:|---:|
+| assist2009 | **GRKT-train** | **0,7972** | 0,7399 | **0,5217** | 0,8035 | 47.358 | 2.838 s |
+| assist2009 | DKT | 0,7859 | 0,7357 | 0,5278 | 0,7926 | 47.358 | 0 (không ghi) |
+| assist2009 | GRKT-zero | 0,7840 | 0,7317 | 0,5311 | 0,7924 | 47.358 | 2.583 s |
+| assist2009 | GKT-Zero | 0,7644 | 0,7199 | 0,5475 | 0,7758 | 47.358 | 0 (không ghi) |
+| assist2009 | GKT-Transition | 0,7536 | 0,7091 | 0,5595 | 0,7626 | 47.358 | 0 (không ghi) |
+| junyi | **GRKT-train** | **0,7896** | 0,8017 | **0,4378** | 0,7938 | 48.844 | 1.984 s |
+| junyi | DKT | 0,7501 | 0,7864 | 0,4623 | 0,7520 | 48.844 | 0 (không ghi) |
+| junyi | GKT-Zero | 0,7225 | 0,7821 | 0,4798 | 0,7280 | 48.844 | 0 (không ghi) |
+| junyi | GKT-Transition | 0,7202 | 0,7800 | 0,4790 | 0,7208 | 48.844 | 0 (không ghi) |
+
+- assist2009: GRKT − DKT = **+0,0113 AUC**; GRKT − GKT-Zero = +0,0328.
+- junyi: GRKT − DKT = **+0,0395 AUC**; GRKT − GKT-Zero = +0,0671.
+- Đa seed assist2009 (`assist2009/multiseed_metrics.csv`): GRKT **0,7983 ± 0,0009** AUC,
+  0,7424 ± 0,0023 acc, 0,5170 ± 0,0037 NLL (3 seed).
+- **Không có kiểm định ghép cặp GRKT vs baseline** vì baseline chỉ chạy 1 seed. Chênh lệch trên
+  là so sánh điểm, chưa phải bằng chứng thống kê ở mức seed.
+
+### 10.4 Vai trò đồ thị (ablation `train` vs `zero`)
+
+| Tập | AUC train | AUC zero | ΔAUC | NLL train | NLL zero | Ghi chú |
+|---|---:|---:|---:|---:|---:|---|
+| assist2009 | 0,7972 | 0,7840 | **+0,0132** | 0,5217 | 0,5311 | 1 seed; `train` > mọi baseline, `zero` **thấp hơn DKT** 0,0019 |
+| junyi | 0,7896 | — | — | 0,4378 | — | **không chạy zero** |
+
+Đây là bằng chứng **duy nhất** về lợi ích đồ thị ở Cấp độ 2, và chỉ từ một seed. Không được suy
+ra nhân quả; phải ghi "ΔAUC = +0,0132 trên một seed assist2009".
+
+### 10.5 Quỹ đạo tri thức — số đo và cách đọc
+
+`*/trajectory_metrics.csv` (150 người học mỗi tập):
+
+| Tập / đồ thị | precedence | precedence_gap | stability_spearman | stability_changed_frac | forget_slope | pearson_dt_dm |
+|---|---:|---:|---:|---:|---:|---:|
+| assist / train | 0,3418 | **−0,1108** | 0,9712 | 0,4459 | −4,63e−4 | −0,6104 |
+| assist / zero | 0,2015 | **−0,0776** | 0,9936 | 0,0081 | −2,38e−4 | −0,2290 |
+| junyi / train | 0,3651 | **−0,1014** | 0,9861 | 0,5120 | +1,01e−5 | −0,0002 |
+
+- **`precedence_gap` âm ở cả hai tập** → mastery khái niệm tiên quyết **không** cao hơn khái niệm
+  phụ thuộc so với đồ thị hoán vị. Tiêu chí "nhất quán tiên quyết" **chưa đạt**; phải viết đúng
+  như vậy, không đảo dấu.
+- **Độ ổn định** (`stability_spearman`) cao (0,971–0,994) nhưng `stability_changed_frac` của
+  `train` cao hơn `zero` rất nhiều (0,446 vs 0,008; junyi 0,512): lật một bước làm thay đổi
+  mastery của ~45–51 % khái niệm. Đồ thị lan thay đổi rộng — có thể là nhạy cảm quá mức, không
+  thuần là "ổn định".
+- **Quên**: assist trung bình âm nhẹ (−4,6e−4) nhưng Junyi **+1,0e−5**, gần như 0 — khớp giới hạn
+  dữ liệu `dt_zero_frac` = 0,881 (phần lớn Δt = 0 do timestamp làm tròn 15 phút). Không được trình
+  bày "mô hình học được quên" trên Junyi.
+- `pearson_dt_dm` = −0,61 trên assist/train (Δt lớn ⇒ mastery giảm), nhưng −0,0002 trên Junyi —
+  lại là giới hạn dữ liệu.
+- `consistency_strengthen` / `consistency_spread` / `locality` = 1,0 chỉ là **kiểm chứng cài đặt**
+  (GAP F1), không dùng làm bằng chứng.
+- `abs_delta_retrieval`: assist/train 0,0335 vs zero 0,0; junyi 0,0209 → đồ thị có lan truyền
+  thật qua truy xuất, đây là bằng chứng cơ chế (không phải tiêu chí hợp lý).
+
+### 10.6 Calibration
+
+| Tập | Mô hình | Brier | ECE | Nhận xét |
+|---|---|---:|---:|---|
+| assist | GKT-Transition | 0,1893 | **0,0097** | ECE tốt nhất |
+| assist | DKT | 0,1768 | 0,0134 | |
+| assist | GKT-Zero | 0,1848 | 0,0163 | |
+| assist | GRKT-zero | 0,1788 | 0,0291 | |
+| assist | **GRKT-train** | **0,1743** | **0,0379** | Brier tốt nhất, ECE **tệ nhất** |
+| junyi | GKT-Transition | 0,1566 | **0,0113** | |
+| junyi | **GRKT-train** | **0,1404** | 0,0127 | Brier tốt nhất, ECE thứ hai |
+| junyi | DKT | 0,1504 | 0,0171 | |
+| junyi | GKT-Zero | 0,1564 | 0,0310 | |
+
+→ GRKT cho xác suất "sắc" hơn (Brier thấp) nhưng kém hiệu chỉnh hơn GKT trên assist. Báo cáo phải
+nêu trade-off này, không chỉ chọn Brier.
+
+### 10.7 Liên kết Cấp độ 1 và các điểm phải nói rõ
+
+1. **Split trùng khít; `same_split=null` chỉ là giới hạn của phiên chạy.** `diagnostics/level1_linkage.json`
+   ghi `same_split=null`, `split_status=git-lfs-pointer` vì phiên Kaggle đọc
+   `outputs/level1/split.json` dưới dạng pointer. Kiểm tra lại trên working tree hiện tại: ba
+   danh sách `train/val/test` của `results/level1_out/split.json`,
+   `outputs/level1/split.json` và `results/level2_moderate/assist2009/split.json` **trùng khít
+   từng phần tử** (2.330/776/778), thứ tự cũng giống. Kết luận: "cùng split theo người, seed 42,
+   cùng hàm chia", có bằng chứng nội dung file. Nên dùng
+   `results/level2_moderate/assist2009/split.json` làm file split nộp kèm.
+2. **Baseline Cấp 2 không phải mô hình Cấp 1.** Cấp 1 dùng `GKT-MHA` (đồ thị động); Cấp 2 dùng
+   `GKT-Transition`/`GKT-Zero` (đồ thị tĩnh, train lại). Vì vậy không được viết "GRKT so với
+   baseline GKT của Cấp 1" như cùng một mô hình. So sánh đúng: (a) trong Cấp 2, GRKT vs DKT /
+   GKT tĩnh; (b) giữa hai cấp, chỉ so DKT (cùng kiến trúc) trên cùng split.
+3. **Checkpoint Cấp 1 đã commit không tái lập bảng Cấp 1** (GAP F2): DKT legacy 0,7851 vs bảng
+   0,7866; GKT-Transition 0,7722 vs 0,7443; GKT-Zero 0,7620 vs 0,7549; `checkpoint_seed` rỗng.
+   Bảng Cấp 2 dùng đường nền **train lại**, đúng quyết định; nhưng phải ghi rõ số Cấp 1 tham
+   chiếu (0,7443/0,7549) đến từ lần chạy cũ, không từ checkpoint đã commit.
+4. **`seconds=0` của baseline là lỗi ghi nhận, không phải "train miễn phí".** `run_provenance`
+   cho thấy DKT/GKT đã chạy 11–20 epoch (`from_checkpoint=false`) nhưng `seconds` vẫn 0. Tổng
+   thời gian GRKT đo được: 2.838 + 2.583 + 1.984 = 7.406 s ≈ 2,06 h; thời gian baseline chưa đo.
+5. **`checkpoint_seed` của GRKT để trống trong bảng metrics** dù fingerprint có seed 42
+   (`tables/checkpoint_status.csv`). Không ảnh hưởng kết quả, nhưng nếu dùng cột này để kiểm tra
+   tái lập thì phải đọc fingerprint thay vì cột bảng.
+
+### 10.8 Junyi — phạm vi thật của số liệu
+
+- Tập con **3.000 / 72.630 người (4,1 %)**, **251.598 / 16.217.311 lượt (1,55 %)**; 200 khái niệm.
+- 200 khái niệm được chọn bằng thống kê **toàn bộ log** (transductive) trước khi chia → không phải
+  quy trình hoàn toàn inductive; phải khai báo.
+- `junyi_canonical.csv.meta.json` ghi `rows=340.601` nhưng `data_stats.interactions=251.598`.
+  Đã đối chiếu: meta được ghi **sau** khi cắt 500 dòng/người và lọc `min_interactions=10`, nên
+  340.601 là số dòng CSV chuẩn hoá; 89.003 dòng còn lại bị cắt bởi `max_seq_len=200` trong
+  `level2/grkt_data.py` (538 người có chuỗi > 200). `Σ min(số_bước, 200) = 251.598` khớp đúng —
+  hai số không mâu thuẫn, nhưng phải ghi rõ mốc nào là mốc nào khi trích dẫn.
+- `dt_zero_frac=0,881` và `dt_p95=240` phút: phần lớn Δt = 0 hoặc bị chặn trần → mọi kết luận
+  về "quên" trên Junyi là **giới hạn dữ liệu**, không phải thuộc tính mô hình.
+- 600 người test → 48.844 dự đoán; đủ cho AUC nhưng không đại diện toàn bộ Junyi.
+
+### 10.9 Kết luận mức đạt Cấp độ 2
+
+| Trạng thái | Số mục | Gồm |
+|---|---:|---|
+| **THỎA** | 8 | GRKT 2024, 2 tập, cùng split/quy trình, trực quan mastery, ≥ 2 tiêu chí quỹ đạo được đo, ablation train/zero (một phần), calibration, dashboard, chống rò rỉ |
+| **MỘT PHẦN** | 4 | đa seed (chỉ assist), ablation (1 seed/1 tập), baseline `seconds`, slide + bảng phân công |
+| **CHƯA ĐẠT** | 2 | kết luận "nhất quán tiên quyết" (gap âm); bằng chứng đồ thị đủ mạnh để kết luận nhân quả (chỉ 1 seed, 1 tập) |
+
+**Ba câu phải có trong báo cáo Cấp độ 2:**
+1. GRKT vượt baseline trên **cả hai** tập, nhưng Junyi là tập con 4,1 % và chênh lệch chưa được
+   kiểm định qua nhiều seed baseline.
+2. Đồ thị `train` hơn `zero` +0,0132 AUC trên assist2009 ở **một seed** — bằng chứng gợi ý, không
+   phải kết luận nhân quả.
+3. `precedence_gap` **âm** trên cả hai tập → tiêu chí nhất quán tiên quyết **không đạt**; các tiêu
+   chí đạt là độ ổn định (Spearman cao) và cơ chế lan truyền (`abs_delta_retrieval` > 0), với
+   quên bị giới hạn bởi dữ liệu Junyi.

@@ -3,8 +3,44 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import contextmanager
 
 import torch
+
+
+def _zero_graph_output(module, inputs, output):
+    return torch.zeros_like(output)
+
+
+@contextmanager
+def graph_off(model):
+    """Tắt đồ thị của GKT trong lúc suy luận, trả về ``True`` nếu tắt được.
+
+    - Đồ thị tĩnh (Transition/Zero/...): đặt ``model.graph`` := 0, đúng nghĩa bỏ mọi cạnh.
+    - ``GKT-MHA``: không có ma trận ``A`` cố định; adjacency được suy ra trong
+      ``MultiHeadAttention``. Hook thay đầu ra ``graph_model`` bằng 0, tương đương bỏ toàn bộ
+      cạnh mà attention suy ra (chỉ còn self-update).
+    """
+    graph = getattr(model, "graph", None)
+    old = None
+    handle = None
+    if isinstance(graph, torch.nn.Parameter):
+        old = graph.data
+        graph.data = torch.zeros_like(old)
+    elif getattr(model, "graph_type", None) == "MHA" and getattr(
+        model, "graph_model", None
+    ) is not None:
+        handle = model.graph_model.register_forward_hook(_zero_graph_output)
+    else:
+        yield False
+        return
+    try:
+        yield True
+    finally:
+        if old is not None:
+            graph.data = old
+        if handle is not None:
+            handle.remove()
 
 
 def skill_lookup_from_loader(loader):
@@ -123,18 +159,14 @@ def annotate_evidence(
 
     Two numbers per case, both from real re-runs of the model:
       * delta_flip  — change in P(correct) when one past attempt is flipped correct<->wrong.
-      * delta_graph — change in P(correct) when every graph edge is removed (A := 0) while the
-        learner's own history stays untouched.
+      * delta_graph — change in P(correct) when the graph is removed at inference (A := 0 for
+        static GKT; inferred adjacency := 0 for GKT-MHA) while the learner's history stays
+        untouched.
     """
     if device is None:
         device = next(model.parameters()).device
     model.eval()
     rows = _dataset_rows(loader)
-    has_graph = (
-        graph_ablation
-        and hasattr(model, "graph")
-        and isinstance(getattr(model, "graph"), torch.nn.Parameter)
-    )
     for rec in [r for bucket in buckets.values() for r in bucket]:
         pos, t = rec.get("pos"), rec.get("t")
         if pos is None or t is None or pos >= len(rows):
@@ -178,15 +210,14 @@ def annotate_evidence(
             )
         flips.sort(key=lambda f: abs(f["delta"]), reverse=True)
         rec["evidence"]["flips"] = flips
-        if has_graph:
-            old = model.graph.data
-            try:
-                model.graph.data = torch.zeros_like(old)
-                p_nograph = float(_forward_pred(model, batch, qbatch, idx, device))
-            finally:
-                model.graph.data = old
-            rec["evidence"]["nograph_p"] = p_nograph
-            rec["evidence"]["delta_graph"] = p_recheck - p_nograph
+        if graph_ablation:
+            with graph_off(model) as can_ablate:
+                if can_ablate:
+                    p_nograph = float(
+                        _forward_pred(model, batch, qbatch, idx, device)
+                    )
+                    rec["evidence"]["nograph_p"] = p_nograph
+                    rec["evidence"]["delta_graph"] = p_recheck - p_nograph
         rec["evidence"]["edges"] = _edge_evidence(graph, rec["skill"], history)
     return buckets
 
@@ -363,7 +394,8 @@ def _evidence_lines(rec):
             )
     if "delta_graph" in ev:
         lines.append(
-            f"- graph ablation for THIS prediction: A := 0 moves p {rec['y_prob']:.3f} -> "
+            f"- graph ablation for THIS prediction: graph off (A := 0 for static, inferred "
+            f"adjacency := 0 for MHA) moves p {rec['y_prob']:.3f} -> "
             f"{ev['nograph_p']:.3f} (dp={ev['nograph_p'] - rec['y_prob']:+.3f})"
         )
     edges = ev.get("edges") or []

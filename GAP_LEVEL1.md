@@ -20,6 +20,9 @@
 > `consistency_spread`/`locality`/`forget_slope` của quỹ đạo GRKT làm bằng chứng thay thế.
 > **Còn mở:** P2.11 (báo cáo 12–18 trang), và chạy full Cấp độ 2 trên Kaggle (`QUICK_RUN=False`).
 
+> **Cập nhật 2026-11-07:** trạng thái theo artifact `results/level1_out/` nằm ở **§5**; các mục
+> §1–§4 là lịch sử rà soát trước lần chạy này.
+
 ---
 
 ## 1. Tổng quan hiện trạng
@@ -166,7 +169,8 @@ artifact đã commit + code hiện tại. Chi tiết số liệu: `README.md` §
    - ✅ `annotate_evidence` (`level1/explain.py`) thay template bằng số liệu **tính lại từ mô hình**:
      (i) phản chứng nếu–thì — lật outcome từng bước trong cửa sử (`features[h] = 2*skill + (1-correct)`,
      đúng cách mã hoá của `GKT/processing.py:85`) rồi chạy lại forward → `Δp` từng bước;
-     (ii) ablation đồ thị **riêng cho case đó** — `model.graph.data := 0` trong một lần forward rồi khôi
+     (ii) ablation đồ thị **riêng cho case đó** — `graph_off(model)` (30/10: `model.graph.data := 0`;
+     07/11: dùng chung helper, zero cả adjacency động của MHA) trong một lần forward rồi khôi
      phục → `Δp` do đồ thị; (iii) cạnh mạnh nhất ở khái niệm đích kèm `direction` và thời điểm người học
      từng chạm vào nó. Có `p_recheck` đối chiếu giá trị ghi trong batch; lệch quá `tol=0.02` → in
      "counterfactual: not available (...)" thay vì bịa số.
@@ -254,3 +258,165 @@ artifact đã commit + code hiện tại. Chi tiết số liệu: `README.md` §
    hành vi cell đang chạy trong `kaggle_level1.ipynb`.
 5. (Tuỳ chọn, cần chủ ý) Bỏ rule `*.json` trong `.gitattributes` hoặc cài git-lfs để ba file JSON thật
    sự có nội dung khi tải repo.
+
+---
+
+## 5. Nhật ký review kết quả chạy — 2026-11-07 (`results/level1_out`)
+
+Phạm vi: đối chiếu artifact trong `results/level1_out/` với `YEU_CAU.md` §5 (Cấp độ 1), §6, §7, §8.
+Mọi số dưới đây đọc từ CSV/JSON trên đĩa, không lấy từ biến trong notebook.
+
+### 5.1 Lần chạy thực tế là gì
+
+| Thông số | Giá trị | Nguồn |
+|---|---|---|
+| Notebook | `2026-11-07 level1-full+resume+select+evalonly` | `run_config.json` |
+| Dữ liệu | `skill_builder_data.csv`, SHA-256 `f4b8791a…af3374`, 525.534 dòng, 4.217 người, 123 khái niệm | `tables/dataset_stats.csv` |
+| Mô hình được train | **chỉ `DKT` + `GKT-MHA`** (`model_names`) | `run_config.json` |
+| Siêu tham số | 20 epoch, batch 32, seq 200, `hid_dim=emb_dim=32`, lr 1e-3, patience 5 | `run_config.json` |
+| Seed | 42, 123, 456, 789, 1011; split seed 42 | `run_config.json` |
+| Phiên | 3 phiên Kaggle, 10/10 run, 1 run resume (GKT-MHA seed 789) | `run_manifest.json`, `tables/runs_all_seeds.csv` |
+| Thiết bị | Tesla T4, torch 2.11.0+cu130 | `run_manifest.json` |
+| Split | 2.330 / 776 / 778 người; 142.299 / 47.508 / 48.136 tương tác; giao = 0 | `tables/split_summary.csv`, `leak_report.txt` |
+
+Điểm quan trọng: `graph_types` trong config liệt kê 5 đồ thị (Transition, Dense, Identity, Zero,
+Shuffled) nhưng **chỉ 2 mô hình được train**. Năm đồ thị chỉ được dùng để tính thống kê/độ phủ
+(`tables/graph_stats.csv`, `tables/graph_coverage.csv`), không có mô hình nào tiêu thụ chúng.
+
+### 5.2 Đối chiếu `YEU_CAU.md`
+
+| Yêu cầu | Bằng chứng trên đĩa | Kết luận |
+|---|---|---|
+| §5: ≥ 1 tập công khai | ASSISTments 2009 đầy đủ, hash + 525.534 dòng | **ĐẠT** |
+| §5: baseline không đồ thị | DKT 39.899 tham số, AUC 0,7866 | **ĐẠT** |
+| §5: mô hình GCN/GAT/GraphSAGE **hoặc GKT** | `GKT-MHA` (attention đa đầu thay đồ thị tĩnh) | **ĐẠT hình thức** — cần giải thích rõ MHA không dùng ma trận kề |
+| §5: ablation bỏ cạnh / ma trận đơn vị | `tables/graph_inference_ablation.csv` **vẫn chỉ có header** (artifact cũ); hai nguyên nhân đã xác định và **sửa trong mã**: cell chỉ nhận `model.graph` là `nn.Parameter` nên loại MHA, và `TRAIN_MODELS` không có GKT tĩnh. `graph_off` nay ablation được cả MHA (zero adjacency động). Cần một lần **EVAL_ONLY** để sinh artifact | **CHƯA ĐẠT trong artifact** — code đã sửa, chờ chạy lại |
+| §5: 5 đúng + 5 sai kèm bằng chứng | `cases.md`, `cases.json`, `tables/case_evidence_summary.csv` (10 case, 5 khái niệm khác nhau mỗi bucket) | **MỘT PHẦN** — xem 5.4.3 |
+| §6.2: đồ thị chỉ từ train | 884 cạnh; khối lượng val+test-only 189/25.554 = **0,74 %**; 10.110/10.299 (98,2 %) chuyển tiếp ngoài train rơi trên cạnh train | **ĐẠT** (rò rỉ dư 0,74 % phải ghi chú) |
+| §6.3: cùng một split | `split.json` + `split_summary.csv`; 3 tập rời nhau | **ĐẠT** |
+| §6.4: tách theo người học | `leak_report.txt`: giao 3 tập = 0 | **ĐẠT** |
+| §7: AUC / Accuracy / NLL | `tables/level1_metrics.csv` | **ĐẠT** |
+| §7: mean ± std ≥ 3 seed | 5 seed cho cả DKT và GKT-MHA | **ĐẠT** |
+| §7: vai trò đồ thị (ablation/xáo cạnh/đơn vị) | Lần chạy mới chưa có; ablation lúc suy luận cho MHA sẽ có sau EVAL_ONLY. Lần chạy cũ `outputs/level1/` có 5 biến thể tĩnh nhưng kết luận **phủ định** (Transition − Zero = +0,0089, không ý nghĩa) | **CHƯA ĐẠT** (một phần bằng chứng từ lần chạy cũ) |
+| §7 mở rộng: calibration | Brier/ECE/ACE + reliability; **AUC trong bảng calibration lệch bảng chính** | **ĐẠT nhưng số chưa khớp** — xem 5.4.4 |
+| §8: dashboard chọn người học | 25 người học (`tables/learner_view_summary.csv`), `learner_86709.png`, dropdown trong notebook | **ĐẠT** |
+| §8: báo cáo 12–18 trang + slide + bảng phân công | Báo cáo kỹ thuật đã có (`BAO_CAO.md`); slide + bảng phân công chưa có | **MỘT PHẦN** |
+| §8: requirements + môi trường chạy lại | `environment.txt`, `run_manifest.json`, `requirements.txt` | **ĐẠT** |
+
+### 5.3 Số đo chính
+
+Seed 42 (`tables/level1_metrics.csv`):
+
+| Mô hình | Test AUC | Test Acc | Test NLL | Best Val AUC | Tham số | Thời gian |
+|---|---:|---:|---:|---:|---:|---:|
+| DKT | 0,7866 | 0,7340 | 0,5272 | 0,7922 | 39.899 | 35,1 s |
+| GKT-MHA | 0,7782 | 0,7306 | 0,5374 | 0,7836 | 38.236 | 4.072,8 s |
+
+5 seed (`tables/multiseed_metrics.csv`, `tables/paired_tests.csv`):
+
+| So sánh | AUC mean ± std | Acc mean ± std | NLL mean ± std |
+|---|---|---|---|
+| DKT | **0,7862 ± 0,0006** | 0,7343 ± 0,0013 | **0,5273 ± 0,0005** |
+| GKT-MHA | 0,7668 ± 0,0095 | 0,7213 ± 0,0087 | 0,5505 ± 0,0088 |
+
+- DKT − GKT-MHA (AUC): **+0,01943**, CI95 [+0,00649, +0,03237], t = 4,169, p = 0,0140,
+  Cohen's dz = 1,864 → khác biệt **có ý nghĩa** ở 5 seed.
+- DKT − GKT-MHA (NLL): −0,02319, p = 0,0060, dz = −2,376 → GKT-MHA tệ hơn cả về NLL.
+- Thời gian: GKT-MHA chậm hơn DKT ~116 lần (4.073 s so với 35 s) mà vẫn thấp hơn về AUC.
+
+Bằng chứng đồ thị tĩnh từ **lần chạy cũ** `outputs/level1/` (3 seed, cùng split; khác lần chạy
+`results/level1_out`, không được trộn vào bảng chính):
+
+| Mô hình | AUC seed 42 | AUC mean ± std (3 seed) |
+|---|---:|---:|
+| DKT | 0,7866 | 0,7860 ± 0,0006 |
+| GKT-Transition | 0,7443 | 0,7640 ± 0,0066 |
+| GKT-Dense | 0,7486 | — |
+| GKT-Identity | 0,7549 | 0,7551 ± 0,0055 |
+| GKT-Zero | 0,7549 | 0,7551 ± 0,0055 |
+| GKT-Shuffled | 0,7354 | 0,7656 ± 0,0008 |
+
+Ở lần chạy cũ: Transition − Zero = +0,0089 (t ≈ 1,8, không có ý nghĩa) và Shuffled ≈ Transition
+(chênh +0,0016) → **chưa chứng minh được vai trò cấu trúc cạnh**. Đây là kết luận phủ định, phải
+giữ nguyên trong báo cáo thay vì chỉ trích Δ dương.
+
+### 5.4 Năm phát hiện phải xử lý trước khi trích số
+
+1. **Ablation đồ thị của lần chạy mới hoàn toàn trống.** `graph_inference_ablation.csv` chỉ có
+   header; `figures/graph_inference_ablation.png` không tồn tại. Có **hai nguyên nhân độc lập**,
+   đã kiểm tra trong mã:
+   - *Cấu hình:* `TRAIN_MODELS` chỉ có `DKT` và `GKT-MHA` (`run_config.json` →
+     `model_names`), nên không có mô hình đồ thị tĩnh nào để ablation.
+   - *Lỗi điều kiện của cell:* cell chỉ chọn mô hình khi `isinstance(model.graph, nn.Parameter)`
+     (`kaggle_level1_full.ipynb`, cell ablation). Với MHA, `GKT.__init__` gán `self.graph = None`
+     (`GKT/models.py:57-69`) và adjacency được suy ra trong `MultiHeadAttention`
+     (`GKT/models.py:258-274`), nên `A := 0` không tồn tại — điều kiện luôn sai và bảng rỗng kể cả
+     khi MHA học rất tốt.
+
+   **Đã sửa trong mã (chưa chạy lại):**
+   - `level1/explain.py` thêm `graph_off(model)` (context manager): đặt `A := 0` nếu `graph` là
+     `nn.Parameter`; nếu MHA thì hook `graph_model` trả đầu ra bằng 0 — tương đương bỏ toàn bộ
+     cạnh mà attention suy ra, chỉ còn self-update.
+   - Cell ablation dùng `graph_off`, nhận cả `GKT-MHA`, thêm cột `graph_kind`
+     (`static A` / `dynamic MHA`); `annotate_evidence` cũng dùng chung helper nên `delta_graph`
+     của case MHA sẽ hết rỗng.
+   - Chạy lại **EVAL_ONLY** là đủ để sinh bảng cho seed 42 (không cần train); đây là **ablation lúc
+     suy luận**, phải ghi rõ khác với ablation lúc train.
+
+   **Để đóng yêu cầu §5 (bỏ cạnh / ma trận đơn vị) cần thêm:** train `GKT-Transition` +
+   `GKT-Zero` trong cùng harness — thêm hai tên vào `TRAIN_MODELS`, đặt
+   `ALLOW_CONFIG_MISMATCH=True` (thay đổi chỉ là **thêm cấu hình**, giữ nguyên siêu tham số và
+   split) hoặc dùng thư mục output mới. Chi phí ước tính 3–6 giờ GPU cho 3–5 seed × 2 biến thể.
+   Khi đó cell ablation tự sinh thêm hai dòng `static A` và có paired test Transition−Zero.
+   Phương án rẻ hơn là dùng `outputs/level1/` cũ (3 seed, 5 biến thể) nhưng phải ghi rõ là lần
+   chạy khác. `report_summary.md` §11 vẫn ghi Dense/Identity/Zero/Shuffled "bật bằng
+   `TRAIN_MODELS`" — đó là **năng lực của notebook**, không phải kết quả đã chạy.
+2. **Mô hình đồ thị thua baseline có ý nghĩa thống kê.** GKT-MHA kém DKT +0,0194 AUC
+   (p = 0,014) và NLL cao hơn (p = 0,006). Báo cáo phải nói thẳng: trên ASSISTments 2009 (một
+   khái niệm/câu hỏi, đồ thị Transition thưa 884 cạnh), lợi ích đồ thị không xuất hiện; không được
+   viết "GKT cải thiện DKT".
+3. **Bằng chứng case yếu và một phần không hợp lệ về mặt xAI.** 10 case đều do GKT-MHA dự đoán,
+   nhưng `evidence_ok=False` ở **8/10**; `graph_dp` rỗng ở **cả 10** (do `annotate_evidence` dùng
+   đúng điều kiện `isinstance(model.graph, nn.Parameter)` như cell ablation, nên MHA không bao giờ
+   được ablation — nay đã dùng chung `graph_off`, chạy lại sẽ có `delta_graph` cho cả MHA); phản
+   chứng chỉ tính được 2/10 với |Δp| ≤ 0,00132; occlusion mạnh nhất 0,147. Tệ hơn, danh sách
+   "graph neighbors" trong `cases.md` lấy từ đồ thị **Transition** trong khi model là **MHA** — model
+   không hề dùng đồ thị đó, nên không thể coi các cạnh này là bằng chứng cho dự đoán. Chỉ nên trình
+   bày 2 case có phản chứng/occlusion như minh hoạ, và ghi rõ 8 case còn lại chỉ có lịch sử cùng
+   kỹ năng. Lưu ý thêm: ở **cả hai** case, bỏ một bước làm **đúng** lại làm p **tăng** (+0,147 và
+   +0,144) — chiều ngược trực giác, nên không được diễn giải là "lan truyền kiến thức đúng"; chỉ
+   nên nói mô hình rất nhạy với bước lân cận. `graph_dp`/`delta_graph` sau khi rerun là ablation
+   **của MHA**, không phải bằng chứng cho các cạnh Transition trong `cases.md`.
+4. **Số calibration không khớp bảng chính.** `tables/calibration.csv` ghi GKT-MHA AUC **0,7454**
+   trong khi bảng chính ghi **0,7782** (cùng n = 47.358, cùng tỉ lệ nhãn đúng 0,6263). Dữ kiện
+   kiểm chứng được: bảng chính lấy `test_auc` từ sổ `runs_progress.json` ghi lúc train; calibration
+   chạy lại trong phiên EVAL_ONLY từ `checkpoints/GKT-MHA.pt`. Seed 42 có best val AUC 0,7836 ở
+   **epoch 18** nhưng epoch 20 chỉ 0,7622 — mức 0,7454 khớp khả năng checkpoint chứa trọng số cuối
+   kỳ; trong khi DKT (best val đúng epoch cuối) khớp tuyệt đối 0,7866233. Tuy nhiên mã ở cả ba
+   commit đều *dự định* lưu `best_state` (`train_one_resumable`, `_materialize_final`), và file
+   `.pt` chỉ là `state_dict` trần không có `epoch`/`best_state`, nên **không thể xác nhận nguyên
+   nhân từ artifact**. Cách xử lý: không dùng calibration GKT-MHA để kết luận; chạy lại calibration
+   trên checkpoint đã xác minh và ghi kèm epoch/val-AUC lúc lưu.
+5. **Độ phủ đồ thị 99,96 % không phải bằng chứng MHA dùng đồ thị.** `graph_coverage.csv` đo trên
+   đồ thị Transition (47.341/47.358 dự đoán có ít nhất một cạnh), nhưng GKT-MHA suy luận attention
+   động và bỏ qua ma trận này. Con số 99,96 % chỉ nói "đồ thị tĩnh đủ phủ", không nói "mô hình đã
+   khai thác cấu trúc". Không dùng nó để thay thế ablation.
+
+Ngoài ra: GKT-MHA seed 789 được resume (`resumed=True`) — hợp lệ nếu fingerprint khớp, nhưng nên
+ghi chú khi mô tả 5 seed; hiệu năng seed 789 cũng thấp nhất (0,7506), kéo std lên 0,0095.
+
+### 5.5 Kết luận mức đạt Cấp độ 1 (theo artifact `results/level1_out`)
+
+| Trạng thái | Số mục | Gồm |
+|---|---:|---|
+| **THỎA** | 9 | dataset, baseline, mô hình GKT, split theo người, đồ thị train-only, metrics, 5 seed + kiểm định, dashboard, môi trường/tái lập |
+| **MỘT PHẦN** | 3 | 5+5 case (đủ số lượng, thiếu bằng chứng), calibration (có nhưng lệch trọng số), slide + bảng phân công |
+| **CHƯA THỎA** | 2 | ablation đồ thị trong lần chạy mới (code đã sửa, chờ EVAL_ONLY); kết luận vai trò đồ thị (kết quả hiện là phủ định) |
+
+**Việc cần làm để Cấp độ 1 đủ điểm theo §5:** chạy lại một lần với GKT tĩnh
+(`Transition` + `Zero`) để có ablation cùng harness — đây là ablation lúc **train**, không thể thay
+bằng ablation lúc suy luận; hoặc chấp nhận dùng `outputs/level1/` cũ và ghi rõ nguồn. Ablation lúc
+suy luận cho MHA (chạy EVAL_ONLY sau khi sửa `graph_off`) chỉ bổ sung bằng chứng, **không** thay
+được yêu cầu "bỏ cạnh / ma trận đơn vị" ở mức train. Ngoài ra: xác minh checkpoint seed 42 (lưu
+kèm `epoch`/`best_state`) rồi tính lại calibration; cắt các case không có bằng chứng hoặc thay
+bằng case của GKT-Transition để "graph neighbors" thực sự là đầu vào của model.
