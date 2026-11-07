@@ -1,0 +1,2 @@
+graph,users,steps,precedence,precedence_gap,n_precedence_edges,stability_spearman,stability_changed_frac,forget_slope,pearson_dt_dm,consistency_strengthen,consistency_spread,locality,abs_delta_strengthen,abs_delta_learn_forget,abs_delta_retrieval
+train,150,12656,0.3650800463539208,-0.10142090580119584,10173,0.9861028345811427,0.5119666666666668,1.0079433011140092e-05,-0.00021125307229364566,1.0,1.0,1.0000000002684437,0.029364149044968386,0.00021525727076607382,0.020939964254697165

@@ -1,0 +1,4 @@
+model,legacy_auc,legacy_acc,legacy_loss,checkpoint_seed,ckpt_source
+DKT,0.7851,0.7329,0.5282,,/kaggle/working/Knowledge-Tracing/outputs/level1/DKT.pt
+GKT-Transition,0.7722,0.7253,0.5414,,/kaggle/working/Knowledge-Tracing/outputs/level1/GKT-Transition.pt
+GKT-Zero,0.762,0.712,0.5505,,/kaggle/working/Knowledge-Tracing/outputs/level1/GKT-Zero.pt
