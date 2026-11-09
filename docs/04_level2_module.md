@@ -164,7 +164,7 @@ Hàm [`calibration_table`](file:///root/Knowledge-Tracing/level2/calibration.py#
 Kaggle tự động ngắt phiên chạy và có thể xóa toàn bộ `/kaggle/working` sau 12 giờ hoặc khi hết hạn mức GPU 30 giờ/tuần. Module `archive.py` thiết lập cơ chế bảo vệ 3 lớp:
 
 1. **Luồng nền Đóng gói Định kỳ (`PeriodicPackager`)**:
-   [`PeriodicPackager`](file:///root/Knowledge-Tracing/level2/archive.py#L60) khởi chạy một luồng độc lập (`threading.Thread`), cứ sau mỗi `PACK_EVERY_MIN=20` phút tự động nén toàn bộ thư mục output thành tệp zip.
+   [`PeriodicPackager`](file:///root/Knowledge-Tracing/level2/archive.py#L205) khởi chạy một luồng độc lập (`threading.Thread`), cứ sau mỗi `PACK_EVERY_MIN=20` phút tự động nén toàn bộ thư mục output thành tệp zip.
 2. **Ghi Nguyên tử (Atomic Write)**:
    Quá trình nén zip luôn ghi ra tệp tạm `.zip.part`, sau khi kiểm tra tính toàn vẹn bằng `zipfile.testzip()` mới gọi `os.replace` sang tệp đích. Nếu phiên chạy bị kill cứng bất ngờ, tệp zip hoàn chỉnh của chu kỳ trước vẫn được bảo toàn 100%.
 3. **Quy tắc Lọc Dung lượng Thông minh**:

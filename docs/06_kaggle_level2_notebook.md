@@ -231,7 +231,7 @@ Cell này giải quyết khoảng trống **GAP F7**, kết hợp dữ liệu ma
 
 #### Cell 11-33: Sinh Tự động Báo cáo Markdown
 - Đọc lại toàn bộ số liệu trực tiếp từ các tệp CSV và JSON đã lưu trên đĩa (không dùng biến trong RAM).
-- Sinh tệp báo cáo tổng hợp [`report_summary.md`](file:///root/Knowledge-Tracing/report_summary.md) gồm:
+- Sinh tệp báo cáo tổng hợp [`report_summary.md`](file:///root/Knowledge-Tracing/results/level2_moderate/report_summary.md) gồm:
   - Bảng cấu hình đã khoá `run_config.json`.
   - Quy mô dữ liệu và số cạnh đồ thị của từng tập.
   - Các bảng kết quả chính AUC / ACC / Loss.

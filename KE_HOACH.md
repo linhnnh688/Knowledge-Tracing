@@ -243,7 +243,7 @@ Giả định nhóm ≤ 4 người, khoảng **8–10 tuần**.
 - [x] **Giải thích xAI cơ bản (Nhiệm vụ 3):** Trích xuất tự động 5 case đúng + 5 case sai kèm lịch sử tương tác và liên kết láng giềng đồ thị (`cases.md`).
 - [x] **Trực quan hóa & Xuất Artifacts:** Biểu đồ Learning Curves (Loss & AUC theo epoch), biểu đồ cột so sánh Test AUC/Acc, xuất `level1_metrics.csv` và checkpoint `.pt`.
 
-**Cột mốc hoàn thành:** Notebook [kaggle_level1.ipynb](file:///d:/workspace/Knowledge-Tracing/kaggle_level1.ipynb) và [kaggle_gkt.ipynb](file:///d:/workspace/Knowledge-Tracing/kaggle_gkt.ipynb) đã chạy trơn tru, xuất toàn bộ kết quả Cấp độ 1.
+**Cột mốc hoàn thành:** Notebook [kaggle_level1.ipynb](file:///root/Knowledge-Tracing/archive/kaggle_level1.ipynb) và [kaggle_gkt.ipynb](file:///root/Knowledge-Tracing/archive/kaggle_gkt.ipynb) đã chạy trơn tru, xuất toàn bộ kết quả Cấp độ 1.
 
 - [x] **Notebook báo cáo + resume + đánh giá lại:** `kaggle_level1_full.ipynb` (các cấu hình
       trong `TRAIN_MODELS` × 5 seed) checkpoint cuối mỗi epoch, ngân sách 9 giờ, tự đóng
