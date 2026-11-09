@@ -1,7 +1,7 @@
 Learner user_id=86709 | 6 steps
-  t=  1  skill=82:Addition and Subtraction Fractions  p=0.745  true=0  pred=1  [MISS]
-  t=  2  skill=82:Addition and Subtraction Fractions  p=0.696  true=1  pred=1  [OK]
-  t=  3  skill=82:Addition and Subtraction Fractions  p=0.794  true=1  pred=1  [OK]
-  t=  4  skill=82:Addition and Subtraction Fractions  p=0.835  true=1  pred=1  [OK]
-  t=  5  skill=82:Addition and Subtraction Fractions  p=0.860  true=1  pred=1  [OK]
-  t=  6  skill=82:Addition and Subtraction Fractions  p=0.871  true=1  pred=1  [OK]
+  t=  1  skill=82:Addition and Subtraction Fractions  p=0.630  true=0  pred=1  [MISS]
+  t=  2  skill=82:Addition and Subtraction Fractions  p=0.559  true=1  pred=1  [OK]
+  t=  3  skill=82:Addition and Subtraction Fractions  p=0.721  true=1  pred=1  [OK]
+  t=  4  skill=82:Addition and Subtraction Fractions  p=0.805  true=1  pred=1  [OK]
+  t=  5  skill=82:Addition and Subtraction Fractions  p=0.845  true=1  pred=1  [OK]
+  t=  6  skill=82:Addition and Subtraction Fractions  p=0.866  true=1  pred=1  [OK]

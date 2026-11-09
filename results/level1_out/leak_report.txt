@@ -1,7 +1,7 @@
 BÁO CÁO CHỐNG RÒ RỈ DỮ LIỆU — CẤP ĐỘ 1
-Thời điểm: 2026-11-07T08:21:00Z
+Thời điểm: 2026-11-09T05:00:06Z
 Dữ liệu: skill_builder_data.csv | sha256=f4b8791ae5968b884b77ab3b08adec48130503ec57f3113158c9a5af88af3374
-Git commit: 2e8110a4c006304fba44b595a57e0a078dc3b718
+Git commit: 639c908478ca78a4c558a0b6696e679c46637ebe
 
 1) Chia tập theo người học (seed=42, 0.6/0.2/0.2)
    train/val/test = 2330/776/778 người học

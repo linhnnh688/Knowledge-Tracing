@@ -2,9 +2,10 @@
 
 **Đồ án Project 02 · Cấp độ 1 và Cấp độ 2**
 
-- Ngày tổng hợp: 07/11/2026
-- Dữ liệu báo cáo: `results/level1_out/` (Cấp 1) và `results/level2_moderate/` (Cấp 2)
-- Mã nguồn: commit `2e8110a4` (lần chạy Cấp 1), commit `154d4e4` (lần chạy Cấp 2)
+- Ngày tổng hợp: 09/11/2026 (Cấp 1); 07/11/2026 (Cấp 2)
+- Dữ liệu báo cáo: `results/level1_out/` (Cấp 1, artifact 2026-11-09) và
+  `results/level2_moderate/` (Cấp 2, artifact 2026-11-07)
+- Mã nguồn: commit `639c908` (lần chạy Cấp 1), commit `154d4e4` (lần chạy Cấp 2)
 - Môi trường: Kaggle, Tesla T4, torch 2.11.0+cu130, numpy 2.1.3, pandas 2.3.3,
   scipy 1.16.3, scikit-learn 1.6.1, matplotlib 3.10.0
 
@@ -23,21 +24,37 @@ trạng thái nắm vững theo từng khái niệm và giải thích dự đoá
 có kiểm soát của Junyi Academy (3.000 người, 251.598 lượt, 200 khái niệm). Cả hai chia theo người
 học, seed 42, tỉ lệ 0,6/0,2/0,2; đồ thị chỉ xây từ tập train.
 
-**Kết quả chính (seed 42, cùng split):**
+**Kết quả chính — Cấp 1 (ASSISTments 2009, 5 seed 42/123/456/789/1011):**
 
-| Mô hình | Cấp | ASSISTments 2009 AUC | Junyi (tập con) AUC |
+| Mô hình | Đồ thị | AUC mean ± std | AUC seed 42 |
 |---|---|---:|---:|
-| DKT (không đồ thị) | 1 & 2 | 0,7866 (C1) / 0,7859 (C2) | 0,7501 |
-| GKT-MHA (đồ thị động) | 1 | 0,7782 | — |
-| GKT-Transition (đồ thị tĩnh) | 2 (đường nền) | 0,7536 | 0,7202 |
-| GKT-Zero (không cạnh) | 2 (đường nền) | 0,7644 | 0,7225 |
-| **GRKT-train (KDD 2024)** | **2** | **0,7972** | **0,7896** |
-| GRKT-zero (ablation) | 2 | 0,7840 | — |
+| DKT | — | **0,7862 ± 0,0006** | **0,7866** |
+| GKT-MHA | động (attention) | 0,7668 ± 0,0095 | 0,7782 |
+| GKT-Transition | tĩnh | 0,7609 ± 0,0096 | 0,7427 |
+| GKT-Shuffled | tĩnh (xáo cạnh) | 0,7579 ± 0,0039 | 0,7542 |
+| GKT-Identity | tĩnh (ma trận đơn vị) | 0,7578 ± 0,0056 | 0,7549 |
+| GKT-Zero | không cạnh | 0,7576 ± 0,0055 | 0,7549 |
+| GKT-ShuffledRow | tĩnh (xáo theo hàng) | 0,7576 ± 0,0127 | 0,7651 |
 
-- **Cấp 1:** DKT tốt hơn GKT-MHA có ý nghĩa thống kê (ΔAUC = +0,0194; CI95 [+0,0065, +0,0324];
-  p = 0,014; 5 seed). Ablation đồ thị của lần chạy mới **không có**; lần chạy cũ cho thấy
-  Transition không hơn Zero và Shuffled ≈ Transition → **chưa chứng minh được vai trò cấu trúc
-  đồ thị** ở Cấp 1.
+**Kết quả chính — Cấp 2 (seed 42):**
+
+| Mô hình | ASSISTments 2009 AUC | Junyi (tập con) AUC |
+|---|---:|---:|
+| **GRKT-train (KDD 2024)** | **0,7972** | **0,7896** |
+| DKT (train lại trong harness C2) | 0,7859 | 0,7501 |
+| GRKT-zero (ablation) | 0,7840 | — |
+| GKT-Zero (train lại, C2) | 0,7644 | 0,7225 |
+| GKT-Transition (train lại, C2) | 0,7536 | 0,7202 |
+
+- **Cấp 1 — dự đoán:** DKT thắng **mọi** biến thể GKT, chênh +0,0194 đến +0,0286 AUC, cả 6 so
+  sánh đều có ý nghĩa (p = 0,0002–0,014; 5 seed ghép cặp). Thời gian: DKT 31–37 s/seed, GKT tĩnh
+  1.379–3.789 s, MHA 2.009–4.345 s.
+- **Cấp 1 — ablation lúc train:** không biến thể đồ thị nào khác Zero có ý nghĩa
+  (Transition − Zero = +0,0033, p = 0,546; Transition − Shuffled = +0,0030, p = 0,495;
+  ShuffledRow − Zero ≈ 0, p = 0,998) → **chưa chứng minh được vai trò cấu trúc của đồ thị**.
+- **Cấp 1 — ablation lúc suy luận:** đặt `A := 0` làm Transition −0,0109 và ShuffledRow −0,0109
+  AUC, nhưng Shuffled chỉ −0,0031 và MHA −0,0029; Identity/Zero đúng bằng 0. Mô hình **có đọc**
+  ma trận kề, nhưng độ lớn này đo mức phụ thuộc vào `A`, không đo chất lượng `A`.
 - **Cấp 2:** GRKT vượt mọi đường nền trên cả hai tập (+0,0113 AUC so với DKT trên ASSISTments;
   +0,0395 trên Junyi). Bỏ đồ thị làm giảm 0,0132 AUC trên ASSISTments (một seed). GRKT đạt
   0,7983 ± 0,0009 AUC qua 3 seed trên ASSISTments.
@@ -48,7 +65,8 @@ học, seed 42, tỉ lệ 0,6/0,2/0,2; đồ thị chỉ xây từ tập train.
 
 **Ba điều phải nói ngay khi bảo vệ:** (1) Junyi chỉ là tập con 4,1 % người học, không đại diện
 toàn bộ Junyi; (2) bằng chứng lợi ích đồ thị ở Cấp 2 chỉ từ một seed, chưa phải kết luận nhân
-quả; (3) Cấp 1 hiện không có ablation đồ thị trong lần chạy mới và mô hình đồ thị thua DKT.
+quả; (3) Cấp 1 đã có đủ ablation nhưng kết quả **phủ định** — đồ thị không giúp mô hình tốt hơn,
+và bằng chứng case study phải sinh lại trước khi dùng.
 
 ---
 
@@ -72,15 +90,18 @@ lý của quỹ đạo, trực quan hoá và một phân tích nâng cao).
 
 ### 1.3 Hai lần chạy Cấp 1 — nguồn số liệu
 
-Repo hiện có **hai bộ artifact Cấp 1** từ hai lần chạy khác nhau:
+Repo có **hai bộ artifact Cấp 1** từ hai lần chạy khác nhau:
 
-1. `results/level1_out/` — lần chạy mới nhất: DKT + **GKT-MHA**, 5 seed, có dashboard, case
-   evidence, calibration. **Đây là nguồn chính của báo cáo.**
-2. `outputs/level1/` — lần chạy cũ hơn: DKT + GKT tĩnh (Transition, Dense, Identity, Zero,
-   Shuffled), 3 seed, **không có MHA**. Chỉ dùng cho bảng ablation đồ thị và phải ghi rõ nguồn.
+1. `results/level1_out/` — lần chạy **2026-11-09** (notebook
+   `2026-11-08 level1-full+ablation-extend`, commit `639c908`): **7 mô hình × 5 seed**, đủ
+   ablation lúc train và lúc suy luận, dashboard, calibration. **Đây là nguồn chính và duy nhất
+   của báo cáo.**
+2. `outputs/level1/` — lần chạy cũ (3 seed, 5 biến thể GKT tĩnh, không có MHA). Chỉ còn giá trị
+   lịch sử; **không dùng số từ đây** trong báo cáo.
 
 Hai bộ không được trộn vào cùng một bảng. Số DKT giữa hai lần chạy gần như trùng nhau
-(0,7866 so với 0,7860 trung bình 3 seed), nhưng mô hình GKT là hai kiến trúc khác nhau.
+(0,7866 so với 0,7860 trung bình 3 seed), nhưng bộ mô hình GKT khác nhau. Lần chạy mới đã thay
+thế hoàn toàn nhu cầu dùng `outputs/level1/` cho ablation.
 
 ---
 
@@ -92,7 +113,7 @@ Hai bộ không được trộn vào cùng một bảng. Số DKT giữa hai l�
 |---|---|
 | Tệp | `GKT/data/skill_builder_data.csv` |
 | SHA-256 | `f4b8791ae5968b884b77ab3b08adec48130503ec57f3113158c9a5af88af3374` |
-| Kích thước | 78,85 MB · 525.534 dòng |
+| Kích thước | 79,35 MB · 525.534 dòng |
 | Người học thô | 4.217 |
 | Khái niệm | 123 |
 | Câu hỏi | 26.688 |
@@ -193,19 +214,28 @@ GKT duy trì trạng thái ẩn theo từng khái niệm và có hai pha:
   hoặc Zero), kèm embedding câu hỏi.
 - **Update:** cập nhật trạng thái của khái niệm vừa làm bằng GRU.
 
-Hai biến thể được dùng trong báo cáo:
+Các biến thể được dùng trong báo cáo (đều là một khái niệm/câu hỏi cho ASSISTments 2009):
 
-- `GKT-Transition` / `GKT-Zero` (Cấp 2): ma trận kề tĩnh, xây từ train. `Zero` là ablation bỏ
-  toàn bộ cạnh; `Transition` là đồ thị chuyển tiếp khái niệm.
-- `GKT-MHA` (Cấp 1): thay ma trận kề tĩnh bằng **attention đa đầu** trên embedding khái niệm
-  (`GKT/models.py:253-292`). Mô hình **không** có `A` tĩnh, nên biểu thức `A := 0` không áp dụng
-  trực tiếp. Đây là lý do kỹ thuật khiến cell ablation cũ bỏ qua MHA (điều kiện
-  `isinstance(model.graph, nn.Parameter)`), làm bảng ablation rỗng.
+- `GKT-Transition`: ma trận kề đếm chuyển tiếp khái niệm, chỉ xây từ train, chuẩn hoá hàng
+  (884 cạnh, mật độ 0,0589).
+- `GKT-Zero`: bỏ toàn bộ cạnh (`A = 0`) — ablation "không đồ thị".
+- `GKT-Identity`: ma trận đơn vị (123 cạnh, toàn đường chéo) — ablation theo yêu cầu "ma trận
+  đơn vị". Vì `_agg_neighbors` ghi đè vị trí nút bằng `self_features`, cạnh tự nối không thêm
+  thông tin, nên Identity trùng Zero về mặt cơ chế.
+- `GKT-Shuffled`: giữ nguyên số cạnh nhưng xáo đích toàn cục (814 cạnh khác 0).
+- `GKT-ShuffledRow`: xáo đích trong từng hàng, giữ out-degree của mỗi khái niệm (884 cạnh) —
+  kiểm tra liệu "đúng hàng, sai đích" có quan trọng hơn "đúng cấu trúc".
+- `GKT-MHA`: thay ma trận kề tĩnh bằng **attention đa đầu** trên embedding khái niệm
+  (`GKT/models.py:253-292`). Mô hình **không** có `A` tĩnh.
 
-  Nay `level1/explain.py` có `graph_off(model)`: đặt `A := 0` nếu `graph` là `nn.Parameter`, còn
-  với MHA thì hook `graph_model` trả đầu ra bằng 0 — tức bỏ toàn bộ cạnh mà attention suy ra và
-  chỉ còn self-update. Đây là **ablation lúc suy luận** trên checkpoint đã train, khác với ablation
-  lúc train (`GKT-Transition` vs `GKT-Zero`) mà §5 yêu cầu; hai loại không được thay thế cho nhau.
+Ablation có **hai loại, không thay thế nhau**:
+
+1. **Lúc train** (`Transition` vs `Zero`/`Identity`/`Shuffled`/`ShuffledRow`): huấn luyện lại
+   từ đầu với từng ma trận kề. Đây là ablation trả lời trực tiếp yêu cầu §5/§7.
+2. **Lúc suy luận** (`level1/explain.py::graph_off`): trên checkpoint đã train, đặt `A := 0` nếu
+   `graph` là `nn.Parameter`; với MHA thì hook `graph_model` trả đầu ra bằng 0 — tức bỏ toàn bộ
+   cạnh mà attention suy ra, chỉ còn self-update. Loại này đo "mô hình phụ thuộc bao nhiêu vào
+   adjacency đang có", không đo "adjacency có đúng không".
 
 Cần phân biệt rõ: **GKT-MHA của Cấp 1 không phải GKT-Transition/Zero của Cấp 2.** Chúng là hai
 kiến trúc khác nhau, train ở hai lần chạy khác nhau; không được gọi chung là "baseline GKT".
@@ -213,8 +243,10 @@ kiến trúc khác nhau, train ở hai lần chạy khác nhau; không được 
 `:537-538`), trong khi GRKT dùng `d_hidden = 128` — một bất đối xứng dung lượng cần ghi nhớ khi
 so sánh. Cấp 2 **train lại** đường nền trong harness riêng (`use_committed_ckpts=false` trong
 `run_config.json`; `baselines/*.json` ghi `epochs: 20`), không nạp checkpoint Cấp 1. Vì vậy DKT
-Cấp 2 = 0,7859 khác DKT Cấp 1 = 0,7866 dù cùng split và cùng cấu hình — đây là khác biệt lần
-train, không phải khác dữ liệu.
+Cấp 2 = 0,7859 khác DKT Cấp 1 = 0,7866 (seed 42) / 0,7862 ± 0,0006 (5 seed) dù cùng split và
+cùng cấu hình — đây là khác biệt lần train, không phải khác dữ liệu. Tương tự, GKT-Transition
+Cấp 2 = 0,7536 và GKT-Zero = 0,7644 (1 seed, train lại) khác Cấp 1 = 0,7609 ± 0,0096 và
+0,7576 ± 0,0055 (5 seed).
 
 ### 3.3 GRKT — phương pháp graph-aware 2024
 
@@ -245,8 +277,8 @@ Junyi có 17.866 và 10.173.
   diagram. Vì nhãn dịch một bước, mỗi người học mất một dự đoán ở bước đầu: ASSISTments còn
   47.358 dự đoán từ 48.136 tương tác test (chênh đúng 778 = số người test), Junyi còn 48.844 từ
   49.444 (chênh đúng 600).
-- **Độ ổn định:** trung bình ± độ lệch chuẩn qua seed. Cấp 1 có 5 seed cho cả hai mô hình và
-  kiểm định ghép cặp theo seed (paired t-test, bootstrap CI, Cohen's dz). Cấp 2 có 3 seed cho
+- **Độ ổn định:** trung bình ± độ lệch chuẩn qua seed. Cấp 1 có 5 seed cho **7 mô hình** (35 run)
+  và kiểm định ghép cặp theo seed (paired t-test, bootstrap CI, Cohen's dz). Cấp 2 có 3 seed cho
   GRKT trên ASSISTments, nhưng baseline chỉ 1 seed nên **không** có kiểm định ghép cặp
   GRKT–baseline.
 - **Quỹ đạo:** 6 tiêu chí "có thể sai thật" — `precedence`, `precedence_gap`,
@@ -264,9 +296,20 @@ Junyi có 17.866 và 10.173.
 |---|---|---:|---:|---:|---:|---:|---:|
 | DKT | — | **0,7866** | **0,7340** | **0,5272** | 0,7922 | 39.899 | 35,1 s |
 | GKT-MHA | động (MHA) | 0,7782 | 0,7306 | 0,5374 | 0,7836 | 38.236 | 4.072,8 s |
+| GKT-ShuffledRow | tĩnh (xáo theo hàng) | 0,7651 | 0,7194 | 0,5462 | 0,7756 | 34.140 | 3.789,0 s |
+| GKT-Identity | tĩnh (đơn vị) | 0,7549 | 0,7082 | 0,5570 | 0,7658 | 34.140 | 2.755,5 s |
+| GKT-Zero | không cạnh | 0,7549 | 0,7082 | 0,5570 | 0,7658 | 34.140 | 2.912,4 s |
+| GKT-Shuffled | tĩnh (xáo cạnh) | 0,7542 | 0,6980 | 0,5675 | 0,7671 | 34.140 | 3.409,4 s |
+| GKT-Transition | tĩnh | 0,7427 | 0,7012 | 0,5740 | 0,7529 | 34.140 | 1.379,0 s |
 
-GKT-MHA chậm hơn DKT khoảng **116 lần** nhưng vẫn thấp hơn 0,0084 AUC ở seed 42. Đây là dấu hiệu
-đầu tiên cho thấy đồ thị không mang lại lợi ích trên dữ liệu một khái niệm/câu hỏi.
+Ở seed 42, DKT hơn mô hình GKT mạnh nhất (MHA) **0,0084 AUC** và hơn GKT-Transition
+**0,0439 AUC**. GKT-Transition là mô hình tệ nhất bảng; ShuffledRow (cùng 884 cạnh nhưng xáo
+đích trong từng hàng) lại tốt nhất trong nhóm tĩnh. Chênh lệch giữa các biến thể tĩnh lớn hơn
+chênh lệch với DKT, cho thấy phương sai giữa các seed quan trọng — phải đọc bảng 5 seed bên dưới.
+
+Ghi chú: cột NLL ở bảng chính là **trung bình loss theo batch** (`level1/pipeline.py::_epoch_loop`),
+không phải BCE toàn cục. Vì vậy NLL ở đây lệch ~0,002 so với `calibration.csv` và
+`graph_inference_ablation.csv` (xem §4.5).
 
 ### 4.2 Đa seed và kiểm định ghép cặp
 
@@ -274,143 +317,187 @@ GKT-MHA chậm hơn DKT khoảng **116 lần** nhưng vẫn thấp hơn 0,0084 A
 |---|---:|---|---|---|
 | DKT | 5 | **0,7862 ± 0,0006** | 0,7343 ± 0,0013 | **0,5273 ± 0,0005** |
 | GKT-MHA | 5 | 0,7668 ± 0,0095 | 0,7213 ± 0,0087 | 0,5505 ± 0,0088 |
+| GKT-Transition | 5 | 0,7609 ± 0,0096 | 0,7127 ± 0,0077 | 0,5567 ± 0,0105 |
+| GKT-Shuffled | 5 | 0,7579 ± 0,0039 | 0,7094 ± 0,0064 | 0,5594 ± 0,0063 |
+| GKT-Identity | 5 | 0,7578 ± 0,0056 | 0,7099 ± 0,0077 | 0,5546 ± 0,0068 |
+| GKT-Zero | 5 | 0,7576 ± 0,0055 | 0,7098 ± 0,0077 | 0,5562 ± 0,0073 |
+| GKT-ShuffledRow | 5 | 0,7576 ± 0,0127 | 0,7113 ± 0,0121 | 0,5555 ± 0,0119 |
 
-| So sánh | Chỉ số | Chênh lệch | CI95 | t | p | Cohen's dz |
-|---|---|---|---:|---:|---:|---:|
-| DKT − GKT-MHA | AUC | +0,01943 | [+0,00649, +0,03237] | 4,169 | 0,0140 | 1,864 |
-| DKT − GKT-MHA | NLL | −0,02319 | [−0,03531, −0,01107] | −5,312 | 0,0060 | −2,376 |
+| So sánh (AUC) | Chênh lệch | CI95 | t | p | Cohen's dz |
+|---|---:|---|---:|---:|---:|
+| DKT − Transition | +0,02536 | [+0,01158, +0,03914] | 5,110 | 0,0069 | 2,285 |
+| DKT − Identity | +0,02838 | [+0,02034, +0,03641] | 9,807 | 0,0006 | 4,386 |
+| DKT − Zero | +0,02862 | [+0,02084, +0,03640] | 10,216 | 0,0005 | 4,569 |
+| DKT − Shuffled | +0,02832 | [+0,02267, +0,03397] | 13,913 | 0,0002 | 6,222 |
+| DKT − MHA | +0,01943 | [+0,00649, +0,03237] | 4,169 | 0,0140 | 1,864 |
+| DKT − ShuffledRow | +0,02863 | [+0,01054, +0,04672] | 4,395 | 0,0117 | 1,965 |
 
-Kết luận thống kê: với 5 seed, DKT tốt hơn GKT-MHA **có ý nghĩa** ở cả AUC và NLL; cỡ hiệu ứng
-lớn (|dz| > 1,8). Phương sai của GKT-MHA (std 0,0095) lớn gấp ~17 lần DKT (0,0006), cho thấy quá
-trình train kém ổn định hơn. Seed 789 được resume và cho AUC thấp nhất (0,7506), góp phần kéo
-std lên.
+Kết luận thống kê: với 5 seed, DKT tốt hơn **mọi** biến thể GKT ở AUC (p = 0,0002–0,014; cỡ hiệu
+ứng |dz| = 1,86–6,22) và ở NLL (p ≤ 0,01). Khoảng cách nhỏ nhất là với MHA (+0,0194), lớn nhất
+là với ShuffledRow/Zero (+0,0286). Phương sai của các GKT (std 0,004–0,013) lớn gấp 7–23 lần DKT
+(0,0006), nên từng seed có thể dao động mạnh: Transition seed 42 = 0,7427 nhưng seed 456 =
+0,7695; ShuffledRow seed 1011 = 0,7333. Báo cáo chỉ dùng trung bình 5 seed cho kết luận, không
+chọn seed có lợi.
 
-### 4.3 Ablation đồ thị — trạng thái và kết quả cũ
+Kiểm định giữa các biến thể đồ thị — **không so sánh nào có ý nghĩa**:
 
-Trong `results/level1_out/`:
-
-- `tables/graph_inference_ablation.csv` **chỉ có header**, không có dòng dữ liệu.
-- `figures/graph_inference_ablation.png` không tồn tại.
-- Notebook chỉ train `DKT` và `GKT-MHA`; MHA trả `graph=None` nên không có ma trận để đặt bằng 0.
-
-Có **hai nguyên nhân độc lập** (đã kiểm tra trong mã, không suy đoán):
-
-1. *Cấu hình:* `TRAIN_MODELS` chỉ có `DKT` và `GKT-MHA`, nên không có mô hình đồ thị tĩnh nào để
-   ablation train-time.
-2. *Lỗi điều kiện của cell:* cell chỉ chọn mô hình khi `isinstance(model.graph, nn.Parameter)`;
-   với MHA, `GKT.__init__` gán `self.graph = None` và adjacency nằm trong `graph_model`
-   (`GKT/models.py:57-69`, `:258-274`), nên điều kiện luôn sai và bảng rỗng kể cả khi MHA học tốt.
-
-**Đã sửa trong mã (chưa chạy lại):** `graph_off(model)` trong `level1/explain.py` xử lý cả hai
-trường hợp như mô tả ở §3.2; cell ablation và `annotate_evidence` dùng chung helper này, thêm cột
-`graph_kind` (`static A` / `dynamic MHA`). Một lần **EVAL_ONLY** (không train) là đủ sinh bảng
-cho seed 42. Đây là **ablation lúc suy luận**; yêu cầu §5 là ablation lúc train và vẫn cần một lần
-chạy với `GKT-Transition` + `GKT-Zero`.
-
-Vì vậy, **yêu cầu ablation của Cấp 1 chưa đạt trong artifact hiện có**. Tuy nhiên repo còn lần chạy
-cũ `outputs/level1/` có đủ 5 biến thể GKT tĩnh, 3 seed, và split trùng khít về số người/tương tác
-(lưu ý: lần chạy này không còn `run_config.json` nên không xác nhận được danh sách seed từ đĩa):
-
-| Mô hình | AUC seed 42 | AUC mean ± std (3 seed) |
+| So sánh | ΔAUC | p |
 |---|---:|---:|
-| DKT | 0,7866 | 0,7860 ± 0,0006 |
-| GKT-Transition | 0,7443 | 0,7640 ± 0,0066 |
-| GKT-Dense | 0,7486 | — |
-| GKT-Identity | 0,7549 | 0,7551 ± 0,0055 |
-| GKT-Zero | 0,7549 | 0,7551 ± 0,0055 |
-| GKT-Shuffled | 0,7354 | 0,7656 ± 0,0008 |
+| Transition − Zero | +0,00326 | 0,5462 |
+| Transition − Identity | +0,00302 | 0,5705 |
+| Transition − Shuffled | +0,00296 | 0,4952 |
+| Transition − ShuffledRow | +0,00328 | 0,7403 |
+| Shuffled − Zero | +0,00030 | 0,8752 |
+| ShuffledRow − Zero | −0,00001 | 0,9984 |
+| Identity − Zero | +0,00024 | 0,3050 |
 
-`Identity` và `Zero` trùng nhau đến từng chữ số (0,7549 và 0,7551 ± 0,0055): trong công thức cập
-nhật của GKT, `m_next` tại chính vị trí nút được ghi đè bằng `self_features`
-(`GKT/models.py`, nhánh `MHA`/VAE), nên cạnh tự nối của ma trận đơn vị không thêm thông tin.
+Đây là bằng chứng trực tiếp cho câu "đồ thị có giúp gì không": **không**. Transition không hơn
+Zero, xáo cạnh không làm giảm hiệu năng, và ma trận đơn vị trùng Zero (xem §4.3).
 
-Đọc bảng này một cách trung thực:
+### 4.3 Ablation lúc train — đã đủ, kết quả phủ định
 
-- Ở seed 42, Transition (0,7443) **thấp hơn** Zero (0,7549).
-- Ở trung bình 3 seed, Transition − Zero = +0,0089 (SE xấp xỉ từ std ≈ 0,0050, t ≈ 1,8; không
-  còn dữ liệu từng seed để làm kiểm định ghép cặp) → **không có ý nghĩa**.
-- Shuffled (0,7656 ± 0,0008) **cao hơn** Transition (0,7640 ± 0,0066) → xáo trộn cạnh không làm
-  giảm hiệu năng; cấu trúc cạnh không tạo khác biệt.
+`results/level1_out/` train **5 biến thể tĩnh** (`Transition`, `Identity`, `Zero`, `Shuffled`,
+`ShuffledRow`) × 5 seed, cộng MHA. Bảng thống kê đồ thị:
 
-**Kết luận Cấp 1 về vai trò đồ thị:** chưa chứng minh được. Đây là kết quả phủ định, không phải
-lỗi cần che. Nguyên nhân hợp lý: ASSISTments 2009 có một khái niệm/câu hỏi và đồ thị chuyển tiếp
-rất thưa (884 cạnh), nên GKT gần như quy về cơ chế self-update. Bằng chứng cho vai trò đồ thị
-được chuyển sang Cấp 2, nơi GRKT có hai loại quan hệ và ablation `train` vs `zero` trong cùng
-một mô hình.
+| Đồ thị | Số cạnh khác 0 | Mật độ | Đường chéo khác 0 | Ghi chú |
+|---|---:|---:|---:|---|
+| Transition | 884 | 0,0589 | 0 | đồ thị chuyển tiếp từ train |
+| ShuffledRow | 884 | 0,0589 | 0 | xáo đích trong từng hàng, giữ out-degree |
+| Shuffled | 814 | 0,0542 | 0 | xáo đích toàn cục |
+| Identity | 123 | 0,0082 | 123 | ma trận đơn vị |
+| Zero | 0 | 0 | 0 | không cạnh |
+| Dense | 15.006 | 1,0 | 0 | không train trong lần này |
 
-### 4.4 Calibration
+Quy về AUC 5 seed (bảng đầy đủ ở §4.2):
 
-| Mô hình | n | AUC | NLL | Brier | ECE | ACE | mean_pred | observed |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| DKT | 47.358 | 0,7866 | 0,5249 | 0,1765 | **0,0154** | 0,0185 | 0,6348 | 0,6263 |
-| GKT-MHA | 47.358 | **0,7454** | 0,5645 | 0,1927 | 0,0442 | 0,0323 | 0,6705 | 0,6263 |
+| So sánh | ΔAUC | p | Kết luận |
+|---|---:|---:|---|
+| Transition − Zero | +0,00326 | 0,5462 | không ý nghĩa |
+| Transition − Identity | +0,00302 | 0,5705 | không ý nghĩa |
+| Transition − Shuffled | +0,00296 | 0,4952 | không ý nghĩa |
+| Transition − ShuffledRow | +0,00328 | 0,7403 | không ý nghĩa |
+| Shuffled − Zero | +0,00030 | 0,8752 | không ý nghĩa |
+| ShuffledRow − Zero | −0,00001 | 0,9984 | không ý nghĩa |
+| Identity − Zero | +0,00024 | 0,3050 | không ý nghĩa |
 
-**Cảnh báo số liệu:** AUC của GKT-MHA trong bảng calibration (0,7454) **không khớp** bảng chính
-(0,7782), dù cùng n = 47.358 và cùng tỉ lệ nhãn đúng (0,6263). Các dữ kiện kiểm chứng được:
+Đọc trung thực:
 
-- Bảng chính lấy `test_auc` từ sổ `runs_progress.json` ghi tại thời điểm train; bảng calibration
-  chạy lại trong phiên EVAL_ONLY bằng `load_state_dict` từ `checkpoints/GKT-MHA.pt`.
-- Seed 42 có best val AUC 0,7836 tại **epoch 18**, còn val AUC **epoch 20** chỉ 0,7622 — mức 0,7454
-  khớp với khả năng checkpoint chứa trọng số cuối kỳ hơn là best-val. Với DKT, best val rơi đúng
-  epoch cuối nên hai bảng khớp tuyệt đối (0,7866233), phù hợp với giả thuyết "checkpoint ≠ best-val".
-- Tuy vậy, mã ở cả ba commit notebook đều *dự định* lưu `best_state` (`train_one_resumable` nạp
-  lại best ở cuối run; `_materialize_final` dùng `payload["best_state"]`), và file `.pt` chỉ là
-  `state_dict` trần, không có metadata `epoch`/`best_state`. Vì vậy **không thể xác nhận nguyên
-  nhân từ artifact**.
+- **Không có biến thể đồ thị nào hơn "không cạnh" có ý nghĩa.** Transition (đồ thị đúng) không
+  hơn Zero; xáo cạnh cũng không làm giảm hiệu năng.
+- **Identity ≡ Zero** (seed 42 trùng đến ~1e-8): `_agg_neighbors` ghi đè vị trí nút bằng
+  `self_features` (`GKT/models.py`), nên cạnh tự nối của ma trận đơn vị không thêm thông tin.
+  Ở các seed có resume, cặp này lệch rất nhỏ (seed 456: 0,76195 vs 0,76090; seed 1011: 0,75941
+  vs 0,75925) do số học lần resume, không phải kiến trúc.
+- **ShuffledRow ≈ Transition** (+0,0033, p = 0,740) dù đích của mọi cạnh đã bị xáo trong từng
+  hàng: cấu trúc *đích* của cạnh chuyển tiếp không tạo khác biệt đo được.
 
-Báo cáo giữ nguyên số đo nhưng **không dùng** calibration GKT-MHA để kết luận. Muốn dùng phải chạy
-lại bước calibration trên checkpoint đã xác minh và ghi kèm epoch/val-AUC lúc lưu.
+**Kết luận Cấp 1 về vai trò cấu trúc đồ thị:** chưa chứng minh được, và đây là kết quả phủ định
+có kiểm định (5 seed, 7 so sánh ghép cặp), không phải "thiếu ablation". Nguyên nhân hợp lý:
+ASSISTments 2009 có một khái niệm/câu hỏi và đồ thị chuyển tiếp rất thưa (884 cạnh), nên GKT
+gần như quy về cơ chế self-update. Bằng chứng cho lợi ích đồ thị được chuyển sang Cấp 2, nơi
+GRKT có hai loại quan hệ và ablation `train` vs `zero` trong cùng một mô hình.
 
-Với DKT, calibration là hợp lệ và cho thấy mô hình hiệu chỉnh tốt (ECE 0,0154; Brier 0,1765;
-mean_pred 0,6348 so với tỉ lệ đúng thực 0,6263).
+### 4.4 Ablation lúc suy luận — mô hình có đọc `A`
 
-### 4.5 Case study 5 đúng + 5 sai
+Trên checkpoint seed 42, đặt `A := 0` (với MHA: hook `graph_model` trả 0) rồi đánh giá lại
+(`tables/graph_inference_ablation.csv`):
 
-Đủ số lượng: 10 case, mỗi bucket 5 **khái niệm khác nhau** (đúng: Area Triangle, Pythagorean
-Theorem, Multiplication and Division Integers, Subtraction Whole Numbers, Absolute Value; sai:
-Percent Of, Equation Solving Two or Fewer Steps, Exponents, Addition and Subtraction Integers,
-Addition and Subtraction Positive Decimals). Tuy nhiên chất lượng bằng chứng còn yếu:
+| Mô hình | Loại | AUC có đồ thị | AUC khi `A := 0` | ΔAUC | ΔNLL | mean·\|Δp\| | max·\|Δp\| |
+|---|---|---:|---:|---:|---:|---:|---:|
+| GKT-Transition | tĩnh | 0,7427 | 0,7317 | **−0,0109** | +0,0080 | 0,0259 | 0,4933 |
+| GKT-ShuffledRow | tĩnh | 0,7651 | 0,7542 | **−0,0109** | +0,0080 | 0,0248 | 0,6868 |
+| GKT-Shuffled | tĩnh | 0,7542 | 0,7511 | −0,0031 | +0,0019 | 0,0075 | 0,4913 |
+| GKT-MHA | động | 0,7454 | 0,7425 | −0,0029 | +0,0021 | 0,0026 | 0,1806 |
+| GKT-Identity | tĩnh | 0,7549 | 0,7549 | 0 | 0 | 0 | 0 |
+| GKT-Zero | tĩnh | 0,7549 | 0,7549 | 0 | 0 | 0 | 0 |
+
+Cách đọc đúng:
+
+- Mô hình **có khai thác** ma trận kề: bỏ `A` làm giảm AUC và tăng NLL ở 4/6 biến thể, với
+  Transition/ShuffledRow giảm ~0,011 AUC.
+- Nhưng **độ lớn gần như giống nhau giữa Transition và ShuffledRow** — hai đồ thị có cùng số cạnh
+  và cùng out-degree nhưng đích khác hoàn toàn. Vì vậy Δ này đo **mức phụ thuộc vào adjacency**,
+  không đo **chất lượng adjacency**. Kết hợp với §4.3: mô hình đọc `A`, nhưng `A` đúng không tốt
+  hơn `A` xáo hay `A = 0`.
+- Identity/Zero đúng bằng 0 là kiểm chứng cài đặt (không có cạnh để bỏ).
+- **Cảnh báo số liệu:** dòng MHA dùng checkpoint cho AUC 0,7454, không phải 0,7782 của bảng chính
+  (§4.5). Dòng này tự nhất quán trong nội bộ nhưng không phải trọng số của bảng §4.1.
+
+### 4.5 Calibration
+
+`tables/calibration.csv`, n = 47.358, tỉ lệ đúng thực 0,6263:
+
+| Mô hình | AUC | NLL (toàn cục) | Brier | ECE | ACE | mean_pred |
+|---|---:|---:|---:|---:|---:|---:|
+| DKT | 0,7866 | 0,5249 | 0,1765 | 0,0154 | 0,0185 | 0,6348 |
+| GKT-ShuffledRow | 0,7651 | 0,5440 | **0,1841** | **0,0105** | 0,0117 | 0,6189 |
+| GKT-Identity / Zero | 0,7549 | 0,5546 | 0,1886 | 0,0223 | 0,0274 | 0,6103 |
+| GKT-Shuffled | 0,7542 | 0,5652 | 0,1933 | 0,0706 | 0,0636 | 0,5559 |
+| GKT-Transition | 0,7427 | 0,5725 | 0,1951 | 0,0507 | 0,0592 | 0,6758 |
+| GKT-MHA | **0,7454** | 0,5645 | 0,1927 | 0,0442 | 0,0323 | 0,6705 |
+
+- **Hai mô hình hiệu chỉnh tốt nhất:** DKT (ECE 0,0154) và ShuffledRow (ECE 0,0105). DKT cũng có
+  Brier tốt nhất (0,1765) và mean_pred 0,6348 sát tỉ lệ đúng thực 0,6263.
+- **Shuffled và Transition hiệu chỉnh kém:** ECE 0,0706 và 0,0507; mean_pred 0,5559 và 0,6758
+  lệch khỏi 0,6263 theo hai hướng ngược nhau.
+- **Cảnh báo MHA:** AUC ở bảng calibration là **0,7454**, không khớp 0,7782 của bảng chính, dù
+  cùng n và cùng tỉ lệ nhãn. Sáu mô hình còn lại khớp tuyệt đối giữa hai bảng, nên đây là vấn đề
+  riêng của checkpoint MHA. Dữ kiện: best val AUC của MHA rơi ở epoch 18 (0,7836), còn epoch 20
+  chỉ 0,7622; file `.pt` lại chỉ là `state_dict` trần, không có `epoch`/`best_state`, nên không
+  xác nhận được nguyên nhân từ artifact. Báo cáo **không dùng** calibration MHA để kết luận.
+- **Hai định nghĩa NLL:** cột NLL ở §4.1 là trung bình loss theo batch; bảng này là BCE toàn cục
+  trên toàn bộ 47.358 dự đoán. Chênh lệch ~0,002 và không đổi thứ hạng (ví dụ DKT 0,52719 so với
+  0,52494). Khi trích dẫn phải ghi rõ đang dùng định nghĩa nào.
+
+### 4.6 Case study 5 đúng + 5 sai — đủ số lượng, bằng chứng chưa dùng được
+
+10 case, mỗi bucket 5 **khái niệm khác nhau**, tất cả do **GKT-Transition** dự đoán nên danh sách
+"graph neighbors" đúng là đầu vào của mô hình:
+
+- Đúng: Venn Diagram; Multiplication and Division Positive Decimals; Table; Conversion of Fraction
+  Decimals Percents; Probability of Two Distinct Events.
+- Sai: Venn Diagram; Conversion of Fraction Decimals Percents; Percent Of; Addition and Subtraction
+  Integers; Median.
+
+Tuy nhiên **toàn bộ phần bằng chứng của artifact này không dùng được**:
 
 | Chỉ số | Kết quả |
 |---|---|
-| `evidence_ok=True` | **2/10** |
-| `graph_dp` (ảnh hưởng do bỏ đồ thị) | **rỗng ở cả 10** |
-| Phản chứng (lật một bước) tính được | 2/10, |Δp| ≤ 0,00132 |
-| Occlusion (bỏ một bước) | mạnh nhất +0,147 (case 96270) và +0,144 (case 78171) |
+| `evidence_ok=True` | **0/10** |
+| Phản chứng lật một bước (`max_flip_abs_dp`) | **rỗng ở cả 10** |
+| Ảnh hưởng bỏ đồ thị (`graph_dp`) | **rỗng ở cả 10** |
+| Occlusion mạnh nhất (`max_occ_abs_dp`) | 0,3485–1,0023 nhưng **bị lệch hằng số**, không dùng được |
+| Norm trạng thái tại khái niệm đích / hạng | 1,0366–1,8917 / hạng 3–17 trên 123 |
 
-Hai case có bằng chứng:
+Nguyên nhân đo được: p lưu lúc chọn case (0,9532 / 0,7000 / 0,9000 / 0,4000 / 0,8000 và
+0,9531 / 0,7000 / 0,9000 / 0,6000 / 0,8000) không tái lập được khi chạy lại một hàng (0,5917 /
+0,4501 / 0,5243 / 0,4479 / 0,4887 / 0,5848 / 0,4642 / 0,6242 / 0,5168 / 0,5557). Đã kiểm tra
+`pos → user_id` khớp `split.json` cho cả 10 case, nên lỗi không nằm ở map người học. Hai khả năng
+còn lại: model dùng để quét ứng viên khác model nạp từ checkpoint seed 42, hoặc forward theo batch
+khác forward một hàng. Artifact không đủ để phân biệt; cần thêm assert ngay khi tạo record.
 
-- **Đúng — user 96270, t = 173, khái niệm 20 Pythagorean Theorem, p = 0,700, y = 1.** Học sinh
-  chưa từng làm khái niệm này; bỏ bước t172 (18 Complementary and Supplementary Angles) làm p
-  tăng +0,147; cạnh mạnh nhất tại khái niệm đích là 21 (w = 0,526, học sinh chưa chạm). Trạng
-  thái `h_t` tại khái niệm đích có norm 1,178, hạng 83/123. Ở đây cũng vậy, chiều tác động ngược
-  trực giác (bỏ một bước đúng làm p tăng), nên chỉ đọc là "mô hình rất nhạy với bước này", không
-  phải "bước này giải thích vì sao dự đoán đúng".
-- **Sai — user 78171, t = 91, khái niệm 98 Equation Solving Two or Fewer Steps, p = 0,700, y = 0.**
-  Học sinh làm đúng 8 lần khái niệm 97 trước đó; bỏ bước t90 làm p tăng +0,144; cạnh mạnh nhất
-  là 97 (w = 0,891 vào). Đáng chú ý: chiều tác động **ngược trực giác** — bỏ một lần làm đúng
-  khái niệm lân cận lại làm mô hình tự tin hơn, tức bước đó đang kéo dự đoán xuống. Vì vậy không
-  nên đọc case này là "lan truyền kiến thức đúng"; nó chỉ cho thấy mô hình rất nhạy với một bước
-  lân cận và cần điều tra thêm.
+Vì `evidence_ok=False`, `annotate_evidence` bỏ qua phản chứng và ablation đồ thị; `cases.md` chỉ
+còn lịch sử cùng kỹ năng và template giải thích. Occlusion trong `cases.json` cũng không dùng
+được: `delta = p_occ − rec["y_prob"]` lấy p đã lưu làm mốc trong khi `p_occ` đến từ lần chạy lại,
+nên mọi Δ bị lệch một hằng số (ví dụ case Venn Diagram: bỏ t58 cho p = 0,3618, Δ lưu −0,5915,
+nhưng so với baseline chạy lại 0,5917 thì Δ thật chỉ ≈ −0,230).
 
-**Hai vấn đề phải nêu:**
+Ghi chú: các p trùng mốc 0,4/0,6/0,7/0,8/0,9 **không phải** số bịa — `select_stratified` lấy ứng
+viên tự tin nhất trong từng ngăn `|p − 0,5|`, nên p rơi sát biên ngăn. Vấn đề là không tái lập
+được, không phải làm tròn.
 
-1. 8/10 case không tính lại được xác suất (`p_recheck` lệch > 0,02), nên phản chứng bị bỏ. Nhiều
-   khả năng cùng gốc với calibration: case được chọn từ dự đoán của một trạng thái mô hình, còn
-   bước annotate chạy lại trên checkpoint trong `checkpoints/` (xem cảnh báo §4.4) — cần ghi log
-   epoch/trọng số khi chọn case trước khi khẳng định.
-2. Danh sách "graph neighbors" trong `cases.md` lấy từ đồ thị **Transition**, trong khi model là
-   **GKT-MHA** — model không dùng đồ thị tĩnh này. Vì vậy các cạnh đó **không phải** bằng chứng
-   cho dự đoán của MHA; chỉ nên trình bày như bối cảnh dữ liệu, hoặc thay bằng case của
-   GKT-Transition.
+**Việc phải làm:** sinh lại 10 case trực tiếp từ `collect_cases` (p lấy đúng từ lượt forward đã
+dùng để chọn), thêm assert `|p_recheck − p| ≤ 1e-6`, rồi mới tính phản chứng/occlusion/ablation
+đồ thị. Chừng nào chưa làm, báo cáo không trích dẫn bất kỳ Δ nào từ `cases.json`.
 
-### 4.6 Dashboard người học
+### 4.7 Dashboard người học
 
 `results/level1_out/` có 25 người học trong `tables/learner_view_summary.csv` và hình minh hoạ
 `figures/learner_86709.png`; notebook có dropdown chọn người học. Ví dụ user 86709: 6 bước, độ
-chính xác 0,833, xác suất trung bình 0,800, khái niệm trội 82 (Addition and Subtraction
-Fractions), norm trạng thái trung bình 2,306. Đây là dashboard **minh hoạ**, không phải mẫu thống
-kê.
+chính xác 0,833, xác suất trung bình **0,7377**, khái niệm trội 82 (Addition and Subtraction
+Fractions), norm trạng thái trung bình ở khái niệm trội **2,2294** và norm trạng thái trung bình
+cuối **0,9857**; bước đầu tiên dự đoán p = 0,6296. Đây là dashboard **minh hoạ**, không phải mẫu
+thống kê.
 
 ---
 
@@ -548,8 +635,9 @@ khi dự đoán, không chỉ là tham số trang trí.
 | Kiểm tra | Kết quả |
 |---|---|
 | Split ASSIST C1 vs C2 | 2.330/776/778 và 142.299/47.508/48.136 — **trùng khít** |
-| DKT C1 vs C2 | 0,7866 vs 0,7859 (Δ = −0,0007) → cùng split, cùng kiến trúc, khác lần train |
-| GKT C1 (MHA) vs C2 (Transition) | 0,7782 vs 0,7536 → **khác kiến trúc**, không so trực tiếp |
+| DKT C1 vs C2 | 0,7866 (C1 seed 42) / 0,7862 ± 0,0006 (C1 5 seed) vs 0,7859 (C2) → cùng split, cùng kiến trúc, khác lần train |
+| GKT tĩnh C1 vs C2 | Transition 0,7427 (seed 42) / 0,7609 ± 0,0096 (5 seed) vs 0,7536 (C2); Zero 0,7549 / 0,7576 ± 0,0055 vs 0,7644 (C2) → **cùng kiến trúc nhưng khác harness**, chênh nằm trong/ngoài 1 std |
+| GKT-MHA | chỉ có ở C1 (0,7782 seed 42 / 0,7668 ± 0,0095); C2 không chạy MHA |
 | Cấu hình ẩn | C1: 32; C2 baseline: 32; C2 GRKT: 128 → **bất đối xứng dung lượng** |
 
 Hệ quả của bất đối xứng: GRKT có nhiều tham số hơn baseline (128 so với 32), nên chênh lệch AUC
@@ -559,30 +647,56 @@ baseline; đó là lý do báo cáo dùng ablation làm bằng chứng chính ch
 
 Vì vậy báo cáo dùng hai loại so sánh:
 
-1. **Trong cùng cấp:** Cấp 1 so DKT với GKT-MHA (có kiểm định 5 seed); Cấp 2 so GRKT với DKT và
-   GKT tĩnh (1 seed, so điểm).
-2. **Giữa hai cấp:** chỉ so **DKT** trên cùng split (0,7866 vs 0,7859) như kiểm tra tính nhất
-   quán của pipeline. Không so GKT-MHA với GRKT như thể cùng một baseline.
+1. **Trong cùng cấp:** Cấp 1 so DKT với 6 biến thể GKT (5 seed + paired test); Cấp 2 so GRKT với
+   DKT và GKT tĩnh (1 seed, so điểm).
+2. **Giữa hai cấp:** chỉ so **DKT** trên cùng split (0,7866/0,7862 vs 0,7859) như kiểm tra tính
+   nhất quán của pipeline. Không so GKT-MHA với GRKT như thể cùng một baseline.
 
-Bảng xếp hạng trên cùng test split ASSISTments (chỉ để định vị, không phải kiểm định):
+Bảng xếp hạng Cấp 1 trên test split ASSISTments, trung bình 5 seed (chỉ để định vị; mọi khoảng
+cách giữa các biến thể GKT đều **không** có ý nghĩa thống kê, xem §4.2):
+
+| Hạng | Mô hình | AUC (mean ± std) |
+|---|---|---:|
+| 1 | DKT | **0,7862 ± 0,0006** |
+| 2 | GKT-MHA | 0,7668 ± 0,0095 |
+| 3 | GKT-Transition | 0,7609 ± 0,0096 |
+| 4 | GKT-Shuffled | 0,7579 ± 0,0039 |
+| 5 | GKT-Identity | 0,7578 ± 0,0056 |
+| 6 | GKT-Zero | 0,7576 ± 0,0055 |
+| 7 | GKT-ShuffledRow | 0,7576 ± 0,0127 |
+
+Bảng Cấp 2 (seed 42, harness riêng, có GRKT):
 
 | Hạng | Mô hình | AUC |
 |---|---|---:|
 | 1 | GRKT-train | 0,7972 |
-| 2 | DKT | 0,7866 / 0,7859 |
+| 2 | DKT | 0,7859 |
 | 3 | GRKT-zero | 0,7840 |
-| 4 | GKT-MHA | 0,7782 |
-| 5 | GKT-Zero | 0,7644 |
-| 6 | GKT-Transition | 0,7536 |
+| 4 | GKT-Zero | 0,7644 |
+| 5 | GKT-Transition | 0,7536 |
+
+Hai bảng **không** được gộp thành một bảng xếp hạng duy nhất: khác harness, khác số seed, và các
+baseline GKT đã được train lại ở Cấp 2.
 
 ### 7.2 Những gì đã chứng minh được
 
 - Pipeline chia dữ liệu, chống rò rỉ và đánh giá **nhất quán** giữa hai cấp: DKT lệch 0,0007 AUC
-  giữa hai lần chạy độc lập trên cùng split.
+  giữa hai lần chạy độc lập trên cùng split, và C1 qua 5 seed chỉ dao động ±0,0006.
+- **DKT vượt mọi biến thể GKT ở Cấp 1** với kiểm định paired trên 5 seed: ΔAUC +0,0194 (so MHA)
+  đến +0,0286 (so Zero), t = 4,17–13,91, p = 0,0002–0,014. Đây là kết quả **phủ định** cho GKT
+  trong harness này và phải được viết đúng như vậy.
+- **Ablation đồ thị lúc train đã đủ và cho kết quả null:** Transition − Zero = +0,0033
+  (p = 0,546), Transition − Shuffled = +0,0030 (p = 0,495), ShuffledRow − Zero = −0,00001
+  (p = 0,998), Identity − Zero = +0,0002 (p = 0,305). Cấu trúc đồ thị **không** tạo khác biệt đo
+  được ở Cấp 1.
+- **Ablation lúc suy luận chứng minh mô hình *có đọc* `A`:** đặt `A := 0` lúc eval làm AUC giảm
+  0,0109 (Transition và ShuffledRow), 0,0031 (Shuffled), 0,0029 (MHA), và đúng 0 với Identity/Zero
+  (hai cấu hình này không có cạnh để bỏ). Độ lớn này đo **mức phụ thuộc**, không đo **chất lượng**
+  cạnh — Transition và ShuffledRow (đồ thị ngẫu nhiên theo hàng) giảm gần bằng nhau.
 - **GRKT vượt DKT trên cả hai tập** ở seed 42 (+0,0113 và +0,0395 AUC), và đạt
   0,7983 ± 0,0009 qua 3 seed trên ASSISTments.
 - **Bỏ đồ thị làm giảm 0,0132 AUC** trên ASSISTments (một seed) và làm `abs_delta_retrieval` về 0
-  → đồ thị có tác dụng cơ chế, không chỉ là tham số.
+  → với GRKT, đồ thị có tác dụng cơ chế, không chỉ là tham số.
 - **Calibration của GRKT tốt nhất theo Brier** ở cả hai tập, nhưng không tốt nhất theo ECE trên
   ASSISTments.
 - Quỹ đạo mastery **ổn định về thứ hạng** (Spearman > 0,97) và **có lan truyền** sang khái niệm
@@ -590,14 +704,19 @@ Bảng xếp hạng trên cùng test split ASSISTments (chỉ để định vị
 
 ### 7.3 Những gì chưa chứng minh được
 
-- **Vai trò cấu trúc đồ thị ở Cấp 1.** Không có ablation trong lần chạy mới; lần chạy cũ cho
-  Transition ≈ Shuffled và Transition − Zero không có ý nghĩa. Kết luận đúng: chưa chứng minh.
+- **Vai trò cấu trúc đồ thị ở Cấp 1.** Đã đo, và kết quả là **null**: không biến thể nào khác
+  Zero có ý nghĩa. Nguyên nhân khả dĩ: GKT tĩnh chỉ lan truyền một bước (`k_hop=1`), `A` được
+  chuẩn hoá hàng nên thông tin tự thân bị ghi đè trong `_agg_neighbors`, và đồ thị Transition dày
+  5,9 % khiến Shuffled gần như tương đương.
 - **Lợi ích đồ thị ở Cấp 2 là nhân quả.** Chỉ 1 seed, 1 tập; chưa có kiểm định.
 - **Nhất quán tiên quyết.** `precedence_gap` âm ở cả hai tập → không đạt.
 - **Quên trên Junyi.** Tín hiệu gần 0 và bị chi phối bởi Δt = 0.
 - **So sánh GRKT với baseline theo seed.** Baseline chỉ 1 seed, không có paired test.
 - **Tổng quát hoá ra ngoài tập con Junyi.** 4,1 % người học, 1,55 % lượt, chọn khái niệm
   transductive.
+- **Case study Cấp 1.** 0/10 case có `evidence_ok=True`; không trích dẫn Δ nào từ `cases.json`.
+- **Calibration của GKT-MHA.** Bảng chính 0,7782 nhưng file calibration cùng checkpoint cho
+  0,7454; chưa xác định được nguyên nhân từ artifact.
 
 ### 7.4 Liên hệ với bài báo
 
@@ -613,23 +732,32 @@ theo người học 0,6/0,2/0,2 thay vì giao thức gốc; (c) giới hạn 20 
 
 1. **Junyi là tập con 3.000 người** (4,1 %) và 200 khái niệm chọn transductive; không đại diện
    toàn bộ Junyi.
-2. **Đa seed không đều:** Cấp 1 có 5 seed cho 2 mô hình; Cấp 2 chỉ GRKT trên ASSISTments có 3
-   seed, baseline và Junyi chỉ 1 seed.
+2. **Đa seed không đều:** Cấp 1 có 5 seed cho **cả 7 mô hình** (35 run); Cấp 2 chỉ GRKT trên
+   ASSISTments có 3 seed, baseline và Junyi chỉ 1 seed.
 3. **Bất đối xứng dung lượng:** GRKT dùng 128 ẩn, baseline Cấp 2 dùng 32. Chênh lệch GRKT–baseline
    không chỉ do kiến trúc/đồ thị; chỉ ablation `train` vs `zero` là so sánh công bằng.
-4. **Ablation đồ thị Cấp 1 không có trong lần chạy mới**; kết quả cũ là phủ định và từ lần chạy
-   khác.
-5. **Case study Cấp 1 yếu:** 8/10 không tính lại được phản chứng; "graph neighbors" lấy từ đồ thị
-   Transition trong khi model là MHA.
+4. **Ablation đồ thị Cấp 1 đã đủ nhưng kết quả null**; độ phủ 99,5 % chỉ nói về đồ thị
+   Transition, không nói mô hình có dùng nó.
+5. **Case study Cấp 1 không dùng được:** 0/10 case có `evidence_ok=True`, p chọn case không khớp
+   p lúc chạy lại (ví dụ 0,9532 → 0,5917), cột phản chứng/đồ thị trống; occlusion bị lệch hằng số
+   nên Δ trong `cases.json` không phải Δ thật.
 6. **Calibration Cấp 1 không khớp bảng chính với GKT-MHA** (0,7454 so với 0,7782). Nguyên nhân
-   chưa xác định được từ artifact (file `.pt` là `state_dict` trần); dữ kiện val-AUC gợi ý
-   checkpoint có thể không phải best-val. Không dùng bảng này để kết luận.
+   chưa xác định được từ artifact (file `.pt` là `state_dict` trần).
 7. **`seconds` của baseline Cấp 2 = 0** dù đã train 11–20 epoch; không thể báo cáo chi phí đầy đủ.
 8. **`precedence_gap` âm** → tiêu chí tiên quyết không đạt; `changed_frac` cao gợi ý nhạy cảm
    quá mức.
 9. **Quên trên Junyi bị giới hạn dữ liệu** (88,1 % Δt = 0; trần 240 phút).
 10. **Không có kiểm định thống kê cho GRKT vs baseline**; chênh lệch AUC chỉ là so điểm.
-11. **Không có bảng phân công, slide và video demo** trong repo tại thời điểm tổng hợp.
+11. **Hai định nghĩa NLL:** bảng chính tính trung bình loss theo batch, calibration/ablation tính
+    BCE toàn cục; lệch hệ thống ~0,002 nên không được so chéo hai bảng.
+12. **`GKT-Identity` và `GKT-Zero` cho kết quả trùng khít** (0,754883 cả hai ở seed 42): trong
+    `_agg_neighbors` vị trí tự thân bị ghi đè bởi `self_features`, nên ma trận đơn vị tương đương
+    không cạnh. Đây là thuộc tính cài đặt, không phải hai thí nghiệm độc lập.
+13. **Baseline GKT được train lại ở Cấp 2** nên số không trùng Cấp 1 (Transition 0,7536 vs
+    0,7609 ± 0,0096; Zero 0,7644 vs 0,7576 ± 0,0055). Không được trộn số giữa hai cấp.
+14. **3/35 run Cấp 1 được resume từ checkpoint** (Identity seed 1011, Zero seed 456, MHA seed
+    789); fingerprint khớp nên hợp lệ, nhưng là nguồn khác biệt tiềm ẩn.
+15. **Không có bảng phân công, slide và video demo** trong repo tại thời điểm tổng hợp.
 
 ---
 
@@ -639,16 +767,16 @@ theo người học 0,6/0,2/0,2 thay vì giao thức gốc; (c) giới hạn 20 
 
 | Yêu cầu | Bằng chứng | Trạng thái |
 |---|---|---|
-| ≥ 1 tập công khai | ASSISTments 2009 đầy đủ, hash + 525.534 dòng | Đạt |
-| Baseline không đồ thị | DKT 39.899 tham số | Đạt |
-| Mô hình GCN/GAT/GraphSAGE **hoặc GKT** | GKT-MHA | Đạt hình thức; cần giải thích MHA không dùng `A` tĩnh |
-| Ablation bỏ cạnh / ma trận đơn vị | `graph_inference_ablation.csv` rỗng; **hai nguyên nhân đã xác định và sửa trong mã** (`graph_off` cho cả MHA + thêm GKT tĩnh vào `TRAIN_MODELS`); lần chạy cũ có 5 biến thể nhưng kết quả phủ định | **Chưa đạt** trong artifact — chờ EVAL_ONLY (suy luận) và một lần train GKT tĩnh |
-| 5 đúng + 5 sai kèm bằng chứng | 10 case, 5 khái niệm khác nhau mỗi bucket | Một phần (2/10 có phản chứng) |
-| §6 chống rò rỉ | split rời, đồ thị train-only, nhãn dịch 1 bước, `leak_report.txt` | Đạt |
-| §7 AUC/ACC/NLL | `level1_metrics.csv` | Đạt |
-| §7 ≥ 3 seed mean ± std | 5 seed + paired t-test + bootstrap CI | Đạt |
-| §7 vai trò đồ thị | Chưa có ablation hợp lệ trong lần chạy mới; ablation suy luận cho MHA sẽ có sau EVAL_ONLY; lần chạy cũ cho kết luận phủ định | **Chưa đạt** |
-| §7 calibration | Brier/ECE/ACE + reliability; AUC lệch bảng chính | Đạt nhưng số chưa khớp |
+| ≥ 1 tập công khai | ASSISTments 2009 đầy đủ, hash `f4b8791a…af3374`, 525.534 dòng | Đạt |
+| Baseline không đồ thị | DKT 39.899 tham số, 0,7862 ± 0,0006 | Đạt |
+| Mô hình GCN/GAT/GraphSAGE **hoặc GKT** | 6 biến thể GKT (Transition, Identity, Zero, Shuffled, ShuffledRow + MHA); `Dense` có đồ thị nhưng không train | Đạt hình thức; cần giải thích MHA thay `A` tĩnh bằng attention |
+| Ablation bỏ cạnh / ma trận đơn vị | Lúc train: 5 biến thể × 5 seed; lúc suy luận: 6 mô hình. Kết quả **null** ở train, có phụ thuộc ở suy luận | **Đạt về thực hiện**; kết luận vai trò cấu trúc là phủ định |
+| 5 đúng + 5 sai kèm bằng chứng | 10 case, 5 khái niệm khác nhau mỗi bucket | **Chưa đạt về bằng chứng** (0/10 `evidence_ok`, occlusion lệch) |
+| §6 chống rò rỉ | split rời, đồ thị train-only, nhãn dịch 1 bước, `leak_report.txt` (chỉ 0,74 % khối lượng ở val+test) | Đạt |
+| §7 AUC/ACC/NLL | `tables/level1_metrics.csv` | Đạt |
+| §7 ≥ 3 seed mean ± std | 5 seed × 7 mô hình + paired t-test + bootstrap CI + dz | Đạt |
+| §7 vai trò đồ thị | Ablation train null (p 0,31–1,00); ablation suy luận −0,0109 AUC cho Transition/ShuffledRow | **Đo đủ**; không chứng minh được lợi ích cấu trúc |
+| §7 calibration | Brier/ECE/ACE + reliability 7 mô hình; MHA lệch bảng chính | Đạt nhưng trừ MHA |
 | §8 dashboard | 25 người học + hình + dropdown | Đạt |
 | §8 báo cáo/slide/bảng phân công | Báo cáo này; slide + bảng phân công chưa có | Một phần |
 
@@ -691,12 +819,17 @@ Cấp 1 — các khoá chính rút gọn từ `results/level1_out/run_config.jso
 
 ```json
 {
-  "model_names": ["DKT", "GKT-MHA"],
+  "model_names": ["DKT", "GKT-Transition", "GKT-Identity", "GKT-Zero",
+                  "GKT-Shuffled", "GKT-MHA", "GKT-ShuffledRow"],
   "epochs": 20, "batch_size": 32, "max_seq_len": 200,
   "emb_dim": 32, "hid_dim": 32, "lr": 0.001, "patience": 5,
   "seeds": [42, 123, 456, 789, 1011], "split_seed": 42
 }
 ```
+
+`graph_types` trong file gốc chỉ liệt kê `Transition, Dense, Identity, Zero, Shuffled`;
+`GKT-ShuffledRow` được thêm vào `model_names` sau nên không xuất hiện trong `graph_types` — không
+ảnh hưởng lần chạy (bảng `graph_stats.csv` có đủ 6 đồ thị).
 
 Cấp 2 — các khoá chính rút gọn từ `results/level2_moderate/run_config.json` (file gốc bọc trong
 `"locked"`, ngoài ra còn `dataset_caps` và `time_budget_min`):
@@ -725,7 +858,19 @@ Cấp 2 — các khoá chính rút gọn từ `results/level2_moderate/run_confi
 
 ### 10.3 Thời gian đo được
 
-- Cấp 1: DKT 31–37 giây/seed; GKT-MHA 2.009–4.345 giây/seed (seed 789 resume).
+- Cấp 1: 35 run qua 7 phiên, tổng **87.894,8 s ≈ 24,42 h** (ngân sách 540 phút/phiên). Theo mô
+  hình, mỗi mô hình 5 seed:
+
+| Mô hình | min (s) | max (s) | tổng (s) | resume |
+|---|---:|---:|---:|---|
+| DKT | 31,1 | 37,0 | 166,6 | — |
+| GKT-Transition | 1.379,0 | 3.588,7 | 13.355,5 | — |
+| GKT-Identity | 2.279,4 | 3.406,8 | 14.749,7 | seed 1011 |
+| GKT-Zero | 2.261,1 | 3.742,6 | 15.764,7 | seed 456 |
+| GKT-Shuffled | 1.892,1 | 3.707,5 | 14.692,2 | — |
+| GKT-MHA | 2.009,2 | 4.344,9 | 15.208,9 | seed 789 |
+| GKT-ShuffledRow | 1.521,9 | 3.789,0 | 13.957,2 | — |
+
 - Cấp 2: một phiên 378 phút (09:48–16:06 UTC), ngân sách 540 phút → còn 162 phút.
   GRKT ASSIST/train 2.838 s (12 epoch, ~4,0 phút/epoch); GRKT ASSIST/zero 2.583 s (11 epoch);
   GRKT Junyi 1.984 s (11 epoch, ~3,0 phút/epoch). Tổng GRKT ≈ 2,06 giờ.
@@ -738,32 +883,39 @@ Cấp 2 — các khoá chính rút gọn từ `results/level2_moderate/run_confi
 ### 11.1 Kết luận
 
 1. **Pipeline đúng và tái lập được.** Cùng split, cùng seed, cùng chỉ số; DKT giữa hai lần chạy
-   lệch 0,0007 AUC. Chống rò rỉ được kiểm tra bằng số (giao = 0; đồ thị chỉ từ train; nhãn dịch
-   1 bước).
-2. **GRKT là mô hình tốt nhất trong các mô hình đã chạy** trên cả hai tập: 0,7972 AUC
+   lệch 0,0007 AUC và qua 5 seed Cấp 1 chỉ dao động ±0,0006. Chống rò rỉ được kiểm tra bằng số
+   (giao = 0; đồ thị chỉ từ train; nhãn dịch 1 bước; 0,74 % khối lượng đồ thị chỉ xuất hiện ở
+   val+test).
+2. **GRKT là mô hình tốt nhất trong các mô hình đã chạy ở Cấp 2** trên cả hai tập: 0,7972 AUC
    (ASSISTments) và 0,7896 (Junyi tập con), vượt DKT +0,0113 và +0,0395. Trên ASSISTments, GRKT
    đạt 0,7983 ± 0,0009 qua 3 seed.
-3. **Đồ thị có tác dụng cơ chế nhưng bằng chứng nhân quả còn yếu.** Bỏ cạnh làm giảm 0,0132 AUC
-   và đưa `abs_delta_retrieval` về 0, nhưng chỉ 1 seed/1 tập.
-4. **Cấp 1 chưa chứng minh được vai trò đồ thị.** GKT-MHA thua DKT có ý nghĩa; ablation mới
-   không có (hai nguyên nhân đã sửa trong mã, artifact chờ chạy lại); ablation cũ cho kết quả phủ
-   định (Transition ≈ Shuffled, Transition − Zero không có ý nghĩa).
-5. **Quỹ đạo:** ổn định thứ hạng tốt (Spearman > 0,97), có lan truyền, nhưng nhất quán tiên
-   quyết **không đạt** (gap âm) và tín hiệu quên trên Junyi là giới hạn dữ liệu.
-6. **Junyi chỉ là tập con**, mọi kết luận chỉ có giá trị trên 3.000 người được lấy mẫu.
+3. **Với GRKT, đồ thị có tác dụng cơ chế nhưng bằng chứng nhân quả còn yếu.** Bỏ cạnh làm giảm
+   0,0132 AUC và đưa `abs_delta_retrieval` về 0, nhưng chỉ 1 seed/1 tập.
+4. **Cấp 1 đo đủ và cho kết quả phủ định về vai trò cấu trúc đồ thị.** DKT vượt *mọi* biến thể GKT
+   với ý nghĩa thống kê (ΔAUC +0,0194…+0,0286, p ≤ 0,014). Ablation lúc train null
+   (p 0,31–1,00); ablation lúc suy luận cho thấy mô hình **có đọc** `A` (−0,0109 AUC khi zero hoá
+   với Transition/ShuffledRow) nhưng độ lớn phản ánh mức phụ thuộc, không phản ánh chất lượng cạnh
+   — Transition và ShuffledRow giảm gần bằng nhau.
+5. **Case study Cấp 1 chưa dùng được làm bằng chứng:** 0/10 case tái lập được, occlusion bị lệch
+   hằng số; báo cáo không trích Δ nào từ `cases.json`.
+6. **Quỹ đạo:** ổn định thứ hạng tốt (Spearman > 0,97), có lan truyền, nhưng nhất quán tiên quyết
+   **không đạt** (gap âm) và tín hiệu quên trên Junyi là giới hạn dữ liệu.
+7. **Junyi chỉ là tập con**, mọi kết luận chỉ có giá trị trên 3.000 người được lấy mẫu.
 
 ### 11.2 Việc còn lại (ưu tiên)
 
 | # | Việc | Lý do | Chi phí ước tính |
 |---|---|---|---|
-| 0 | Chạy **EVAL_ONLY** để sinh `graph_inference_ablation.csv` + `delta_graph` cho MHA (đã có `graph_off`) | Bảng ablation và case evidence hiện rỗng; không cần train | ~10–20 phút GPU |
-| 1 | Chạy lại Cấp 1 với `GKT-Transition` + `GKT-Zero` để có **ablation lúc train** cùng harness | Đóng yêu cầu §5/§7 Cấp 1 (ablation suy luận không thay thế) | ~3–6 giờ GPU (5 seed × 2 biến thể) |
-| 2 | Xác minh checkpoint seed 42 (ghi epoch/val-AUC lúc lưu, lưu kèm payload có `epoch`/`best_state`) rồi tính lại calibration và case evidence | Số calibration/case không tái lập được | ~15–30 phút GPU |
-| 3 | Chạy GRKT `zero` cho 3 seed và cho Junyi (nếu còn ngân sách) | Biến ΔAUC +0,0132 thành bằng chứng qua seed | ~3–6 giờ GPU |
-| 4 | Chạy baseline 3 seed trên ASSISTments để có paired test GRKT–DKT | Hiện chỉ so điểm | ~1–3 giờ GPU |
-| 5 | Điều tra `precedence_gap` âm (định nghĩa `pre_map`, ràng buộc thứ tự) | Tiêu chí tiên quyết đang không đạt | phân tích, không cần train |
+| 0 | Sinh lại 10 case từ đúng lượt forward đã dùng để chọn (assert `\|p_recheck−p\| ≤ 1e-6`), rồi mới tính phản chứng/occlusion/ablation | Bằng chứng case hiện 0/10 hợp lệ; đây là mục §7 nhiệm vụ 3 | ~15–30 phút eval |
+| 1 | Xác minh checkpoint `GKT-MHA` seed 42 (lưu kèm `epoch`/best-val trong payload) rồi tính lại calibration | Bảng chính 0,7782 vs calibration 0,7454 | ~15 phút eval |
+| 2 | Chạy GRKT `zero` cho 3 seed (và Junyi nếu còn ngân sách) | Biến ΔAUC +0,0132 thành bằng chứng qua seed | ~3–6 giờ GPU |
+| 3 | Chạy baseline Cấp 2 3 seed trên ASSISTments để có paired test GRKT–DKT | Hiện chỉ so điểm | ~1–3 giờ GPU |
+| 4 | Điều tra `precedence_gap` âm (định nghĩa `pre_map`, ràng buộc thứ tự) | Tiêu chí tiên quyết đang không đạt | phân tích, không cần train |
+| 5 | Bổ sung 5 đúng + 5 sai riêng cho Cấp 2 (GRKT) | §7 nhiệm vụ 3; C1 chưa dùng được | ~30–60 phút |
 | 6 | Viết slide 20 phút + bảng phân công + video demo ≤ 5 phút | Yêu cầu §8 | không tính |
-| 7 | Bổ sung 5 đúng + 5 sai riêng cho Cấp 2 (GRKT) | §7 nhiệm vụ 3 | ~30–60 phút |
+
+Không còn việc train thêm cho ablation Cấp 1: 5 biến thể × 5 seed đã chạy xong trong artifact
+hiện tại.
 
 ---
 
@@ -773,19 +925,20 @@ Cấp 2 — các khoá chính rút gọn từ `results/level2_moderate/run_confi
 
 | Tệp | Nội dung |
 |---|---|
-| `run_config.json`, `run_manifest.json`, `run_sessions.json` | cấu hình khoá, môi trường, phiên chạy |
-| `tables/level1_metrics.csv` | bảng chính seed 42 |
-| `tables/runs_all_seeds.csv` | 10 run, 5 seed × 2 mô hình |
+| `run_config.json`, `run_manifest.json`, `run_sessions.json` | cấu hình khoá, môi trường, 7 phiên / 35 run / 3 resume |
+| `tables/dataset_stats.csv`, `tables/split_summary.csv`, `split.json` | 525.534 dòng, 4.217 người, 123 skill; split 2.330/776/778 |
+| `tables/level1_metrics.csv` | bảng chính seed 42, 7 mô hình |
+| `tables/runs_all_seeds.csv` | 35 run, 5 seed × 7 mô hình |
 | `tables/multiseed_metrics.csv` | mean ± std 5 seed |
-| `tables/paired_tests.csv` | paired t-test, bootstrap CI, dz |
-| `tables/calibration.csv`, `calibration_bins.csv` | Brier/ECE/ACE + ngăn |
-| `tables/graph_stats.csv`, `graph_coverage.csv` | thống kê 5 đồ thị, độ phủ |
-| `tables/graph_inference_ablation.csv` | **rỗng** — ablation chưa chạy; nguyên nhân đã sửa trong mã, cần EVAL_ONLY |
-| `tables/case_evidence_summary.csv`, `cases.md`, `cases.json` | 10 case + bằng chứng |
+| `tables/paired_tests.csv` | paired t-test, bootstrap CI, dz (DKT vs 6 biến thể + giữa các biến thể) |
+| `tables/graph_stats.csv`, `graph_degree_by_skill.csv`, `graph_coverage.csv` | thống kê 6 đồ thị + độ phủ |
+| `tables/graph_inference_ablation.csv` | **đã có số** — ΔAUC/ΔNLL/mean\|Δp\| khi zero hoá `A` lúc eval |
+| `tables/calibration.csv`, `calibration_bins.csv` | Brier/ECE/ACE + ngăn, 7 mô hình |
+| `tables/case_evidence_summary.csv`, `cases.md`, `cases.json` | 10 case; **0/10 `evidence_ok`**, không dùng làm bằng chứng |
 | `tables/learner_view_summary.csv`, `learner_view.json` | dashboard 25 người |
-| `leak_report.txt` | kiểm tra rò rỉ |
-| `split.json`, `tables/split_summary.csv` | split |
-| `figures/*.png` | EDA, learning curves, so sánh, reliability, case, learner |
+| `leak_report.txt` | kiểm tra rò rỉ (884 cạnh train, 0,74 % khối lượng val+test-only) |
+| `checkpoints/` | 35 file `.pt` (7 mô hình × 5 seed; `state_dict` trần, không có metadata epoch) |
+| `figures/*.png` | EDA, learning curves, so sánh, reliability, ablation, case, learner |
 
 **Cấp 2 (`results/level2_moderate/`)**
 
@@ -828,7 +981,7 @@ Cấp 2 — các khoá chính rút gọn từ `results/level2_moderate/run_confi
 | Thành viên | MSSV | Phụ trách | Bằng chứng đóng góp |
 |---|---|---|---|
 | (điền) | | Dữ liệu, tiền xử lý, đồ thị | commit / notebook |
-| (điền) | | Cấp 1: DKT, GKT, ablation, case study | commit / notebook |
+| (điền) | | Cấp 1: DKT, 6 biến thể GKT, ablation, case study | commit / notebook |
 | (điền) | | Cấp 2: GRKT, quỹ đạo, calibration | commit / notebook |
 | (điền) | | Báo cáo, slide, dashboard, demo | commit / slide |
 
@@ -839,4 +992,4 @@ Cấp 2 — các khoá chính rút gọn từ `results/level2_moderate/run_confi
 
 *Hết báo cáo. Mọi số liệu có thể đối chiếu trực tiếp trong `results/level1_out/` và
 `results/level2_moderate/`; các phát hiện và việc còn lại được theo dõi chi tiết trong
-`GAP_LEVEL1.md` §5 và `GAP_LEVEL2.md` §10.*
+`GAP_LEVEL1.md` §6 và `GAP_LEVEL2.md` §10.*

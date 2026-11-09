@@ -10,6 +10,15 @@
 > **Cập nhật 2026-11-07:** trạng thái theo artifact `results/level2_moderate/` nằm ở **§10**; các
 > mục §0–§8 phản ánh lần rà `outputs/level2/` ngày 01/11 và không còn đúng cho artifact mới (ví dụ
 > calibration và multiseed đã có, còn `seconds` vẫn bằng 0).
+>
+> **Cập nhật 2026-11-09:** `results/level2_moderate/` **không thay đổi** (mtime 07/11, vẫn 9 dòng
+> `level2_all_datasets.csv`: GRKT 0,7972 / 0,7896; GRKT-zero 0,7840; DKT 0,7859 / 0,7501;
+> GKT-Transition 0,7536 / 0,7202; GKT-Zero 0,7644 / 0,7225). **§10 vẫn là trạng thái hiện hành**
+> của Cấp độ 2. Lần chạy Cấp 1 mới (7 mô hình × 5 seed, `results/level1_out/`, xem
+> `GAP_LEVEL1.md` §6) không làm thay đổi số Cấp 2. Lưu ý khi trích: baseline GKT của Cấp 2 được
+> **train lại trong harness Cấp 2** (1 seed), nên Transition 0,7536 / Zero 0,7644 khác số Cấp 1
+> cùng tên (0,7609 ± 0,0096 / 0,7576 ± 0,0055); DKT Cấp 2 0,7859 cũng khác DKT Cấp 1
+> 0,7866 (seed 42) / 0,7862 ± 0,0006 (5 seed).
 
 ---
 
@@ -767,8 +776,10 @@ nêu trade-off này, không chỉ chọn Brier.
    GKT tĩnh; (b) giữa hai cấp, chỉ so DKT (cùng kiến trúc) trên cùng split.
 3. **Checkpoint Cấp 1 đã commit không tái lập bảng Cấp 1** (GAP F2): DKT legacy 0,7851 vs bảng
    0,7866; GKT-Transition 0,7722 vs 0,7443; GKT-Zero 0,7620 vs 0,7549; `checkpoint_seed` rỗng.
-   Bảng Cấp 2 dùng đường nền **train lại**, đúng quyết định; nhưng phải ghi rõ số Cấp 1 tham
-   chiếu (0,7443/0,7549) đến từ lần chạy cũ, không từ checkpoint đã commit.
+   Bảng Cấp 2 dùng đường nền **train lại**, đúng quyết định. Số Cấp 1 tham chiếu nên lấy từ
+   artifact **2026-11-09** (`results/level1_out/`, 7 mô hình × 5 seed): Transition
+   0,7609 ± 0,0096, Zero 0,7576 ± 0,0055, Identity 0,7578 ± 0,0056; số cũ 0,7443/0,7549 thuộc
+   lần chạy `outputs/level1/` 3 seed và không còn là nguồn chính.
 4. **`seconds=0` của baseline là lỗi ghi nhận, không phải "train miễn phí".** `run_provenance`
    cho thấy DKT/GKT đã chạy 11–20 epoch (`from_checkpoint=false`) nhưng `seconds` vẫn 0. Tổng
    thời gian GRKT đo được: 2.838 + 2.583 + 1.984 = 7.406 s ≈ 2,06 h; thời gian baseline chưa đo.
