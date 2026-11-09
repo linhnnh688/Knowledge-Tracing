@@ -10,7 +10,7 @@
 Dự án tập trung vào bài toán **Knowledge Tracing (KT)**: Dựa trên chuỗi lịch sử làm bài của người học $(q_1, r_1), (q_2, r_2), \dots, (q_t, r_t)$ (với $q_i$ là khái niệm tri thức / bài tập và $r_i \in \{0, 1\}$ là kết quả đúng hoặc sai), mô hình cần dự đoán chính xác xác suất người học trả lời đúng câu hỏi tiếp theo:
 $$P(r_{t+1} = 1 \mid q_{1:t}, r_{1:t}, q_{t+1})$$
 
-```mermaid
+```text
 flowchart TD
     subgraph Data Layer
         A["ASSISTments 2009 (525k tương tác, 123 KCs)"]
@@ -44,7 +44,7 @@ flowchart TD
 ### 1.1 Cấu trúc Thư mục
 
 | Thư mục / Tệp | Vai trò kỹ thuật | Tài liệu giải thích chi tiết |
-|---|---|---|
+| --- | --- | --- |
 | [`GKT/`](file:///root/Knowledge-Tracing/GKT) | Mã nguồn upstream GKT & DKT (Nakagawa et al., 2019): `models.py`, `layers.py`, `processing.py`, `metrics.py`. | [docs/01_gkt_module.md](file:///root/Knowledge-Tracing/docs/01_gkt_module.md) |
 | [`GRKT/`](file:///root/Knowledge-Tracing/GRKT) | Mã nguồn upstream GRKT (Cui et al., KDD 2024 - đã patched & package-hóa): `model/GRKT.py`, `BaseModel.py`. | [docs/02_grkt_module.md](file:///root/Knowledge-Tracing/docs/02_grkt_module.md) |
 | [`level1/`](file:///root/Knowledge-Tracing/level1) | Gói điều phối Cấp độ 1: nạp dữ liệu, chống rò rỉ, huấn luyện DKT/GKT, xAI phản chứng (`explain.py`), dashboard (`dashboard.py`). | [docs/03_level1_module.md](file:///root/Knowledge-Tracing/docs/03_level1_module.md) |
@@ -62,7 +62,7 @@ flowchart TD
 Để học sâu và nắm bắt bản chất của lĩnh vực Knowledge Tracing, bảng so sánh dưới đây đối chiếu 4 thế hệ mô hình tiêu biểu:
 
 | Tiêu chí | BKT (Corbett & Anderson, 1994) | DKT (Piech et al., 2015) | GKT (Nakagawa et al., 2019) | GRKT (Cui et al., KDD 2024) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **Biểu diễn tri thức** | Biến ngẫu nhiên nhị phân $P(L_t) \in [0, 1]$ độc lập cho từng kỹ năng. | Một vector ẩn toàn cục $h_t \in \mathbb{R}^H$ ($H=128$ hoặc $32$) đại diện chung cho mọi kỹ năng. | Ma trận trạng thái tri thức $h_t \in \mathbb{R}^{C \times H}$: mỗi khái niệm có 1 vector ẩn riêng biệt ($H=32$). | Vector mastery $h[c] \in \mathbb{R}^{KH}$ ($KH=16$) kèm bộ đếm số lần làm bài $count[c]$. |
 | **Cơ chế cập nhật** | Công thức Bayes dựa trên 4 tham số: $P(L_0), P(T), P(G), P(S)$. | Mạng hồi quy LSTM/RNN cập nhật $h_{t+1} = \text{LSTM}(h_t, x_t)$. | GNN neighbor aggregation $\rightarrow$ Erase-Add Gate $\rightarrow$ GRUCell cập nhật mọi khái niệm. | 4 pha tường minh: Truy xuất GNN $\rightarrow$ Dự đoán $\rightarrow$ Củng cố Đúng/Sai $\rightarrow$ Học trễ & Quên theo $\Delta t$. |
 | **Cấu trúc Đồ thị** | Không có (coi các kỹ năng độc lập hoàn toàn). | Không có (mô hình ẩn tự học tương quan ngầm qua trọng số LSTM). | 1 ma trận quan hệ $A \in \mathbb{R}^{C \times C}$ (tĩnh: Transition/Dense hoặc tự học: PAM/MHA/VAE). | 2 ma trận nhị phân hướng: Đồng xuất hiện ($rel\_map$) và Tiên quyết ($pre\_map$, $sub\_map = pre^T$). |
@@ -79,6 +79,7 @@ flowchart TD
 ### 3.1 Bản chất Thuật toán GKT
 
 Tại mỗi bước $t$, học sinh trả lời câu hỏi khái niệm $q_t$ với kết quả $r_t \in \{0, 1\}$.
+
 1. **Đặc trưng tương tác**: $x_t = 2 q_t + r_t \in \{0, 1, \dots, 2C-1\}$.
 2. **Tổng hợp thông tin (`_aggregate`)**: Trạng thái ẩn $h_t[c]$ được ghép nối với embedding tương tác (cho $c = q_t$) hoặc embedding khái niệm thuần túy (cho $c \neq q_t$):
    $$\tilde{h}_t[c] = [h_t[c] \parallel e_c] \in \mathbb{R}^{H + E}$$
@@ -94,6 +95,7 @@ Tại mỗi bước $t$, học sinh trả lời câu hỏi khái niệm $q_t$ v�
    $$P(r_{t+1} = 1) = \sigma(W_p h_{t+1}[q_{t+1}] + b_p)$$
 
 ### 3.2 Sửa lỗi Cốt tử từ Upstream GKT trong `level1/`
+
 1. **Sửa lỗi kích thước One-Hot ($res\_len$)**: Upstream mặc định `binary=False` dẫn đến $res\_len = 12$ ($12 \times 123 = 1476$ chiều), lãng phí 6 lần bộ nhớ và tham số. Package `level1/pipeline.py` ép `binary=True` $\rightarrow res\_len=2$ ($2 \times 123 = 246$ chiều).
 2. **Khắc phục lệch Device trong `_one_hot_cache`**: Bảng `torch.eye` không phải parameter nên khi chuyển model sang GPU bảng vẫn ở CPU. `level1` cache bảng theo đúng device của tensor đầu vào.
 3. **Đánh giá AUC Toàn cục (Global AUC)**: Thay vì tính trung bình AUC theo batch (rất nhiễu), `level1` gom toàn bộ nhãn và xác suất của test set để tính 1 giá trị `roc_auc_score` duy nhất.
@@ -108,7 +110,7 @@ Dữ liệu: `skill_builder_data.csv` (525.534 tương tác, 4.217 học sinh, 1
 #### Bảng 1: Kết quả Tổng hợp Đa seed (Mean ± Std trên 5 seed)
 
 | Mô hình | Loại Đồ thị | Số tham số | Test AUC | Test Accuracy | Test NLL (batch mean) | Thời gian 1 seed |
-|---|---|---:|---|---|---|---:|
+| --- | --- | ---: | --- | --- | --- | ---: |
 | **DKT** | Không dùng | 39.899 | **0.7862 ± 0.0006** | **0.7343 ± 0.0013** | **0.5273 ± 0.0005** | **35.1 s** |
 | **GKT-Transition** | Tĩnh (Transition) | 34.140 | 0.7609 ± 0.0096 | 0.7127 ± 0.0077 | 0.5567 ± 0.0105 | 1.379.0 s |
 | **GKT-Identity** | Tĩnh (Đơn vị $A=I$) | 34.140 | 0.7578 ± 0.0056 | 0.7099 ± 0.0077 | 0.5546 ± 0.0068 | 2.755.5 s |
@@ -120,7 +122,7 @@ Dữ liệu: `skill_builder_data.csv` (525.534 tương tác, 4.217 học sinh, 1
 #### Bảng 2: Kiểm định Thống kê Ghép cặp theo Seed (Paired t-test so với DKT, $n=5$)
 
 | So sánh | $\Delta\text{AUC}$ | Khoảng tin cậy 95% (CI95) | Thống kê $t$ | Giá trị $p$ | Kích thước ảnh hưởng (Cohen's $d_z$) | Kết luận thống kê |
-|---|---:|---|---:|---:|---:|---|
+| --- | ---: | --- | ---: | ---: | ---: | --- |
 | **DKT − GKT-Transition** | **+0.02536** | [+0.01158, +0.03914] | 5.110 | 0.0069 | 2.285 | DKT vượt trội có ý nghĩa ($p < 0.01$) |
 | **DKT − GKT-Identity** | **+0.02838** | [+0.02034, +0.03641] | 9.807 | 0.0006 | 4.386 | DKT vượt trội có ý nghĩa ($p < 0.001$) |
 | **DKT − GKT-Zero** | **+0.02862** | [+0.02084, +0.03640] | 10.216 | 0.0005 | 4.569 | DKT vượt trội có ý nghĩa ($p < 0.001$) |
@@ -131,7 +133,7 @@ Dữ liệu: `skill_builder_data.csv` (525.534 tương tác, 4.217 học sinh, 1
 #### Bảng 3: Ablation Đồ thị lúc Suy luận (Inference Ablation: ép $A := 0$ trên Checkpoint Seed 42)
 
 | Mô hình | AUC có đồ thị gốc | AUC khi ép $A := 0$ | $\Delta\text{AUC}$ | $\Delta\text{NLL}$ | Mean $\|\Delta p\|$ | Max $\|\Delta p\|$ | Nhận xét cơ chế |
-|---|---:|---:|---:|---:|---:|---:|---|
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | **GKT-Transition** | 0.7427 | 0.7317 | **−0.0109** | +0.0080 | 0.0259 | 0.4933 | Mô hình thực sự đọc và sử dụng ma trận $A$ lúc tính toán |
 | **GKT-Identity** | 0.7549 | 0.7549 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | Trùng khớp tuyệt đối do cơ chế self-update ghi đè |
 | **GKT-Zero** | 0.7549 | 0.7549 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | Bản thân mô hình đã là $A=0$ |
@@ -142,7 +144,7 @@ Dữ liệu: `skill_builder_data.csv` (525.534 tương tác, 4.217 học sinh, 1
 #### Bảng 4: Hiệu chỉnh Xác suất (Probability Calibration trên 47.358 dự đoán Test)
 
 | Mô hình | AUC | Brier Score (càng thấp càng tốt) | ECE (Expected Calibration Error) | Mean Predicted $P$ | Tỉ lệ nhãn thực ($y=1$) |
-|---|---:|---:|---:|---:|---:|
+| --- | ---: | ---: | ---: | ---: | ---: |
 | **DKT** | **0.7866** | **0.1765** | 0.0154 | 0.6348 | 0.6263 |
 | **GKT-Transition** | 0.7427 | 0.1951 | 0.0507 | 0.6758 | 0.6263 |
 | **GKT-Identity / Zero** | 0.7549 | 0.1886 | 0.0223 | 0.6103 | 0.6263 |
@@ -181,7 +183,7 @@ Dữ liệu: `skill_builder_data.csv` (525.534 tương tác, 4.217 học sinh, 1
 
 GRKT (Graph-based Retrieval-Knowledge Tracing) giải quyết nhược điểm "hộp đen" của GKT bằng cách xây dựng quy trình cập nhật tri thức 4 pha tường minh:
 
-```mermaid
+```text
 sequenceDiagram
     autonumber
     participant Learner as Học sinh (Interaction i)
@@ -237,13 +239,14 @@ Mã nguồn gốc upstream của GRKT ([JJCui96/GRKT](https://github.com/JJCui96
 ### 4.3 Kết quả Thực nghiệm Cấp độ 2 (ASSISTments 2009 & Junyi Academy)
 
 Chạy trên 2 tập dữ liệu công khai với cùng split seed 42 và cùng độ dài chuỗi tối đa `max_seq_len=200`:
+
 - **ASSISTments 2009**: 3.884 học sinh, 237.943 tương tác, đồ thị train: 2.720 cạnh rel, 2.642 cạnh pre.
 - **Junyi Academy (tập con chuẩn hóa)**: 3.000 học sinh, 251.598 tương tác, top 200 khái niệm, đồ thị train: 17.866 cạnh rel, 10.173 cạnh pre.
 
 #### Bảng 5: So sánh GRKT vs Đường nền (Baselines) trên 2 Tập Dữ liệu
 
 | Tập dữ liệu | Mô hình | Đồ thị | Test AUC | Test Accuracy | Test NLL | Best Val AUC | Ghi chú so sánh |
-|---|---|---|---:|---:|---:|---:|---|
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
 | **assist2009** | **GRKT** | **train** | **0.7972** | **0.7441** | **0.5217** | **0.8016** | **Thắng mọi baseline** (+0.0113 so với DKT) |
 | assist2009 | GRKT-zero | zero | 0.7840 | 0.7303 | 0.5311 | 0.7915 | Thấp hơn GRKT train $-0.0132$ AUC |
 | assist2009 | DKT | — | 0.7859 | 0.7347 | 0.5284 | 0.7909 | Baseline không đồ thị mạnh nhất |
@@ -263,12 +266,12 @@ Chạy trên 2 tập dữ liệu công khai với cùng split seed 42 và cùng 
 Đo đạc trên 150 người học ngẫu nhiên trong tập test của từng bộ dữ liệu:
 
 | Tập dữ liệu / Đồ thị | Precedence Ratio | Precedence Gap | Stability (Spearman) | Stability Changed Frac | Forget Slope ($\times 10^{-4}$) | Pearson $(r_{\Delta t, \Delta m})$ | Abs $\Delta$ Retrieval |
-|---|---:|---:|---:|---:|---:|---:|---:|
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **assist2009 / train** | 0.3418 | **−0.1108** | 0.9712 | 0.4459 | −4.63 | −0.6104 | 0.0335 |
 | **assist2009 / zero** | 0.2015 | **−0.0776** | 0.9936 | 0.0081 | −2.38 | −0.2290 | 0.0000 |
 | **junyi / train** | 0.3651 | **−0.1014** | 0.9861 | 0.5120 | +0.10 | −0.0002 | 0.0209 |
 
-#### Bốn Bài học Khoa học Sâu sắc từ Quỹ đạo Tri thức:
+#### Bốn Bài học Khoa học Sâu sắc từ Quỹ đạo Tri thức
 
 1. **Vạch trần Cạm bẫy Bằng chứng Giả (Structural Artifacts)**:
    - Ba chỉ số thường được các báo cáo đưa vào: `consistency_strengthen`, `consistency_spread`, `locality` đều **đạt giá trị tuyệt đối 1.0 (100%)**.
@@ -321,13 +324,15 @@ python -c "from level2.experiment import run_level2; run_level2(datasets=['assis
 
 ### 6.2 Chạy Thực nghiệm Đầy đủ trên Kaggle GPU
 
-#### Thực nghiệm Cấp độ 1:
+#### Thực nghiệm Cấp độ 1
+
 1. Mở Kaggle Notebook, chọn môi trường GPU (Tesla T4 x2 hoặc P100).
 2. Tải lên tệp [`kaggle_level1_full.ipynb`](file:///root/Knowledge-Tracing/kaggle_level1_full.ipynb).
 3. Cấu hình cell 0.2: `QUICK_RUN = False` (chạy trên full ASSISTments 2009), `SEEDS = [42, 123, 456, 789, 1011]`.
 4. Chạy toàn bộ notebook. Kết quả được đóng gói tự động thành `level1_output.zip`.
 
-#### Thực nghiệm Cấp độ 2:
+#### Thực nghiệm Cấp độ 2
+
 1. Thêm dataset Junyi Academy vào Kaggle: Bấm *Add Input* $\rightarrow$ tìm `junyiacademy/learning-activity-public-dataset-by-junyi-academy` (Lưu ý: Bấm *Agree/Subscribe* điều khoản dataset trước).
 2. Tải lên tệp [`kaggle_level2_full.ipynb`](file:///root/Knowledge-Tracing/kaggle_level2_full.ipynb).
 3. Cấu hình cell 0.2: `QUICK_RUN = False`, `DATASETS = ["assist2009", "junyi"]`, `JUNYI_MAX_USERS = 3000`.
@@ -353,7 +358,7 @@ docs/
 ```
 
 | Tệp tài liệu | Trọng tâm học tập | Liên kết trực tiếp |
-|---|---|---|
+| --- | --- | --- |
 | [**docs/README.md**](file:///root/Knowledge-Tracing/docs/README.md) | Lộ trình học tập tổng thể, bản đồ kiến thức KT từ cơ bản đến nâng cao. | [`docs/README.md`](file:///root/Knowledge-Tracing/docs/README.md) |
 | [**01_gkt_module.md**](file:///root/Knowledge-Tracing/docs/01_gkt_module.md) | Giải thích chi tiết mã nguồn `GKT/`, các lớp nơ-ron, hàm mất mát và danh mục lỗi upstream. | [`docs/01_gkt_module.md`](file:///root/Knowledge-Tracing/docs/01_gkt_module.md) |
 | [**02_grkt_module.md**](file:///root/Knowledge-Tracing/docs/02_grkt_module.md) | Giải thích chi tiết mã nguồn `GRKT/`, thuật toán 4 pha, động học quên $\Delta t$, và 7 sửa đổi lớn. | [`docs/02_grkt_module.md`](file:///root/Knowledge-Tracing/docs/02_grkt_module.md) |

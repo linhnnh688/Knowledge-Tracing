@@ -77,13 +77,15 @@ Q-matrix \(Q \in \{0,1\}^{|questions| \times |KC|}\): nếu câu hỏi có nhi�
 ### 3.3. Cấp độ 1 — Dự đoán bước tiếp theo (Đã hoàn thành thực nghiệm)
 
 **Baseline không đồ thị — DKT (Deep Knowledge Tracing - Piech et al., NeurIPS 2015)**
+
 - Nhận chuỗi tương tác khái niệm kèm kết quả \((c_1, r_1), \ldots, (c_t, r_t)\).
 - LSTM cập nhật vector ẩn trạng thái người học qua thời gian; lớp Linear chiếu ra xác suất làm đúng khái niệm tiếp theo \(P(r_{t} = 1 \mid c_t)\).
 - Loss: NLLLoss / BCE trên các bước có nhãn thực tế.
 
 **Mô hình đồ thị — GKT (Graph-based Knowledge Tracing - Nakagawa et al., WI 2019)**
+
 - Mỗi KC \(c\) có một vector trạng thái ẩn riêng \(h_c^t \in \mathbb{R}^{d}\) trong ma trận trạng thái người học.
-- **Lan truyền đồ thị (GNN):** Khi người học tương tác với KC \(c\), hàm \(\mathcal{F}_{\text{self}}\) và \(\mathcal{F}_{\text{neighbor}}\) lan truyền thông tin sang các KC láng giềng kề cận trên ma trận kề \(A\).
+- **Lan truyền đồ thị (GNN):** Khi người học tương tác với KC \(c\), hàm \(\mathcal{F}*{\text{self}}\) và \(\mathcal{F}*{\text{neighbor}}\) lan truyền thông tin sang các KC láng giềng kề cận trên ma trận kề \(A\).
 - **Cập nhật thời gian:** Sử dụng Erase-Add Gate kết hợp GRUCell để cập nhật trạng thái của tất cả các KC, phản ánh mức độ thành thạo theo thời gian.
 - **Khảo sát cấu trúc đồ thị & Ablation:**
   1. `Transition Graph`: Đồ thị chuyển tiếp xác suất trích xuất strictly từ tập train (chống rò rỉ).
@@ -430,7 +432,7 @@ sửa đổi tương ứng ở trên; nêu rõ model core là của tác giả, 
 #### Đề cương báo cáo 12–18 trang (mỗi mục kèm nguồn số liệu/file đã có sẵn)
 
 | § | Nội dung | Độ dài | Lấy từ đâu |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | Bài toán đúng/sai, vì sao cần đồ thị, phạm vi nhóm chọn (cấp 1 + 2) | 1 tr. | `YEU_CAU.md` §1–3 |
 | 2 | Dữ liệu: ASSISTments 2009 (+ Junyi cho cấp 2), EDA số lượt/người học, phân bố khái niệm | 1.5 tr. | cell EDA hai notebook, `skill_builder_data.csv` |
 | 3 | Tiền xử lý & xây đồ thị: `skill_with_answer = 2·skill + correct`, chuỗi theo người, Transition graph **chỉ từ train** (`GKT/processing.py:172-197`), `rel_map`/`pre_map` của GRKT (`level2/grkt_data.build_relevance_maps`) | 2 tr. | `README.md` §Định vị pyKT |
@@ -495,4 +497,3 @@ Mọi người vẫn train/eval được mô hình của mình trên cùng data 
 ## 10. Kết luận ngắn
 
 Làm **nhánh đúng/sai**, hai dataset **ASSIST09 + Junyi**, mô hình **DKT vs GKT (Cấp độ 1) và GRKT (Cấp độ 2)**, đồ thị KC xây đúng từ train, đo AUC kèm **ablation đồ thị (Dense, Identity, Zero)** và **đánh giá đa seed**, rồi mở rộng bằng **quỹ đạo mastery, 10 case xAI** và **quiz nhỏ**. Đường đi này khớp lần lượt cấp 1 → 2 → 3 của đề, tận dụng đúng điểm mạnh của học máy đồ thị: không chỉ đoán đúng/sai mà còn mô tả được năng lực người học và giải thích được nguyên nhân đưa ra dự đoán.
-
