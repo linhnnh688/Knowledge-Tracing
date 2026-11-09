@@ -84,7 +84,7 @@ Notebook `kaggle_level1_full.ipynb` được thiết kế nhằm giải quyết 
 - **Kiểm tra rò rỉ chuyển tiếp**:
   Đối chiếu ma trận chuyển tiếp tập train với toàn bộ dữ liệu: Khối lượng chuyển tiếp chỉ xuất hiện ở tập kiểm thử chiếm tỉ lệ bao nhiêu và xác nhận các cạnh này hoàn toàn vắng mặt trong đồ thị huấn luyện.
 - Xác nhận ngẫu nhiên trên 200 chuỗi: $\text{feature}_t = 2 \times \text{skill}_t + \text{correct}_t$.
-- Ghi toàn bộ kết luận vào tệp [`leak_report.txt`](file:///root/Knowledge-Tracing/leak_report.txt).
+- Ghi toàn bộ kết luận vào tệp [`leak_report.txt`](file:///root/Knowledge-Tracing/results/level1_out/leak_report.txt).
 
 ---
 
@@ -186,7 +186,7 @@ flowchart TD
    - **Ablation đồ thị tại ca**: $|\Delta p_{\text{graph}}|$ khi đặt $A := 0$.
    - **Occlusion**: $\max |\Delta p_{\text{occ}}|$ khi bỏ hẳn 1 bước tương tác.
    - **Chuẩn trạng thái ẩn $h_t$**: Độ lớn $\|h_t[q]\|_2$, thứ hạng của khái niệm mục tiêu trong toàn bộ $C$ khái niệm, và chuẩn của các láng giềng đồ thị.
-3. Xuất tệp giải thích chi tiết [`cases.md`](file:///root/Knowledge-Tracing/cases.md), tệp dữ liệu `cases.json`, bảng tóm tắt `tables/case_study_summary.csv`, và biểu đồ so sánh mức độ ảnh hưởng nhân quả `figures/case_evidence.png`.
+3. Xuất tệp giải thích chi tiết [`cases.md`](file:///root/Knowledge-Tracing/results/level1_out/cases.md), tệp dữ liệu `cases.json`, bảng tóm tắt `tables/case_study_summary.csv`, và biểu đồ so sánh mức độ ảnh hưởng nhân quả `figures/case_evidence.png`.
 
 ---
 
@@ -206,7 +206,7 @@ flowchart TD
 - Đọc lại toàn bộ số liệu trực tiếp từ các tệp CSV trong `tables/` (không đọc từ biến trong RAM) để đảm bảo tính đồng nhất tuyệt đối giữa báo cáo và dữ liệu trên đĩa.
 - Xuất `environment.txt` (nền tảng hệ điều hành, Python, PyTorch, CUDA, GPU).
 - Xuất `run_manifest.json` (toàn bộ siêu tham số, commit Git, hash dữ liệu).
-- Sinh tệp báo cáo tổng hợp [`report_summary.md`](file:///root/Knowledge-Tracing/report_summary.md) chứa:
+- Sinh tệp báo cáo tổng hợp [`report_summary.md`](file:///root/Knowledge-Tracing/results/level1_out/report_summary.md) chứa:
   - Bản đối chiếu 14 yêu cầu và khoảng trống GAP.
   - Các bảng số liệu định dạng Markdown.
   - Các đoạn văn bản kết luận khoa học tự động được suy luận từ kết quả kiểm định.

@@ -615,3 +615,191 @@ DKT thắng mọi biến thể GKT từ **+0,0194 đến +0,0286 AUC**.
 3. Ghi rõ định nghĩa NLL ở bảng chính, hoặc đổi sang NLL toàn cục cho đồng nhất.
 4. Không cần train thêm cho §5: ablation lúc train đã đủ 5 biến thể × 5 seed; kết luận phủ định
    là kết quả khoa học, không phải thiếu sót cài đặt.
+
+
+---
+
+## 7. Cẩm nang Học tập Chuyên sâu Cấp độ 1 (Deep-dive Learning Guide)
+
+Mục này được thiết kế như một **giáo trình học tập chi tiết** giúp bạn hiểu thấu đáo kiến trúc toán học, mã nguồn, bản chất thực nghiệm và các bài học cốt tử của bài toán Knowledge Tracing trên đồ thị ở Cấp độ 1.
+
+---
+
+### 7.1 Dòng Dữ liệu & Toán học Chi tiết của GKT (Graph-based Knowledge Tracing)
+
+Trong bài báo của Nakagawa et al. (WSDM 2019), mô hình GKT biểu diễn mức độ thành thạo của học sinh đối với toàn bộ các khái niệm tri thức dưới dạng một **ma trận trạng thái ẩn**:
+$$h_t = \begin{bmatrix} h_t[0] \\ h_t[1] \\ \vdots \\ h_t[C-1] \end{bmatrix} \in \mathbb{R}^{C \times H}$$
+với $C$ là số lượng khái niệm tri thức (Knowledge Concepts - KC; ví dụ ASSISTments 2009 có $C=123$) và $H = \text{hidden\_dim} = 32$.
+
+Mỗi bước tương tác bao gồm câu hỏi thuộc khái niệm $q_t \in \{0, \dots, C-1\}$ và kết quả làm bài $r_t \in \{0, 1\}$.
+
+```mermaid
+flowchart TD
+    subgraph Step 1: Input & Embeddings
+        A["(q_t, r_t)"] --> B["Interaction Feature: x_t = 2*q_t + r_t"]
+        B --> C["emb_x(x_t) in R^E"]
+        D["All Concept Indices: 0..C-1"] --> E["emb_c in R^(C x E)"]
+    end
+
+    subgraph Step 2: Aggregation
+        C --> F["_aggregate: Thay thế emb_c[q_t] bằng emb_x(x_t)"]
+        E --> F
+        G["Trạng thái ẩn hiện tại h_t in R^(C x H)"] --> H["Ghép nối: tmp_h_t = [h_t || emb] in R^(C x (H+E))"]
+        F --> H
+    end
+
+    subgraph Step 3: Graph Neighborhood Aggregation
+        H --> I["f_self(tmp_h_t[q_t]) -> self_features"]
+        H --> J["f_in, f_out trên các cặp (q_t, c)"]
+        K["Ma trận kề đồ thị A in R^(C x C)"] --> L["Lan truyền GNN: A[q_t, c]*f_in + A[c, q_t]*f_out"]
+        J --> L
+        I --> M["Ghi đè m_next[q_t] = self_features"]
+        L --> M
+    end
+
+    subgraph Step 4: Erase-Add Gate & GRU Update
+        H --> N["Cổng Xóa e_t = sigmoid(W_e * tmp_h_t + b_e)"]
+        H --> O["Cổng Thêm a_t = tanh(W_a * tmp_h_t + b_a)"]
+        G --> P["Trạng thái điều chế: h_t' = h_t * (1 - e_t) + a_t"]
+        N --> P
+        O --> P
+        M --> Q["GRUCell(m_next, h_t') -> h_(t+1) in R^(C x H)"]
+        P --> Q
+    end
+
+    subgraph Step 5: Prediction
+        Q --> R["Trích xuất trạng thái khái niệm kế tiếp: h_(t+1)[q_(t+1)]"]
+        R --> S["Dự đoán: p_(t+1) = sigmoid(W_p * h_(t+1)[q_(t+1)] + b_p)"]
+    end
+```
+
+#### Chi tiết 5 phương trình toán học cốt lõi (đối chiếu mã nguồn `GKT/models.py`):
+
+1. **Tổng hợp Đặc trưng Tương tác (`_aggregate`, dòng 160–210)**:
+   - Đối với khái niệm vừa được học sinh trả lời ($q_t$), embedding kết hợp cả câu hỏi lẫn đáp án được sử dụng: $e_{x} = \text{emb\_x}(2q_t + r_t) \in \mathbb{R}^E$.
+   - Đối với tất cả các khái niệm khác ($c \neq q_t$), embedding khái niệm tĩnh được dùng: $e_c = \text{emb\_c}(c) \in \mathbb{R}^E$.
+   - Ghép nối trạng thái ẩn với embedding:
+     $$\tilde{h}_t[c] = \begin{bmatrix} h_t[c] \\ e_x \end{bmatrix} \text{ nếu } c = q_t, \quad \tilde{h}_t[c] = \begin{bmatrix} h_t[c] \\ e_c \end{bmatrix} \text{ nếu } c \neq q_t \quad (\tilde{h}_t \in \mathbb{R}^{C \times (H+E)})$$
+
+2. **Lan truyền Đồ thị Lân cận (`_agg_neighbors`, dòng 212–295)**:
+   - Với chính khái niệm $q_t$: Biến đổi qua mạng nơ-ron MLP tự thân:
+     $$m_{next}[q_t] = f_{self}(\tilde{h}_t[q_t]) \in \mathbb{R}^H$$
+   - Với mọi khái niệm lân cận $c \neq q_t$: Tổng hợp thông tin từ $q_t$ truyền sang $c$ (cạnh ra $A[q_t, c]$) và từ $c$ truyền về $q_t$ (cạnh vào $A[c, q_t]$):
+     $$m_{next}[c] = A[q_t, c] \cdot f_{in}([\tilde{h}_t[q_t] \parallel \tilde{h}_t[c]]) + A[c, q_t] \cdot f_{out}([\tilde{h}_t[q_t] \parallel \tilde{h}_t[c]]) \in \mathbb{R}^H$$
+
+3. **Cổng Xóa và Thêm (Erase-Add Gate, `layers.py:54–84`)**:
+   Lấy cảm hứng từ cơ chế đọc/ghi của Neural Turing Machines (NTM):
+   $$e_t[c] = \sigma(W_e \tilde{h}_t[c] + b_e) \in (0, 1)^H \quad (\text{vector tỉ lệ xóa})$$
+   $$a_t[c] = \tanh(W_a \tilde{h}_t[c] + b_a) \in (-1, 1)^H \quad (\text{vector thông tin mới thêm})$$
+   $$h_t'[c] = h_t[c] \odot (1 - e_t[c]) + a_t[c]$$
+
+4. **Cập nhật bằng Mạng Nơ-ron Hồi quy GRU (`_update`, dòng 297–338)**:
+   Mô hình không cập nhật rời rạc mà nạp thông tin tổng hợp lân cận $m_{next}$ và trạng thái đã xóa-thêm $h_t'$ vào một `nn.GRUCell`:
+   $$h_{t+1}[c] = \text{GRUCell}(m_{next}[c], h_t'[c])$$
+
+5. **Dự đoán Xác suất (`_predict`, dòng 340–355)**:
+   Khi nhận câu hỏi tiếp theo $q_{t+1}$, mô hình lấy ra đúng hàng $h_{t+1}[q_{t+1}]$ để đưa qua tầng tuyến tính:
+   $$\hat{y}_{t+1} = \sigma(W_p h_{t+1}[q_{t+1}] + b_p) \in (0, 1)$$
+
+---
+
+### 7.2 Điểm Mù Toán học: Vì sao `Identity` và `Zero` Hoàn toàn Đồng nhất trong GKT?
+
+Trong các đề bài và tài liệu nghiên cứu ban đầu, người ta thường yêu cầu thử nghiệm ablation với **ma trận đơn vị** ($A = I$) và **ma trận không** ($A = 0$) để kiểm tra xem "việc chỉ giữ lại cạnh tự nối" khác gì "bỏ hết cạnh".
+
+Tuy nhiên, trong mã nguồn GKT, hai biến thể này cho kết quả dự đoán **trùng khít tuyệt đối**:
+
+```python
+# GKT/models.py dòng 253-255:
+adj = self.graph[masked_qt.long(), :].unsqueeze(dim=-1)          # [mask_num, C, 1]
+reverse_adj = self.graph[:, masked_qt.long()].transpose(0, 1).unsqueeze(dim=-1)
+neigh_features = adj * self.f_neighbor_list[0](neigh_ht) + reverse_adj * self.f_neighbor_list[1](neigh_ht)
+
+# Dòng 293-294:
+m_next = tmp_ht[:, :, :self.hidden_dim]
+m_next[qt_mask] = neigh_features
+m_next[qt_mask] = m_next[qt_mask].index_put(self_index_tuple, self_features) # <-- GHI ĐÈ!
+```
+
+#### Chứng minh:
+1. **Xét các nút lân cận ($c \neq q_t$)**:
+   - Nếu $A = 0$: $A[q_t, c] = 0$ và $A[c, q_t] = 0 \implies neigh\_features[c] = 0$.
+   - Nếu $A = I$: Vì ma trận đơn vị chỉ có đường chéo chính bằng 1, mọi phần tử ngoài đường chéo đều bằng 0: $A[q_t, c] = 0$ và $A[c, q_t] = 0 \implies neigh\_features[c] = 0$.
+   - Như vậy, với mọi $c \neq q_t$, $neigh\_features$ của cả hai ma trận đều bằng $0$.
+2. **Xét chính nút mục tiêu ($c = q_t$)**:
+   - Nếu $A = 0$: $neigh\_features[q_t] = 0$.
+   - Nếu $A = I$: $neigh\_features[q_t] = 1 \cdot f_{in}(\dots) + 1 \cdot f_{out}(\dots)$.
+   - **Tuy nhiên**, ngay ở dòng 294, dòng lệnh:
+     `m_next[qt_mask] = m_next[qt_mask].index_put(self_index_tuple, self_features)`
+     đã **ghi đè hoàn toàn** giá trị tại vị trí $q_t$ bằng `self_features = f_self(...)`.
+   - Bất kể giá trị của $neigh\_features[q_t]$ là gì, nó đều bị xóa bỏ trước khi nạp vào GRU!
+
+$$\implies m_{next}^{Identity}[c] \equiv m_{next}^{Zero}[c] \quad \forall c \in \{0, \dots, C-1\}$$
+
+**Bài học học thuật**:
+- Ablation "ma trận đơn vị" trong GKT không mang ý nghĩa thực nghiệm vì nó bị triệt tiêu bởi kiến trúc code.
+- Để kiểm tra vai trò thực sự của đồ thị, bắt buộc phải dùng các phép thử có ý nghĩa hơn: **Shuffled Graph** (xáo trộn toàn cục) và **ShuffledRow Graph** (hoán vị bảo toàn bậc hàng).
+
+---
+
+### 7.3 Bản chất Dữ liệu: Vì sao Baseline DKT Thắng Mọi Biến thể GKT trên ASSISTments 2009?
+
+Kết quả thực nghiệm 5 seed chỉ ra rằng DKT ($0.7862$ AUC) vượt trội hơn GKT-Transition ($0.7609$ AUC) tới $+0.0254$ AUC với $p = 0.0069$ và $d_z = 2.285$. Vì sao một mô hình LSTM đơn giản từ năm 2015 lại đánh bại một mô hình đồ thị phức tạp năm 2019?
+
+1. **Đặc điểm bài toán Single-Concept**:
+   - Trong ASSISTments 2009, mỗi câu hỏi chỉ gắn với **duy nhất 1 kỹ năng** ($K=1$). Không có bài tập nào đòi hỏi kết hợp đồng thời nhiều kỹ năng.
+2. **Không gian biểu diễn: Toàn cục vs. Phân mảnh**:
+   - **DKT**: Duy trì một vector ẩn $h_t \in \mathbb{R}^{32}$ (hoặc 128). Tương tác của học sinh với *bất kỳ* kỹ năng nào cũng trực tiếp điều chỉnh toàn bộ vector này. Mạng LSTM có thể tự do học các liên kết ngầm phi tuyến tính (ví dụ: làm sai bài Hình học có thể phản ánh sự thiếu tập trung, ảnh hưởng đến xác suất làm bài Số học ngay sau đó).
+   - **GKT**: Phân mảnh bộ nhớ thành $123$ vector nhỏ $h_t[c] \in \mathbb{R}^{32}$. Khi học sinh làm kỹ năng $q_t$, chỉ có $h_t[q_t]$ và các lân cận trực tiếp trên đồ thị $A$ được cập nhật. Nếu đồ thị chuyển tiếp không chứa cạnh nối $q_t \rightarrow c$, trạng thái $h_t[c]$ bị đóng băng.
+3. **Nhiễu từ Ma trận Chuyển tiếp (Transition Graph)**:
+   - Đồ thị Transition được tạo ra từ tần suất xuất hiện liên tiếp giữa các bài tập của học sinh trong tập train ($A[i, j] = \frac{count(i \rightarrow j)}{count(i)}$).
+   - Thứ tự làm bài trong thực tế thường phụ thuộc vào cách giáo viên giao bài hoặc thiết kế bài giảng của trường học, **chưa chắc đã phản ánh đúng mối quan hệ tiên quyết hay tương quan năng lực thực tế**.
+   - Việc ép GNN truyền thông tin theo các cạnh này vô tình tạo ra sự lan truyền nhiễu (noise propagation), làm suy giảm độ chính xác so với việc để LSTM tự học tự do.
+
+---
+
+### 7.4 Ý nghĩa Khoa học của Ablation Đồ thị
+
+Khi làm nghiên cứu hoặc báo cáo, bạn cần phân biệt rõ ràng hai loại ablation:
+
+#### A. Ablation lúc Huấn luyện (Train-time Ablation)
+Huấn luyện mô hình từ đầu với các ma trận đồ thị khác nhau:
+- `Transition`: Đồ thị chuyển tiếp thật từ dữ liệu train ($884$ cạnh).
+- `Zero`: Bỏ hoàn toàn cạnh ($0$ cạnh).
+- `Shuffled`: Hoán vị ngẫu nhiên toàn bộ cạnh ($814$ cạnh).
+- `ShuffledRow`: Hoán vị đỉnh đích trong từng hàng, giữ nguyên bậc ra (out-degree) của từng kỹ năng ($884$ cạnh).
+
+**Kết quả thống kê**:
+$$\text{Transition } (0.7609) \approx \text{Zero } (0.7576) \approx \text{Shuffled } (0.7579) \approx \text{ShuffledRow } (0.7576)$$
+Mọi so sánh đều có $p > 0.49$.
+**Kết luận**: Cấu trúc đồ thị chuyển tiếp **không đem lại lợi thế thống kê nào** trong quá trình huấn luyện trên ASSISTments 2009.
+
+#### B. Ablation lúc Suy luận (Inference-time Ablation: ép $A := 0$)
+Lấy mô hình đã huấn luyện xong với đồ thị gốc, tại thời điểm test đặt $A := 0$ mà không huấn luyện lại.
+- `GKT-Transition`: AUC giảm ngay $-0.0109$ (từ $0.7427 \rightarrow 0.7317$).
+- `GKT-ShuffledRow`: AUC cũng giảm đúng $-0.0109$ (từ $0.7651 \rightarrow 0.7542$).
+
+**Ý nghĩa**:
+- Mức giảm $-0.0109$ chứng minh mô hình **thực sự có đọc và tính toán phụ thuộc vào ma trận kề $A$** (nếu đột ngột rút $A$ ra, mô hình bị mất luồng tín hiệu dẫn đến giảm hiệu năng).
+- Tuy nhiên, việc cả Transition và ShuffledRow giảm như nhau chứng tỏ mô hình chỉ coi $A$ như một bộ khuếch đại tín hiệu lân cận, chứ không hề phân biệt được cạnh giáo dục thật hay cạnh xáo trộn.
+
+---
+
+### 7.5 Phương pháp Giải thích Mô hình (xAI) và Bài học Tái lập
+
+Module [`level1/explain.py`](file:///root/Knowledge-Tracing/level1/explain.py) cung cấp các công cụ xAI định lượng thay vì dựa vào các giải thích định tính:
+
+1. **Phản chứng Nếu-Thì (Counterfactual Flip)**:
+   - Giả định học sinh thay đổi kết quả của 1 lần làm bài trong quá khứ ($t' < t$): đúng thành sai hoặc sai thành đúng.
+   - Forward lại mô hình và đo $\Delta p = p_{\text{flip}} - p_{\text{gốc}}$.
+   - Số $\Delta p$ lớn nhất phản ánh bài tập nào trong lịch sử có tác động quyết định đến dự đoán hiện tại.
+2. **Ablation Đồ thị Cục bộ ($\Delta p_{\text{graph}}$)**:
+   - Ép $A := 0$ riêng cho lần dự đoán này. Số $\Delta p_{\text{graph}}$ cho biết đồ thị đóng góp bao nhiêu phần trăm xác suất cho riêng case này.
+3. **Chuẩn Trạng thái Tri thức (Knowledge State Norm $\|h_t\|_2$)**:
+   - Tính chuẩn Frobenius của vector ẩn $h_t[c]$ cho từng khái niệm. Chuẩn càng cao thể hiện khái niệm đó đã tích lũy càng nhiều thông tin qua các lần làm bài.
+
+#### Cảnh báo Bài học Tái lập (F1 Mismatch):
+- Khi chọn case study theo batch trong DataLoader (`batch_size=32`), các chuỗi ngắn được đệm $-1$ qua `pad_collate`.
+- Khi tính lại phản chứng cho 1 case đơn lẻ, chuỗi được forward với kích thước batch là 1 và không có đệm.
+- Nếu không kiểm tra cẩn thận, sai số floating-point do thứ tự cộng tensor trong GPU hoặc sự chênh lệch padding có thể khiến $p_{\text{recheck}} \neq p_{\text{logged}}$.
+- **Quy tắc an toàn**: Luôn đặt assert `|p_recheck - p_logged| <= 1e-4` ngay khi trích xuất case để đảm bảo bằng chứng xAI là hoàn toàn đáng tin cậy.

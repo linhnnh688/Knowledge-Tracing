@@ -817,3 +817,189 @@ nêu trade-off này, không chỉ chọn Brier.
 3. `precedence_gap` **âm** trên cả hai tập → tiêu chí nhất quán tiên quyết **không đạt**; các tiêu
    chí đạt là độ ổn định (Spearman cao) và cơ chế lan truyền (`abs_delta_retrieval` > 0), với
    quên bị giới hạn bởi dữ liệu Junyi.
+
+
+---
+
+## 11. Cẩm nang Học tập Chuyên sâu Cấp độ 2 (Deep-dive Learning Guide)
+
+Mục này cung cấp hướng dẫn học tập toàn diện về **GRKT (Graph-based Retrieval-Knowledge Tracing, KDD 2024)**, phân tích chi tiết dòng dữ liệu, công thức toán học, các cạm bẫy phương pháp luận và cách thiết kế thực nghiệm chuẩn mực ở Cấp độ 2.
+
+---
+
+### 11.1 Dòng Dữ liệu & Toán học Chi tiết của GRKT
+
+Khác với DKT chỉ duy trì một vector ẩn tổng quát hoặc GKT duy trì ma trận trạng thái bị GRU trộn lẫn, GRKT mô phỏng quá trình nhận thức của con người qua **4 pha toán học tường minh**:
+
+```mermaid
+flowchart TD
+    subgraph Phase 1: Pre-calculation
+        A["Problem & Knowledge Embeddings"] --> B["Requirement Matrix alpha_matrix in [B, S, NK]"]
+        A --> C["Relevance Matrix beta_matrix in [NK, NK]"]
+        D["rel_map & pre_map (train-only)"] --> E["beta_rel_tilde, beta_pre_tilde, beta_sub_tilde"]
+        C --> E
+        A --> F["Learn Kernel & Forget Kernel (qua GNN alpha)"]
+    end
+
+    subgraph Phase 2: Knowledge Retrieval & Prediction
+        G["Trạng thái mastery h in [B, NK, KH]"] --> H["GNN Retrieval qua rel, pre, sub -> h_tilde"]
+        E --> H
+        B --> H
+        H --> I["Vector mastery tích hợp: master_full in [B, NK]"]
+        I --> J["master = gather(master_full, know)"]
+        K["Độ khó bài tập: diff = MLP([e_know || e_prob])"]
+        J --> L["Dự đoán: score = sigmoid(master - diff)"]
+        K --> L
+    end
+
+    subgraph Phase 3: Memory Strengthening
+        M["Kết quả thực tế corr (Đúng=1 / Sai=0)"] --> N["Nếu Đúng: Tính total_gain qua GNN rel/pre/sub"]
+        M --> O["Nếu Sai: Tính total_loss qua GNN rel/pre/sub"]
+        N --> P["Cập nhật củng cố: h_strong = h + corr*total_gain - (1-corr)*total_loss"]
+        O --> P
+    end
+
+    subgraph Phase 4: Learning & Forgetting
+        Q["Khoảng cách thời gian Delta_t = t_(i+1) - t_i"] --> R["Quyết định học trễ: Gumbel-Softmax(decision_mlp)"]
+        P --> S["Học trễ: (1 - exp(-(count+1)*Delta_t*learn_kernel)) * total_learn"]
+        R --> S
+        P --> T["Quên tri thức: history_gain * exp(-(count+1)*Delta_t*forget_kernel)"]
+        Q --> T
+        S --> U["Trạng thái mới cho bước kế tiếp: h_(i+1)"]
+        T --> U
+    end
+
+    Phase 1 --> Phase 2
+    Phase 2 --> Phase 3
+    Phase 3 --> Phase 4
+```
+
+#### Chi tiết 4 Pha Toán học (đối chiếu mã nguồn `GRKT/model/GRKT.py`):
+
+1. **Pha 1: Tính toán Trước Ma trận Quan hệ & Kernel (Pre-calculation)**:
+   - **Ma trận yêu cầu (Requirement)**: $\alpha \in \mathbb{R}^{B \times S \times NK}$ đo lường mức độ bài tập $probs$ đòi hỏi từng khái niệm tri thức:
+     $$\alpha = \sigma(\text{req\_matrix}(e_{prob}) \cdot e_{know}^T)$$
+   - **Ma trận tương quan khái niệm**: $\beta \in \mathbb{R}^{NK \times NK}$:
+     $$\beta = \sigma(\text{req\_matrix}(e_{know}) \cdot e_{know}^T)$$
+   - **Ma trận kề chuẩn hóa theo 3 kênh**:
+     $$\tilde{\beta}_{rel} = \frac{\beta \odot rel\_map}{\sum rel\_map}, \quad \tilde{\beta}_{pre} = \frac{\beta \odot pre\_map}{\sum pre\_map}, \quad \tilde{\beta}_{sub} = \frac{\beta \odot pre\_map^T}{\sum pre\_map^T}$$
+   - **Kernel Học và Quên**: Lan truyền $K_{hop}$ bước GNN trên embedding khái niệm để sinh ra tốc độ học $\kappa_{learn}$ và tốc độ quên $\kappa_{forget}$:
+     $$\kappa_{learn} = \text{softplus}(\text{GNN}_{learn}(e_{know})) \cdot \alpha_{\text{scale}}$$
+     $$\kappa_{forget} = \text{softplus}(\text{GNN}_{forget}(e_{know})) \cdot \alpha_{\text{scale}}$$
+
+2. **Pha 2: Truy xuất Tri thức & Dự đoán Xác suất (Knowledge Retrieval & Prediction)**:
+   - Tại bước $i$, trạng thái tri thức $h \in \mathbb{R}^{B \times NK \times KH}$ ($KH=16$) được lan truyền qua 3 đồ thị quan hệ có điều chế bởi yêu cầu bài tập $\alpha_i$:
+     $$\tilde{h} = h + \sum_{k=1}^{K_{hop}} \left( \tilde{\beta}_{rel} (W_{rel} \tilde{h} \odot \alpha_i) + \tilde{\beta}_{pre} (W_{pre} \tilde{h} \odot \alpha_i) + \tilde{\beta}_{sub} (W_{sub} \tilde{h} \odot \alpha_i) \right)$$
+   - Chiếu sang điểm thành thạo: $master\_full = \text{Positive\_Linear}(\tilde{h}) \in \mathbb{R}^{B \times NK}$.
+   - Trích xuất điểm của khái niệm làm bài: $master = master\_full[know_i]$.
+   - Độ khó bài tập: $diff = \text{MLP}([e_{know} \parallel e_{prob}])$.
+   - Xác suất làm đúng:
+     $$\hat{y}_i = \sigma(master - diff) \in (0, 1)$$
+
+3. **Pha 3: Củng cố Bộ nhớ (Memory Strengthening)**:
+   - Nếu học sinh trả lời **Đúng** ($corr_i = 1$):
+     Mô hình tính lượng tri thức thu nhận $gain = \text{FFN}([e_{know}, e_{prob}, h[know_i]])$, sau đó phân tán trên đồ thị qua $K_{hop}$ bước GNN để thu được $total\_gain \in \mathbb{R}^{B \times NK \times KH}$.
+   - Nếu học sinh trả lời **Sai** ($corr_i = 0$):
+     Mô hình tính lượng tri thức bị hổng $loss = \text{FFN}(\dots)$ và lan truyền trên đồ thị thành $total\_loss$.
+   - Cập nhật củng cố:
+     $$h_{strong} = h + corr_i \cdot total\_gain - (1 - corr_i) \cdot total\_loss$$
+
+4. **Pha 4: Động học Học trễ & Quên theo Thời gian Thực (Learning & Forgetting)**:
+   - Giữa bước $i$ và bước $i+1$, học sinh nghỉ một khoảng thời gian $\Delta t = t_{i+1} - t_i$.
+   - **Quyết định học trễ**: `decision_mlp` qua Gumbel-Softmax quyết định xem học sinh có "ngộ" ra kiến thức mới trong khoảng thời gian nghỉ hay không. Nếu có, lượng học $total\_learn$ được kích hoạt.
+   - **Học trễ**: Tăng dần theo hàm bão hòa:
+     $$\Delta h_{learn} = \left( 1 - \exp\left( -(count + 1) \cdot \Delta t \cdot \kappa_{learn} \right) \right) \cdot total\_learn$$
+   - **Quên tri thức cũ**: Phần tri thức học sinh đã tích lũy trong quá khứ ($history\_gain = (h - h_0)^+$) bị suy giảm theo đường cong Ebbinghaus đối với các khái niệm không được củng cố ở bước này ($total\_learn == 0$):
+     $$\Delta h_{forget} = history\_gain \cdot \left( 1 - \exp\left( -(count + 1) \cdot \Delta t \cdot \kappa_{forget} \right) \right)$$
+   - Trạng thái bắt đầu bước $i+1$:
+     $$h_{i+1} = h_{strong} + \Delta h_{learn} - \Delta h_{forget}$$
+
+---
+
+### 11.2 Bảy Cạm Bẫy Phương Pháp Luận trong Upstream GRKT đã được Khắc Phục
+
+| # | Lỗ hổng Upstream ([JJCui96/GRKT](https://github.com/JJCui96/GRKT)) | Hậu quả khoa học | Giải pháp khắc phục trong `level2/` |
+|---|---|---|---|
+| 1 | **`Runner.py` K-Fold trên cửa sổ chuỗi** | Rò rỉ danh tính học sinh giữa train và test; kết quả AUC bị thổi phồng giả tạo. | Bỏ hoàn toàn `Runner.py`; dùng `level2/grkt_api.py` chia tập nghiêm ngặt theo User ID. |
+| 2 | **Đồ thị xây từ toàn bộ dataset** | Nhìn thấy trước toàn bộ tương quan của tập test trước khi huấn luyện (Data Leakage). | `level2/grkt_data.py` chỉ đếm $tt, tf, ft, ff$ trên các chuỗi của tập Train. |
+| 3 | **Trục thời gian thô không chặn trần** | $\Delta t$ tính bằng giây; học sinh nghỉ 2 ngày dẫn đến $\Delta t = 172.800$, làm sập số mũ $\exp(-\Delta t) = 0$ (quên sạch sành sanh). | Quy đổi sang phút và áp dụng trần kẹp: $\Delta t = \min(\Delta t / 60000, 240)$. |
+| 4 | **Không có cơ chế ghi nhận Quỹ đạo** | Muốn theo dõi $m(u, c, t)$ phải sửa code forward, làm chậm quá trình train. | Bổ sung hook `rec` vào `forward()`, chỉ thu thập khi có yêu cầu đánh giá, không tốn tài nguyên lúc train. |
+| 5 | **Ngưỡng nhị phân đồ thị không nhất quán** | Upstream dùng lẫn lộn float và bool; ngưỡng lọc đồ thị bị thả nổi. | Ép kiểu rõ ràng $rel\_map = (rel\_map > 0.6)$ và $pre\_map = (pre\_map > 0.6)$. |
+| 6 | **Lỗ hổng bảo mật `eval()` trong CLI** | `Training.py` dùng `eval(model_name)` để nạp lớp mô hình, tiềm ẩn nguy cơ thực thi mã độc. | Thay bằng từ điển Registry mô hình tường minh và an toàn. |
+| 7 | **Thiếu cơ chế Checkpoint & Resume** | Khi chạy trên Kaggle GPU (giới hạn 12 giờ), phiên bị ngắt sẽ mất trắng toàn bộ tiến trình. | Lưu checkpoint chi tiết (epoch, batch đang dở, optimizer state) và luồng nền `PeriodicPackager`. |
+
+---
+
+### 11.3 Quỹ đạo Tri thức $m(u, c, t)$: Bằng chứng Thật vs Cạm bẫy Bằng chứng Giả
+
+Khi đánh giá quỹ đạo tri thức $m(u, c, t)$ theo yêu cầu Cấp độ 2, rất nhiều báo cáo mắc bẫy khi đưa ra các con số "hoàn hảo 100%". Bảng dưới đây phân định ranh giới giữa kiểm chứng cài đặt và bằng chứng thực nghiệm:
+
+```mermaid
+graph TD
+    A["Chỉ số Quỹ đạo Tri thức m(u, c, t)"] --> B["Bằng chứng Giả do Cấu trúc (Structural Artifacts)"]
+    A --> C["Tiêu chí Thật (Real Educational Criteria)"]
+
+    B --> B1["consistency_strengthen == 1.0"]
+    B --> B2["consistency_spread == 1.0"]
+    B --> B3["locality == 1.0"]
+    Note1["Do ReLU và scatter ép buộc toán học<br/>Chỉ là kiểm chứng code, không phải bằng chứng khoa học!"] -.-> B
+
+    C --> C1["precedence_gap (Đo thứ tự tiên quyết)"]
+    C --> C2["forget_slope (Tốc độ quên theo Delta_t)"]
+    C --> C3["stability_spearman (Độ ổn định thứ hạng)"]
+    C --> C4["abs_delta_retrieval (Mức lan truyền qua GNN)"]
+```
+
+#### A. Tại sao 3 chỉ số sau luôn bằng 1.0?
+1. **`consistency_strengthen` $\equiv 1.0$**: Đo tỉ lệ học sinh làm đúng thì mastery của khái niệm đó tăng. Do $total\_gain = \text{relu}(\dots) \ge 0$, khi $corr=1$, $h$ bắt buộc phải được cộng thêm một lượng không âm $\rightarrow$ mastery bắt buộc phải tăng hoặc giữ nguyên.
+2. **`consistency_spread` $\equiv 1.0$**: Đo tỉ lệ các khái niệm lân cận trên đồ thị có mastery tăng khi học sinh làm đúng. Do các ma trận kề $\tilde{\beta} \ge 0$ và trọng số $W \ge 0$ (qua `Positive_Linear`), phép lan truyền GNN bảo toàn tính không âm $\rightarrow$ lân cận bắt buộc phải tăng.
+3. **`locality` $\equiv 1.0$**: Đo tỉ lệ khái niệm trực tiếp làm bài tăng nhiều hơn các khái niệm lân cận xa. Do $gain$ xuất phát từ khái niệm gốc rồi mới lan truyền qua các trọng số suy giảm $< 1$, khái niệm gốc luôn nhận lượng tăng lớn nhất.
+
+$$\implies \text{Ba chỉ số này là kết quả tất yếu của toán học, KHÔNG dùng làm bằng chứng khoa học!}$$
+
+#### B. Phân tích các Tiêu chí Thật:
+1. **`precedence_gap` (Chênh lệch Tiên quyết)**:
+   - Đo xem khái niệm tiên quyết $c_{pre}$ có mastery cao hơn khái niệm phụ thuộc $c_{sub}$ hay không, so sánh với đồ thị hoán vị ngẫu nhiên:
+     $$\text{precedence\_gap} = \text{ratio}(A_{pre}) - \text{ratio}(A_{\text{hoán vị}})$$
+   - **Kết quả thực tế**: Trên cả ASSISTments 2009 ($-0.1108$) và Junyi ($-0.1014$), giá trị này đều mang **dấu âm**.
+   - **Ý nghĩa giáo dục**: Dữ liệu thực tế của các bài tập trực tuyến không tuân thủ nghiêm ngặt thứ tự bài giảng lý thuyết; học sinh thường làm bài tập ứng dụng trước khi nắm vững lý thuyết nền, hoặc quan hệ $pre\_map$ đếm từ tần suất chuyển tiếp chưa nắm bắt đúng quan hệ sư phạm thực sự. Báo cáo cần trung thực thừa nhận hạn chế này.
+2. **`forget_slope` & Tương quan $r(\Delta t, \Delta m)$**:
+   - Trên ASSISTments 2009: $r = -0.6104$ chứng minh hiện tượng quên có ý nghĩa thống kê (nghỉ càng lâu, kiến thức giảm càng nhiều).
+   - Trên Junyi: $r \approx 0$ do hạn chế thu thập dữ liệu (88.1% $\Delta t = 0$ do làm tròn 15 phút).
+
+---
+
+### 11.4 Đánh đổi Hiệu chỉnh Xác suất (Calibration Trade-off): Brier vs. ECE
+
+Trong thực tế ứng dụng giáo dục, một mô hình dự đoán xác suất tốt không chỉ cần AUC cao mà còn cần **độ tin cậy của xác suất** (Calibration):
+
+| Mô hình | Test AUC | Brier Score (Độ sắc nét) | ECE (Expected Calibration Error - Sai số hiệu chỉnh) |
+|---|---:|---:|---:|
+| **GKT-Transition** | 0.7536 | 0.1893 | **0.0097** (Tốt nhất) |
+| **DKT** | 0.7859 | 0.1768 | 0.0134 |
+| **GRKT-train** | **0.7972** | **0.1743** (Tốt nhất) | 0.0379 (Kém hơn) |
+
+- **Brier Score** đo khoảng cách bình phương giữa xác suất dự đoán và nhãn thực tế: $\frac{1}{N} \sum (\hat{p}_i - y_i)^2$. GRKT đạt Brier tốt nhất ($0.1743$) nhờ khả năng đưa ra các dự đoán tự tin và "sắc" (xác suất tiến sát 0 hoặc 1).
+- **ECE** đo sai lệch giữa độ tự tin dự đoán và độ chính xác thực tế trong từng nhóm xác suất. GRKT có ECE cao hơn GKT ($0.0379$ vs $0.0097$), thể hiện mô hình có xu hướng **hơi tự tin thái quá (overconfident)** ở các vùng xác suất cao.
+- **Bài học**: Khi triển khai hệ thống gợi ý bài tập thích ứng cho học sinh, việc lựa chọn mô hình cần cân nhắc giữa độ chính xác phân loại (AUC / Brier) và độ tin cậy tuyệt đối của xác suất (ECE).
+
+---
+
+### 11.5 Kỹ thuật Xử lý Dữ liệu Lớn (Big Data Engineering) với Junyi Academy
+
+Tập log `Log_Problem.csv` của Junyi Academy có quy mô $16.217.311$ dòng ($3$ GB). Nếu nạp toàn bộ vào bộ nhớ bằng `pd.read_csv`, máy ảo sẽ tiêu tốn $> 12$ GB RAM và bị hệ điều hành tiêu diệt (`Killed: Out of Memory`).
+
+Package [`level2/dataset_spec.py`](file:///root/Knowledge-Tracing/level2/dataset_spec.py) đã giải quyết triệt để bài toán này qua kỹ thuật **Streaming Chunked Processing**:
+
+```python
+# Đọc streaming theo từng mảnh 2 triệu dòng, mã hóa id thành số nguyên ngay lập tức:
+for chunk in pd.read_csv(raw_path, chunksize=2_000_000, usecols=cols):
+    chunk["user_id"] = chunk["user_id"].map(user_map)
+    chunk["problem_id"] = chunk["problem_id"].map(prob_map)
+    # Lọc tương tác và tích lũy bộ nhớ gọn nhẹ
+```
+
+1. **Khống chế RAM đỉnh dưới 3 GB**: Nhờ mã hóa chuỗi thành số nguyên int32 ngay khi quét từng mảnh, bộ nhớ RAM luôn được giữ an toàn.
+2. **Quy tắc gán nhãn chuẩn pyKT**: Áp dụng luật chuyển đổi số lần thử `count_attempts`: $1 \rightarrow$ Đúng ($1$); $\ge 3 \rightarrow$ Sai ($0$); $2 \rightarrow$ Bỏ qua (không xác định).
+3. **Giới hạn Khái niệm (Transductive Concept Cap)**: Lọc giữ lại top 200 khái niệm phổ biến nhất để ma trận đồ thị có kích thước $201 \times 201$, vừa vặn với bộ nhớ VRAM của GPU Tesla T4.
+4. **Lấy mẫu Người học có Seed (`subsample_seed=42`)**: Lọc giữ lại tập con $3.000$ học sinh có ít nhất 10 tương tác, bảo đảm toàn bộ chuỗi huấn luyện, baseline, ablation và quỹ đạo hoàn thành trọn vẹn trong một phiên làm việc 12 giờ của Kaggle.

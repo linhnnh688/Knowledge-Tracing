@@ -1,6 +1,6 @@
 # Giải thích `level1/` và `level2/` — hai module đưa GKT/GRKT lên Kaggle
 
-Tài liệu này là phần tiếp theo của [GIAI_THICH_GKT_GRKT.md](file:///D:/workspace/Knowledge-Tracing/GIAI_THICH_GKT_GRKT.md)
+Tài liệu này là phần tiếp theo của [GIAI_THICH_GKT_GRKT.md](file:///root/Knowledge-Tracing/docs/GIAI_THICH_GKT_GRKT.md)
 (giải thích thuật toán GKT/GRKT). Ở đây chỉ trả lời một câu: **dữ liệu chạy qua hai package
 này theo đường nào, mỗi bước sinh ra cái gì, và chỗ nào có thể sai**.
 
@@ -19,21 +19,21 @@ Mục tiêu đọc xong:
 
 | File | Dòng | Vai trò |
 |---|---:|---|
-| [level1/paths.py](file:///D:/workspace/Knowledge-Tracing/level1/paths.py#L1) | 14 | `repo_root()` + `ensure_gkt_on_path()` — chèn `GKT/` vào `sys.path` để import `processing`, `models`, `metrics` của upstream |
-| [level1/pipeline.py](file:///D:/workspace/Knowledge-Tracing/level1/pipeline.py#L1) | 466 | Toàn bộ API Cấp độ 1: nạp dữ liệu, chia split, dựng model, train, evaluate, lưu checkpoint (tên file mang seed khi seed ≠ 42) |
-| [level1/explain.py](file:///D:/workspace/Knowledge-Tracing/level1/explain.py#L1) | 449 | Chọn 5 case đúng + 5 case sai và sinh bằng chứng phản chứng (flip một lượt, bỏ toàn bộ cạnh) |
-| [level1/dashboard.py](file:///D:/workspace/Knowledge-Tracing/level1/dashboard.py#L1) | 140 | Xuất `learner_view.json` + widget chọn người học; lưu `state_norm` theo từng khái niệm |
+| [level1/paths.py](file:///root/Knowledge-Tracing/level1/paths.py#L1) | 14 | `repo_root()` + `ensure_gkt_on_path()` — chèn `GKT/` vào `sys.path` để import `processing`, `models`, `metrics` của upstream |
+| [level1/pipeline.py](file:///root/Knowledge-Tracing/level1/pipeline.py#L1) | 517 | Toàn bộ API Cấp độ 1: nạp dữ liệu, chia split, dựng model, train, evaluate, lưu checkpoint (tên file mang seed khi seed ≠ 42) |
+| [level1/explain.py](file:///root/Knowledge-Tracing/level1/explain.py#L1) | 481 | Chọn 5 case đúng + 5 case sai và sinh bằng chứng phản chứng (flip một lượt, bỏ toàn bộ cạnh) |
+| [level1/dashboard.py](file:///root/Knowledge-Tracing/level1/dashboard.py#L1) | 140 | Xuất `learner_view.json` + widget chọn người học; lưu `state_norm` theo từng khái niệm |
 | `level1/gikt.py`, `level1/gikt_data.py` | 75 + 155 | Bản port GIKT cũ; **không nằm trên đường chạy** (`run_gikt_experiment` raise `NotImplementedError`) |
-| [level2/dataset_spec.py](file:///D:/workspace/Knowledge-Tracing/level2/dataset_spec.py#L1) | 1086 | Hợp đồng CSV chuẩn hoá, 3 spec dữ liệu, chuẩn hoá Junyi theo mảnh, dò file Kaggle |
-| [level2/grkt_data.py](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L1) | 590 | Đổi bundle Cấp độ 1 thành chuỗi GRKT 1-based, đối chiếu từng người học, đếm `rel/pre` chỉ từ train |
-| [level2/grkt_api.py](file:///D:/workspace/Knowledge-Tracing/level2/grkt_api.py#L1) | 756 | `make_args` / `train_grkt` / `evaluate_grkt` / `run_grkt_experiment` — thay `GRKT/Runner.py` |
-| [level2/baselines.py](file:///D:/workspace/Knowledge-Tracing/level2/baselines.py#L1) | 688 | Nạp checkpoint DKT/GKT Cấp độ 1 (hoặc train lại có resume) trên **cùng split**; `checkpoint_seed()` truy nguồn seed |
-| [level2/trajectory.py](file:///D:/workspace/Knowledge-Tracing/level2/trajectory.py#L1) | 897 | Ghi `m_pre/m_tilde/m_strong`; tiêu chí thật (`precedence_gap`, `stability_*`, `forget_slope`) + kiểm chứng cài đặt; xuất npz/CSV/PNG |
-| [level2/calibration.py](file:///D:/workspace/Knowledge-Tracing/level2/calibration.py#L1) | 173 | ECE / ACE / Brier + reliability diagram |
-| [level2/archive.py](file:///D:/workspace/Knowledge-Tracing/level2/archive.py#L1) | 106 | Đóng gói `level2_out/` thành zip để tải về và resume phiên sau |
-| [level2/experiment.py](file:///D:/workspace/Knowledge-Tracing/level2/experiment.py#L1) | 790 | `run_dataset` (B1→B8) và `run_level2` (nhiều tập, một deadline chung) |
-| [kaggle_level1.ipynb](file:///D:/workspace/Knowledge-Tracing/kaggle_level1.ipynb) | 27 cell | Config + gọi package; không chứa logic |
-| [kaggle_level2.ipynb](file:///D:/workspace/Knowledge-Tracing/kaggle_level2.ipynb) | 32 cell | Config + resume zip + gọi `run_level2` + đóng gói |
+| [level2/dataset_spec.py](file:///root/Knowledge-Tracing/level2/dataset_spec.py#L1) | 1086 | Hợp đồng CSV chuẩn hoá, 3 spec dữ liệu, chuẩn hoá Junyi theo mảnh, dò file Kaggle |
+| [level2/grkt_data.py](file:///root/Knowledge-Tracing/level2/grkt_data.py#L1) | 590 | Đổi bundle Cấp độ 1 thành chuỗi GRKT 1-based, đối chiếu từng người học, đếm `rel/pre` chỉ từ train |
+| [level2/grkt_api.py](file:///root/Knowledge-Tracing/level2/grkt_api.py#L1) | 759 | `make_args` / `train_grkt` / `evaluate_grkt` / `run_grkt_experiment` — thay `GRKT/Runner.py` |
+| [level2/baselines.py](file:///root/Knowledge-Tracing/level2/baselines.py#L1) | 688 | Nạp checkpoint DKT/GKT Cấp độ 1 (hoặc train lại có resume) trên **cùng split**; `checkpoint_seed()` truy nguồn seed |
+| [level2/trajectory.py](file:///root/Knowledge-Tracing/level2/trajectory.py#L1) | 897 | Ghi `m_pre/m_tilde/m_strong`; tiêu chí thật (`precedence_gap`, `stability_*`, `forget_slope`) + kiểm chứng cài đặt; xuất npz/CSV/PNG |
+| [level2/calibration.py](file:///root/Knowledge-Tracing/level2/calibration.py#L1) | 173 | ECE / ACE / Brier + reliability diagram |
+| [level2/archive.py](file:///root/Knowledge-Tracing/level2/archive.py#L1) | 320 | Đóng gói `level2_out/` thành zip để tải về và resume phiên sau |
+| [level2/experiment.py](file:///root/Knowledge-Tracing/level2/experiment.py#L1) | 842 | `run_dataset` (B1→B8) và `run_level2` (nhiều tập, một deadline chung) |
+| [](file:///root/Knowledge-Tracing/kaggle_level1_full.ipynb) | 39 cells | Config + gọi package; không chứa logic |
+| [](file:///root/Knowledge-Tracing/kaggle_level2_full.ipynb) | 37 cells | Config + resume zip + gọi `run_level2` + đóng gói |
 
 ### 0.2 Sơ đồ gọi tổng quát
 
@@ -84,7 +84,7 @@ kết quả, phải nhìn config của notebook, không nhìn default của hàm
 
 `GKT/` là mã upstream dùng import tuyệt đối (`from processing import ...`,
 `from models import DKT, GKT`, `from metrics import KTLoss`). Vì vậy
-[level1/paths.py:9](file:///D:/workspace/Knowledge-Tracing/level1/paths.py#L9) chèn thẳng thư mục
+[level1/paths.py:9](file:///root/Knowledge-Tracing/level1/paths.py#L9) chèn thẳng thư mục
 `<repo>/GKT` vào đầu `sys.path`:
 
 ```python
@@ -119,7 +119,7 @@ Vì `GRKT/` đã được sửa sang import tương đối, nó không đụng t
 | Đồ thị | ma trận `K×K`, hàng chuẩn hoá (Transition) | `rel_map`/`pre_map` 0/1, kích thước `(K+1)²` |
 
 `level2/grkt_data.py` chịu trách nhiệm dịch giữa hai không gian này, và `_assert_align`
-([grkt_data.py:297](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L297)) kiểm tra
+([grkt_data.py:297](file:///root/Knowledge-Tracing/level2/grkt_data.py#L297)) kiểm tra
 từng người học để chắc chắn phép dịch không làm lệch chuỗi.
 
 ---
@@ -163,7 +163,7 @@ Cấu hình thực tế của `kaggle_level1.ipynb`:
 
 ### 2.3 Bước 3.1 — nạp dữ liệu và chia split
 
-`load_kt_data` ([pipeline.py:40](file:///D:/workspace/Knowledge-Tracing/level1/pipeline.py#L40))
+`load_kt_data` ([pipeline.py:40](file:///root/Knowledge-Tracing/level1/pipeline.py#L40))
 nhận đường dẫn tương đối (tự dò trong `GKT/data/`) rồi gọi upstream
 `processing.load_dataset`. Thứ tự upstream làm:
 
@@ -180,7 +180,7 @@ nhận đường dẫn tương đối (tự dò trong `GKT/data/`) rồi gọi u
 Điểm 8 quan trọng: đồ thị Cấp độ 1 **không nhìn thấy người học test**. Đây là điều README ghi
 "Transition (train only)".
 
-Bundle trả về ([pipeline.py:71](file:///D:/workspace/Knowledge-Tracing/level1/pipeline.py#L71)):
+Bundle trả về ([pipeline.py:71](file:///root/Knowledge-Tracing/level1/pipeline.py#L71)):
 
 ```python
 {
@@ -203,13 +203,13 @@ Shape một batch:
 
 Với model, `pred` có shape `[B, S-1]`: dự đoán cho vị trí `1..S-1` từ lịch sử `0..S-2`.
 
-`save_split` ([pipeline.py:94](file:///D:/workspace/Knowledge-Tracing/level1/pipeline.py#L94))
+`save_split` ([pipeline.py:94](file:///root/Knowledge-Tracing/level1/pipeline.py#L94))
 ghi ba danh sách `train_users/val_users/test_users`. **File này chỉ là bằng chứng/tài liệu**:
 Cấp độ 2 không đọc lại nó, mà chia lại bằng đúng seed và đúng tham số (xem §3.3).
 
 ### 2.4 Bước 3.2/3.3 — huấn luyện DKT và GKT
 
-`build_model` ([pipeline.py:105](file:///D:/workspace/Knowledge-Tracing/level1/pipeline.py#L105))
+`build_model` ([pipeline.py:105](file:///root/Knowledge-Tracing/level1/pipeline.py#L105))
 có hai nhánh:
 
 ```python
@@ -224,7 +224,7 @@ theo `res_len = 12` và one-hot `12·concept_num` chiều; trong khi dữ liệu
 truyền `binary`, nên đường train gốc dùng sai số chiều feature. Cấp độ 1 truyền `binary=True`
 để khớp đúng `res_len = 2`.
 
-`train_one` ([pipeline.py:184](file:///D:/workspace/Knowledge-Tracing/level1/pipeline.py#L184)):
+`train_one` ([pipeline.py:184](file:///root/Knowledge-Tracing/level1/pipeline.py#L184)):
 
 | Thành phần | Giá trị |
 |---|---|
@@ -235,7 +235,7 @@ truyền `binary`, nên đường train gốc dùng sai số chiều feature. C�
 | Lưu tốt nhất | snapshot `state_dict` về CPU, nạp lại cuối train |
 | Metric | **AUC toàn cục** trên cả loader, không phải trung bình AUC từng batch |
 
-Mask tính metric ([pipeline.py:160](file:///D:/workspace/Knowledge-Tracing/level1/pipeline.py#L160)):
+Mask tính metric ([pipeline.py:160](file:///root/Knowledge-Tracing/level1/pipeline.py#L160)):
 
 ```python
 real = answers[:, 1:]
@@ -245,7 +245,7 @@ mask = (real != -1) & (questions[:, 1:] != -1)
 Tức là chỉ tính trên vị trí có nhãn **và** có câu hỏi thật. Cùng mask này được dùng lại ở
 Cấp độ 2 (baselines và calibration), nên ECE/Brier của hai cấp so sánh được.
 
-`run_experiment` ([pipeline.py:249](file:///D:/workspace/Knowledge-Tracing/level1/pipeline.py#L249))
+`run_experiment` ([pipeline.py:249](file:///root/Knowledge-Tracing/level1/pipeline.py#L249))
 trả về dict:
 
 ```python
@@ -295,7 +295,7 @@ kiệm thời gian, không phải lỗi, nhưng bảng đa seed sẽ thiếu Den
 
 ### 2.7 Bước 5 — 10 case và bằng chứng phản chứng
 
-`collect_cases` ([explain.py:191](file:///D:/workspace/Knowledge-Tracing/level1/explain.py#L191)):
+`collect_cases` ([explain.py:191](file:///root/Knowledge-Tracing/level1/explain.py#L191)):
 
 1. chạy model trên `test_loader` (không shuffle);
 2. gom mọi dự đoán vào hai rổ `correct` / `incorrect`;
@@ -303,7 +303,7 @@ kiệm thời gian, không phải lỗi, nhưng bảng đa seed sẽ thiếu Den
 4. chọn `n_each=5` mỗi rổ, ưu tiên khác khái niệm;
 5. gắn lịch sử 8 bước gần nhất và 5 láng giềng mạnh nhất trên đồ thị.
 
-`annotate_evidence` ([explain.py:111](file:///D:/workspace/Knowledge-Tracing/level1/explain.py#L111))
+`annotate_evidence` ([explain.py:111](file:///root/Knowledge-Tracing/level1/explain.py#L111))
 chạy lại model để lấy ba loại bằng chứng:
 
 | Bằng chứng | Cách đo | Ý nghĩa |
@@ -319,7 +319,7 @@ Kết quả ghi vào `cases.md`; lỗi trong bước này chỉ in cảnh báo, 
 
 ### 2.8 Bước 5b — dashboard người học
 
-`export_learner_view` ([dashboard.py:22](file:///D:/workspace/Knowledge-Tracing/level1/dashboard.py#L22))
+`export_learner_view` ([dashboard.py:22](file:///root/Knowledge-Tracing/level1/dashboard.py#L22))
 gọi `model(features, questions, return_state=True)`. Với GKT, đầu ra là
 `(pred, ec_list, rec_list, z_prob_list, states)`, nên lấy `out[0]` và `out[4]`.
 
@@ -350,7 +350,7 @@ lớp hiển thị; không có widget thì in người đầu tiên.
 ### 3.1 Hợp đồng dữ liệu: CSV chuẩn hoá
 
 Mọi tập phải quy về đúng 8 cột
-([dataset_spec.py:37](file:///D:/workspace/Knowledge-Tracing/level2/dataset_spec.py#L37)):
+([dataset_spec.py:37](file:///root/Knowledge-Tracing/level2/dataset_spec.py#L37)):
 
 | Cột | Ý nghĩa | Ai dùng |
 |---|---|---|
@@ -373,7 +373,7 @@ Ba spec:
 
 ### 3.2 `ensure_canonical` — chuẩn hoá một lần, dùng nhiều lần
 
-[dataset_spec.py:664](file:///D:/workspace/Knowledge-Tracing/level2/dataset_spec.py#L664).
+[dataset_spec.py:664](file:///root/Knowledge-Tracing/level2/dataset_spec.py#L664).
 Thuật toán:
 
 1. Xác định `target = out_dir/<canonical_file>`; nếu đã tồn tại thì kiểm `.meta.json`.
@@ -395,7 +395,7 @@ Thuật toán:
 
 #### Hàng rào `.meta.json`
 
-[dataset_spec.py:636](file:///D:/workspace/Knowledge-Tracing/level2/dataset_spec.py#L636).
+[dataset_spec.py:636](file:///root/Knowledge-Tracing/level2/dataset_spec.py#L636).
 Nếu lần trước chạy `QUICK_RUN=True` (cap 300 người) rồi lần này chạy full, `ensure_canonical`
 sẽ thấy file đã tồn tại và **dùng lại** — kết quả sẽ lặng lẽ là của 300 người. `.meta.json`
 biến việc đó thành `RuntimeError` kèm hướng dẫn xoá cả hai file. Nếu `.meta.json` không có
@@ -409,7 +409,7 @@ giảm thời gian quét file.
 
 ### 3.3 B1 — chia split lại y hệt Cấp độ 1
 
-[experiment.py:112](file:///D:/workspace/Knowledge-Tracing/level2/experiment.py#L112).
+[experiment.py:112](file:///root/Knowledge-Tracing/level2/experiment.py#L112).
 
 ```python
 shared = load_kt_data(canonical, batch_size=..., graph_type="Transition",
@@ -437,7 +437,7 @@ Cấp độ 2, hai bên sẽ chia khác nhau. `_assert_align` chỉ bắt đư�
 ### 3.4 B2 — dựng chuỗi GRKT và đối chiếu
 
 `build_grkt_data`
-([grkt_data.py:170](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L170)) đọc lại
+([grkt_data.py:170](file:///root/Knowledge-Tracing/level2/grkt_data.py#L170)) đọc lại
 CSV chuẩn hoá và lặp lại đúng pipeline upstream:
 
 ```python
@@ -458,13 +458,13 @@ Sau đó với từng người:
 | `skills0[i]` | `skill` 0-based | để đối chiếu Cấp độ 1 |
 | `lags[i]` | thời gian làm bài (giây) | GRKT hiện không dùng |
 
-`_cumulative_times` ([grkt_data.py:100](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L100))
+`_cumulative_times` ([grkt_data.py:100](file:///root/Knowledge-Tracing/level2/grkt_data.py#L100))
 chặn từng Δt ở 240 phút rồi mới cộng dồn và làm tròn. Nếu dùng timestamp thô, số mũ
 `exp(-(n+1)·Δt·k)` underflow và mô hình "quên sạch" sau một bước. Nếu làm tròn từng Δt, mọi
 lượt dưới 1 phút thành 0 và giai đoạn học/quên không học được gì.
 
 `_assert_align`
-([grkt_data.py:297](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L297)) so ba thứ
+([grkt_data.py:297](file:///root/Knowledge-Tracing/level2/grkt_data.py#L297)) so ba thứ
 với bundle Cấp độ 1 tại cùng vị trí:
 
 * `user_id`;
@@ -475,7 +475,7 @@ Cộng thêm hai assert cuối hàm: `derived_num == concept_num` và `positions
 Đây là lý do Cấp độ 2 không thể "lặng lẽ" dùng một cách tiền xử lý khác.
 
 `split_sequences`
-([grkt_data.py:461](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L461)) đổi danh
+([grkt_data.py:461](file:///root/Knowledge-Tracing/level2/grkt_data.py#L461)) đổi danh
 sách user của split thành ba bộ `{user_ids, sequences, items}`.
 
 Cấu trúc dữ liệu:
@@ -499,7 +499,7 @@ upstream, nên phần forward của GRKT không phải sửa.
 ### 3.5 B3 — dựng đồ thị chỉ từ train
 
 `build_relevance_maps`
-([grkt_data.py:328](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L328)) đếm bốn
+([grkt_data.py:328](file:///root/Knowledge-Tracing/level2/grkt_data.py#L328)) đếm bốn
 bộ đếm trên **một người học** rồi cộng dồn:
 
 | Bộ đếm | Nghĩa |
@@ -519,7 +519,7 @@ pre = ft / (tf + ft)                       # tiên quyết: sai c rồi đúng d
 Lọc thưa: `rel` chỉ giữ cặp có tổng ≥ `4·cold_thresh`, `pre` chỉ giữ cặp có `tf+ft` ≥
 `2·cold_thresh`. Với `cold_thresh=5`, ngưỡng là 20 và 10 lượt. Hàng/cột 0 (padding) bị đặt 0.
 
-`graph_variant` ([grkt_data.py:407](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L407)):
+`graph_variant` ([grkt_data.py:407](file:///root/Knowledge-Tracing/level2/grkt_data.py#L407)):
 
 | Biến thể | Cách sinh | Số cạnh |
 |---|---|---|
@@ -535,7 +535,7 @@ Hai ngưỡng khác nhau, đừng lẫn:
   nhánh `thresh=0` của upstream gán toàn bộ ma trận bằng 1, kể cả padding.
 
 `adjacency_from_graphs`
-([grkt_data.py:449](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L449)) tạo mặt
+([grkt_data.py:449](file:///root/Knowledge-Tracing/level2/grkt_data.py#L449)) tạo mặt
 nạ láng giềng 1-hop dùng cho tiêu chí quỹ đạo:
 
 ```text
@@ -545,7 +545,7 @@ adj = (rel > 0) | (pre > 0) | (preᵀ > 0)
 `preᵀ` là vì `pre[c, d]` nghĩa là `c` là tiên quyết của `d`; khi đo "láng giềng của khái niệm
 đang làm", cần cả hai chiều.
 
-`leak_report` ([grkt_data.py:471](file:///D:/workspace/Knowledge-Tracing/level2/grkt_data.py#L471))
+`leak_report` ([grkt_data.py:471](file:///root/Knowledge-Tracing/level2/grkt_data.py#L471))
 in và ghi `leak_report.txt`:
 
 * số người train/val/test;
@@ -563,7 +563,7 @@ một tập.
 ### 3.6 B4 — huấn luyện GRKT
 
 `run_grkt_experiment`
-([grkt_api.py:474](file:///D:/workspace/Knowledge-Tracing/level2/grkt_api.py#L474)) làm theo
+([grkt_api.py:474](file:///root/Knowledge-Tracing/level2/grkt_api.py#L474)) làm theo
 thứ tự:
 
 1. `make_args` — đóng gói `n_knows`, `n_probs`, `rel_map`, `pre_map`, siêu tham số;
@@ -577,7 +577,7 @@ thứ tự:
 #### Ước lượng bộ nhớ
 
 `grkt_activation_gib`
-([experiment.py:63](file:///D:/workspace/Knowledge-Tracing/level2/experiment.py#L63)):
+([experiment.py:63](file:///root/Knowledge-Tracing/level2/experiment.py#L63)):
 
 ```text
 bytes ≈ 40 · S · B · (K+1) · k_hidden · 4
@@ -594,7 +594,7 @@ công thức này; nó chỉ ảnh hưởng thời gian.
 
 #### Vòng lặp train
 
-`train_grkt` ([grkt_api.py:252](file:///D:/workspace/Knowledge-Tracing/level2/grkt_api.py#L252)):
+`train_grkt` ([grkt_api.py:252](file:///root/Knowledge-Tracing/level2/grkt_api.py#L252)):
 
 | Thành phần | Chi tiết |
 |---|---|
@@ -622,7 +622,7 @@ Nếu file resume bị hỏng, `run_grkt_experiment` thử fallback sang `ckpt_.
 
 #### Fingerprint
 
-Fingerprint ([grkt_api.py:548](file:///D:/workspace/Knowledge-Tracing/level2/grkt_api.py#L548))
+Fingerprint ([grkt_api.py:548](file:///root/Knowledge-Tracing/level2/grkt_api.py#L548))
 gồm: dataset, graph_kind, `n_knows`, `n_probs`, số người/số bước của 3 split, batch_size,
 d_hidden, k_hidden, k_hop, alpha, tau, thresh, seed, lr, số cạnh rel/pre.
 
@@ -641,12 +641,12 @@ biết, được ghi trong log, không phải lỗi.
 
 ### 3.7 B5 — đường nền DKT/GKT trên cùng split
 
-`level1_baseline` ([baselines.py:373](file:///D:/workspace/Knowledge-Tracing/level2/baselines.py#L373))
+`level1_baseline` ([baselines.py:373](file:///root/Knowledge-Tracing/level2/baselines.py#L373))
 chạy ba cấu hình: DKT, GKT-Transition, GKT-Zero.
 
 #### Đổi đồ thị mà không đổi split
 
-`graph_bundle` ([baselines.py:45](file:///D:/workspace/Knowledge-Tracing/level2/baselines.py#L45))
+`graph_bundle` ([baselines.py:45](file:///root/Knowledge-Tracing/level2/baselines.py#L45))
 gọi lại `load_kt_data` với `graph_type` khác, rồi **assert** danh sách user của ba split giống
 bundle gốc từng phần tử. Nhờ vậy nếu upstream đổi thứ tự thao tác, chương trình fail thay vì
 âm thầm so hai split khác nhau.
@@ -669,7 +669,7 @@ bundle gốc từng phần tử. Nhờ vậy nếu upstream đổi thứ tự th
 `hid_dim` ở Cấp độ 1 không làm chết Cấp độ 2; nó chỉ khiến đường nền bị train lại.
 
 `train_baseline_resumable`
-([baselines.py:251](file:///D:/workspace/Knowledge-Tracing/level2/baselines.py#L251)) khác
+([baselines.py:251](file:///root/Knowledge-Tracing/level2/baselines.py#L251)) khác
 `train_one` ở ba điểm:
 
 * ghi checkpoint **cuối mỗi epoch** (một epoch Junyi đã hàng chục phút);
@@ -686,7 +686,7 @@ dùng thẳng được cho ECE/Brier ở B7.
 ### 3.8 B6 — quỹ đạo mastery và tiêu chí hợp lý
 
 Đây là nhiệm vụ bắt buộc của Cấp độ 2. `record_trajectories`
-([trajectory.py:59](file:///D:/workspace/Knowledge-Tracing/level2/trajectory.py#L59)) chạy
+([trajectory.py:59](file:///root/Knowledge-Tracing/level2/trajectory.py#L59)) chạy
 forward trên 150 người test đầu tiên, batch 16, và ghi ba mốc:
 
 | Mốc | Thời điểm | Dùng để tách cơ chế |
@@ -748,7 +748,7 @@ Sản phẩm:
 ### 3.9 B7 — hiệu chỉnh dự đoán (tuỳ chọn)
 
 `calibration_table` + `expected_calibration_error`
-([calibration.py:32](file:///D:/workspace/Knowledge-Tracing/level2/calibration.py#L32)):
+([calibration.py:32](file:///root/Knowledge-Tracing/level2/calibration.py#L32)):
 
 * `Brier = mean((p - y)²)`;
 * `ECE = Σ_b (n_b/N) · |avg(p_b) - avg(y_b)|` trên 10 ngăn đều theo `p`;
@@ -772,7 +772,7 @@ Mỗi seed là một lần train đầy đủ, nên `run_level2` chỉ bật B8 
 
 ### 3.11 `run_level2` — nhiều tập, một deadline
 
-[experiment.py:527](file:///D:/workspace/Knowledge-Tracing/level2/experiment.py#L527):
+[experiment.py:527](file:///root/Knowledge-Tracing/level2/experiment.py#L527):
 
 ```python
 deadline = time.time() + time_budget_min * 60   # tính MỘT lần
@@ -834,7 +834,7 @@ PHIÊN B
 ```
 
 Quy tắc đóng gói (`package_output`,
-[archive.py:23](file:///D:/workspace/Knowledge-Tracing/level2/archive.py#L23)):
+[archive.py:23](file:///root/Knowledge-Tracing/level2/archive.py#L23)):
 
 | Quy tắc | Lý do |
 |---|---|

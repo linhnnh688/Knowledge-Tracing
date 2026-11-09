@@ -1,103 +1,67 @@
-# Tài liệu Kiến trúc Mã nguồn & Thực nghiệm Knowledge Tracing
+# Trung tâm Tài liệu & Cẩm nang Học tập Chuyên sâu Knowledge Tracing
 
-Tài liệu này cung cấp hướng dẫn toàn diện, có cấu trúc và chi tiết về toàn bộ mã nguồn của dự án **Knowledge Tracing (KT)** trong kho mã nguồn này, bao gồm:
-1. Hai mô hình nền tảng: **GKT** (Graph-based Knowledge Tracing, Nakagawa et al., 2019) và **GRKT** (Graph-based Retrieval-Knowledge Tracing, Cui et al., KDD 2024).
-2. Hai gói mã nguồn điều phối thực nghiệm: [`level1/`](file:///root/Knowledge-Tracing/level1) và [`level2/`](file:///root/Knowledge-Tracing/level2).
-3. Hai notebook thực nghiệm đầy đủ trên môi trường Kaggle: [`kaggle_level1_full.ipynb`](file:///root/Knowledge-Tracing/kaggle_level1_full.ipynb) và [`kaggle_level2_full.ipynb`](file:///root/Knowledge-Tracing/kaggle_level2_full.ipynb).
+Chào mừng bạn đến với hệ thống tài liệu và cẩm nang học tập toàn diện về **Knowledge Tracing (KT) trên đồ thị**. Thư mục [`docs/`](file:///root/Knowledge-Tracing/docs) được thiết kế nhằm cung cấp kiến thức nền tảng, giải thích chi tiết từng dòng mã nguồn, phân tích các cạm bẫy thực nghiệm và hướng dẫn tái lập các mô hình KT từ cơ bản đến hiện đại nhất (KDD 2024).
 
 ---
 
-## 1. Sơ đồ Cấu trúc Hệ thống
+## 1. Lộ trình Học tập Khuyến nghị (Learning Progression)
 
-```
-Knowledge-Tracing/
-├── GKT/                                # Mã nguồn upstream GKT & DKT (Nakagawa et al., 2019)
-│   ├── models.py                       # Các lớp GKT, DKT, MultiHeadAttention, VAE
-│   ├── layers.py                       # MLP, EraseAddGate, Attention, Encoder/Decoder
-│   ├── processing.py                   # Đọc dữ liệu, chia split, dựng đồ thị Transition
-│   ├── metrics.py                      # KTLoss (NLLLoss), VAELoss
-│   ├── utils.py                        # Xử lý đồ thị, Gumbel-Softmax, phân phối Gaussian
-│   └── train.py                        # CLI huấn luyện upstream
-│
-├── GRKT/                               # Mã nguồn upstream GRKT (Cui et al., KDD 2024 - đã patched)
-│   ├── model/GRKT.py                   # Mô hình GRKT 4 pha (Retrieval, Strengthen, Forgetting)
-│   ├── BaseModel.py                    # Khung sườn huấn luyện và đánh giá epoch
-│   ├── Runner.py                       # Vòng lặp K-fold upstream (lưu ý rò rỉ cửa sổ)
-│   ├── Training.py                     # Entry point CLI upstream
-│   ├── metric.py                       # AUC, ACC
-│   ├── utils.py                        # feature2tensor, seed, padding
-│   └── data/assist09/                  # Script tiền xử lý và sinh assist09.bin
-│
-├── level1/                             # Module điều phối Cấp độ 1 (bọc GKT, sửa lỗi, xAI)
-│   ├── paths.py                        # Quản lý đường dẫn, chèn GKT vào sys.path
-│   ├── pipeline.py                     # load_kt_data, build_model, train_one, run_experiment
-│   ├── explain.py                      # 10 case study, phản chứng (counterfactual flips, ablation)
-│   └── dashboard.py                    # Trích xuất trạng thái ẩn h_t, xuất learner_view.json
-│
-├── level2/                             # Module điều phối Cấp độ 2 (bọc GRKT, multi-dataset, quỹ đạo)
-│   ├── dataset_spec.py                 # Hợp đồng chuẩn hóa 8 cột, chunked parser Junyi, .meta.json
-│   ├── grkt_data.py                    # Dựng chuỗi 1-based, build_relevance_maps (train only), leak_report
-│   ├── grkt_api.py                     # Thay thế Runner.py, train_grkt, checkpoint fingerprint, resume
-│   ├── baselines.py                    # Chạy DKT/GKT trên cùng split, quản lý checkpoint_seed
-│   ├── trajectory.py                   # Thu thập quỹ đạo mastery m(u,c,t), tiêu chí thật vs kiểm chứng
-│   ├── calibration.py                  # Đo hiệu chỉnh ECE, ACE, Brier score, reliability diagram
-│   ├── archive.py                      # Đóng gói zip tự chứa, luồng nền PeriodicPackager chống timeout 12h
-│   └── experiment.py                   # Điều phối toàn bộ thực nghiệm (run_dataset, run_level2)
-│
-├── kaggle_level1_full.ipynb            # Notebook Cấp độ 1 đầy đủ: 5 seed, ablation, xAI, calibration
-├── kaggle_level2_full.ipynb            # Notebook Cấp độ 2 đầy đủ: ASSIST09 + Junyi tập con, quỹ đạo, dashboard
-└── docs/                               # Thư mục tài liệu giải thích chi tiết
-    ├── README.md                       # Bản đồ tổng quan (file hiện tại)
-    ├── 01_gkt_module.md                # Giải thích chi tiết module GKT/
-    ├── 02_grkt_module.md                # Giải thích chi tiết module GRKT/
-    ├── 03_level1_module.md              # Giải thích chi tiết module level1/
-    ├── 04_level2_module.md              # Giải thích chi tiết module level2/
-    ├── 05_kaggle_level1_notebook.md     # Giải thích chi tiết notebook kaggle_level1_full.ipynb
-    └── 06_kaggle_level2_notebook.md     # Giải thích chi tiết notebook kaggle_level2_full.ipynb
+Để tiếp thu kiến thức một cách bài bản và có hệ thống, bạn nên theo dõi lộ trình 4 giai đoạn sau:
+
+```mermaid
+flowchart LR
+    A["Giai đoạn 1: Nền tảng Lý thuyết<br/>(GIAI_THICH_GKT_GRKT.md)"] --> B["Giai đoạn 2: Khám phá Mã nguồn<br/>(01_gkt & 02_grkt)"]
+    B --> C["Giai đoạn 3: Tầng Điều phối & Chống Rò rỉ<br/>(03_level1 & 04_level2)"]
+    C --> D["Giai đoạn 4: Thực nghiệm & Phân tích<br/>(05_kaggle_l1 & 06_kaggle_l2)"]
 ```
 
----
-
-## 2. Bản đồ Tài liệu Chi tiết
-
-Mỗi module và notebook được phân tích sâu trong từng tệp tài liệu chuyên trách:
-
-| Tệp tài liệu | Nội dung trọng tâm | Đường dẫn tham chiếu |
-|---|---|---|
-| [**01_gkt_module.md**](file:///root/Knowledge-Tracing/docs/01_gkt_module.md) | Giải thích cấu trúc mô hình GKT (2019), DKT (baseline LSTM), các biến thể đồ thị, cơ chế lan truyền GNN + GRU, Erase-Add Gate, và danh mục 11 lỗi/nhược điểm trong mã nguồn upstream. | [`GKT/`](file:///root/Knowledge-Tracing/GKT) |
-| [**02_grkt_module.md**](file:///root/Knowledge-Tracing/docs/02_grkt_module.md) | Giải thích thuật toán GRKT (KDD 2024), cấu trúc 4 pha (Tính trước $\rightarrow$ Truy xuất Retrieval $\rightarrow$ Củng cố Strengthening $\rightarrow$ Chuyển bước Transition theo thời gian $\Delta t$), đồ thị $rel\_map$ & $pre\_map$, và 15 điểm rò rỉ/gotchas của upstream. | [`GRKT/`](file:///root/Knowledge-Tracing/GRKT) |
-| [**03_level1_module.md**](file:///root/Knowledge-Tracing/docs/03_level1_module.md) | Phân tích package `level1`: chuẩn hóa nạp dữ liệu, cố định split người học seed 42, sửa lỗi $res\_len=2$ của GKT, tính AUC toàn cục, xAI phản chứng (flip, ablation $A:=0$, occlusion), và dashboard chuẩn Frobenius norm. | [`level1/`](file:///root/Knowledge-Tracing/level1) |
-| [**04_level2_module.md**](file:///root/Knowledge-Tracing/docs/04_level2_module.md) | Phân tích package `level2`: hợp đồng 8 cột CSV, bộ đếm $rel/pre$ train-only, `grkt_api` thay thế Runner, đối chiếu split chặt chẽ (`_assert_align`), đo đạc quỹ đạo mastery $m(u,c,t)$, ECE/Brier calibration, và luồng đóng gói tự động `PeriodicPackager`. | [`level2/`](file:///root/Knowledge-Tracing/level2) |
-| [**05_kaggle_level1_notebook.md**](file:///root/Knowledge-Tracing/docs/05_kaggle_level1_notebook.md) | Hướng dẫn và giải thích từng cell trong `kaggle_level1_full.ipynb`: vòng lặp 5 seed có resume, kiểm định thống kê paired t-test + bootstrap CI 95% + Cohen's $d_z$, ablation suy luận, 10 case study có bằng chứng định lượng, và đóng gói zip kép. | [`kaggle_level1_full.ipynb`](file:///root/Knowledge-Tracing/kaggle_level1_full.ipynb) |
-| [**06_kaggle_level2_notebook.md**](file:///root/Knowledge-Tracing/docs/06_kaggle_level2_notebook.md) | Hướng dẫn và giải thích từng cell trong `kaggle_level2_full.ipynb`: cấu hình Junyi tập con 3.000 người, liên kết kiểm chứng với Cấp độ 1, phân tích quỹ đạo mastery (tiêu chí thật vs kiểm chứng cài đặt), dashboard Cấp 2, và cơ chế khôi phục phiên sau 12h. | [`kaggle_level2_full.ipynb`](file:///root/Knowledge-Tracing/kaggle_level2_full.ipynb) |
+1. **Giai đoạn 1 — Hiểu bản chất Toán học & Giải thuật**:
+   - Đọc [**GIAI_THICH_GKT_GRKT.md**](file:///root/Knowledge-Tracing/docs/GIAI_THICH_GKT_GRKT.md) để nắm chắc sự khác biệt giữa mạng hồi quy trên đồ thị (**GKT**) và mô hình truy xuất kết hợp động học quên thời gian thực (**GRKT**).
+2. **Giai đoạn 2 — Đọc hiểu Mã nguồn Cốt lõi**:
+   - Đọc [**01_gkt_module.md**](file:///root/Knowledge-Tracing/docs/01_gkt_module.md) để giải phẫu từng lớp nơ-ron của GKT (`f_self`, `f_in`, `f_out`, `EraseAddGate`, `GRUCell`).
+   - Đọc [**02_grkt_module.md**](file:///root/Knowledge-Tracing/docs/02_grkt_module.md) để hiểu 4 pha forward của GRKT và 15 cạm bẫy phương pháp luận trong mã nguồn upstream.
+3. **Giai đoạn 3 — Thiết kế Pipeline Thực nghiệm & Phòng chống Rò rỉ**:
+   - Đọc [**03_level1_module.md**](file:///root/Knowledge-Tracing/docs/03_level1_module.md) để học cách chuẩn hóa dữ liệu, cố định split, xAI phản chứng và xây dựng dashboard Cấp độ 1.
+   - Đọc [**04_level2_module.md**](file:///root/Knowledge-Tracing/docs/04_level2_module.md) để học kỹ thuật xử lý dữ liệu lớn streaming, xây dựng đồ thị hai quan hệ ($rel/pre$) train-only, đo lường quỹ đạo thành thạo $m(u, c, t)$ và cơ chế nén định kỳ chống mất phiên 12 giờ.
+   - Đọc [**GIAI_THICH_LEVEL1_LEVEL2.md**](file:///root/Knowledge-Tracing/docs/GIAI_THICH_LEVEL1_LEVEL2.md) để nắm rõ luồng chuyển đổi tensor từ CSV đến DataLoader và chuỗi GRKT.
+4. **Giai đoạn 4 — Vận hành Thực nghiệm trên Kaggle GPU**:
+   - Đọc [**05_kaggle_level1_notebook.md**](file:///root/Knowledge-Tracing/docs/05_kaggle_level1_notebook.md) để theo dõi chi tiết 39 cells của Cấp độ 1: 5 seed, paired t-test, ablation suy luận.
+   - Đọc [**06_kaggle_level2_notebook.md**](file:///root/Knowledge-Tracing/docs/06_kaggle_level2_notebook.md) để theo dõi chi tiết 37 cells của Cấp độ 2: đa tập dữ liệu, đối chiếu split, quỹ đạo mastery và dashboard Cấp 2.
 
 ---
 
-## 3. So sánh Cốt lõi: GKT vs. GRKT
+## 2. Mục lục Chi tiết Toàn bộ Hệ thống Tài liệu
 
-| Khía cạnh | GKT (Nakagawa et al., 2019) | GRKT (Cui et al., KDD 2024) |
-|---|---|---|
-| **Biểu diễn tri thức** | Ma trận trạng thái ẩn $h_t \in \mathbb{R}^{C \times H}$ (mỗi khái niệm 1 vector ẩn). | Vector mastery $h[c] \in \mathbb{R}^{KH}$ kèm bộ đếm số lần làm bài $count[c]$. |
-| **Cơ chế cập nhật** | Mạng hồi quy trên đồ thị: GNN tổng hợp thông tin lân cận $\rightarrow$ Erase-Add Gate $\rightarrow$ GRU cập nhật toàn bộ khái niệm. | 4 pha tường minh: Truy xuất (GNN) $\rightarrow$ Dự đoán $\rightarrow$ Củng cố theo đúng/sai $\rightarrow$ Chuyển bước theo $\Delta t$ (học trễ & quên). |
-| **Vai trò thời gian** | **Không sử dụng** mốc thời gian giữa các lần làm bài. | **Trung tâm**: hàm suy giảm lũy thừa $\exp(-(count+1)\Delta t \cdot k)$ cho cả học và quên. |
-| **Cấu trúc đồ thị** | 1 ma trận quan hệ $A \in \mathbb{R}^{C \times C}$ (tĩnh: Transition/Dense hoặc học: PAM/MHA/VAE). | 2 ma trận nhị phân: đồng xuất hiện ($rel\_map$) và tiên quyết ($pre\_map$, cùng $sub\_map = pre^T$). |
-| **Thời điểm dự đoán** | Feature bước $i$ chứa cả đáp án $r_i$; mô hình cập nhật trạng thái rồi dự đoán $r_{i+1}$. | Dự đoán $score_i$ được tính **trước** khi dùng đáp án $r_i$ để củng cố trạng thái. |
-| **Không gian chỉ số** | **0-based**: Khái niệm $0 \dots C-1$, padding $-1$. Feature: $2c + r$. | **1-based**: Index 0 dành cho padding. Khái niệm và Problem ID đều bắt đầu từ 1. |
-| **Ưu điểm** | Đơn giản, hội tụ nhanh, nhẹ về bộ nhớ, hỗ trợ đồ thị tự học qua Attention/VAE. | Diễn giải được rõ ràng: đo lường được lượng kiến thức tăng khi đúng, giảm khi sai, và tốc độ quên theo thời gian thực. |
-| **Nhược điểm** | Trạng thái bị GRU trộn lẫn khó giải thích trực tiếp mức thành thạo của học sinh. | Tốn nhiều tài nguyên GPU (nhiều phép nhân tensor lớn), rất nhạy với đơn vị đo thời gian $\Delta t$. |
+| Tệp tài liệu | Độ dài | Trọng tâm nội dung | Liên kết |
+|---|---:|---|---|
+| [**GIAI_THICH_GKT_GRKT.md**](file:///root/Knowledge-Tracing/docs/GIAI_THICH_GKT_GRKT.md) | 43 KB | So sánh đối chiếu toàn diện về giải thuật, toán học, ký hiệu, cơ chế bộ nhớ và đồ thị giữa GKT và GRKT. | [`GIAI_THICH_GKT_GRKT.md`](file:///root/Knowledge-Tracing/docs/GIAI_THICH_GKT_GRKT.md) |
+| [**GIAI_THICH_LEVEL1_LEVEL2.md**](file:///root/Knowledge-Tracing/docs/GIAI_THICH_LEVEL1_LEVEL2.md) | 57 KB | Giải thích luồng dữ liệu (dataflow), sự kết nối giữa `level1/` và `level2/`, hợp đồng dữ liệu, và quy trình resume. | [`GIAI_THICH_LEVEL1_LEVEL2.md`](file:///root/Knowledge-Tracing/docs/GIAI_THICH_LEVEL1_LEVEL2.md) |
+| [**01_gkt_module.md**](file:///root/Knowledge-Tracing/docs/01_gkt_module.md) | 19 KB | Chi tiết mã nguồn `GKT/`: `models.py`, `layers.py`, `processing.py`, `metrics.py`, 9 biến thể đồ thị, và 11 lỗi upstream. | [`01_gkt_module.md`](file:///root/Knowledge-Tracing/docs/01_gkt_module.md) |
+| [**02_grkt_module.md**](file:///root/Knowledge-Tracing/docs/02_grkt_module.md) | 19 KB | Chi tiết mã nguồn `GRKT/`: 4 pha forward, $rel\_map$ & $pre\_map$, động học quên $\Delta t$, và 15 điểm rò rỉ upstream. | [`02_grkt_module.md`](file:///root/Knowledge-Tracing/docs/02_grkt_module.md) |
+| [**03_level1_module.md**](file:///root/Knowledge-Tracing/docs/03_level1_module.md) | 14 KB | Chi tiết mã nguồn `level1/`: API `pipeline.py`, xAI phản chứng `explain.py`, dashboard `dashboard.py`. | [`03_level1_module.md`](file:///root/Knowledge-Tracing/docs/03_level1_module.md) |
+| [**04_level2_module.md**](file:///root/Knowledge-Tracing/docs/04_level2_module.md) | 17 KB | Chi tiết mã nguồn `level2/`: Hợp đồng 8 cột CSV, bộ đếm $rel/pre$ train-only, `grkt_api`, quỹ đạo mastery, `PeriodicPackager`. | [`04_level2_module.md`](file:///root/Knowledge-Tracing/docs/04_level2_module.md) |
+| [**05_kaggle_level1_notebook.md**](file:///root/Knowledge-Tracing/docs/05_kaggle_level1_notebook.md) | 18 KB | Giải thích cặn kẽ 39 cells trong `kaggle_level1_full.ipynb`: 5 seed, paired t-test, ablation suy luận, 10 case study. | [`05_kaggle_level1_notebook.md`](file:///root/Knowledge-Tracing/docs/05_kaggle_level1_notebook.md) |
+| [**06_kaggle_level2_notebook.md**](file:///root/Knowledge-Tracing/docs/06_kaggle_level2_notebook.md) | 21 KB | Giải thích cặn kẽ 37 cells trong `kaggle_level2_full.ipynb`: đa tập dữ liệu, đối chiếu split, quỹ đạo mastery, calibration. | [`06_kaggle_level2_notebook.md`](file:///root/Knowledge-Tracing/docs/06_kaggle_level2_notebook.md) |
 
 ---
 
-## 4. Nguyên tắc Thiết kế & Phòng chống Rò rỉ (Anti-Leakage)
+## 3. Bản đồ Tra cứu Khái niệm Nhanh (Topic Cheat Sheet)
 
-Toàn bộ hệ thống trong repo tuân thủ các nguyên tắc khoa học nghiêm ngặt:
+Khi bạn gặp một câu hỏi kỹ thuật cụ thể, hãy tra cứu ngay tại các tệp tương ứng:
 
-1. **Phân tách người học (User-wise splitting)**:
-   - Dữ liệu luôn được chia thành `train / val / test` (tỉ lệ mặc định 0.6 / 0.2 / 0.2) theo **người học** (User ID), không chia theo tương tác rời rạc hoặc cắt cửa sổ trượt.
-   - Giao của ba tập luôn bằng rỗng: $\text{train} \cap \text{val} = \text{train} \cap \text{test} = \text{val} \cap \text{test} = \emptyset$.
-2. **Đồ thị chỉ xây từ tập huấn luyện (Train-only graphs)**:
-   - Cả ma trận chuyển tiếp của GKT (`Transition`) và đồ thị quan hệ của GRKT (`rel_map`, `pre_map`) đều chỉ được tính toán dựa trên các tương tác của người học trong tập `train`. Dữ liệu `val` và `test` hoàn toàn không tham gia vào việc dựng đồ thị.
-3. **Độ trễ thời gian hợp lý (Temporal causal consistency)**:
-   - Nhãn tương lai không bao giờ bị rò rỉ vào bước hiện tại.
-4. **Không trộn cấu hình khi Resume**:
-   - Mọi checkpoint và phiên chạy đều lưu kèm `fingerprint` cấu hình (tên tập, số người, siêu tham số, seed). Khi tiếp tục phiên chạy (resume) sau khi hết hạn 12 giờ trên Kaggle, hệ thống kiểm tra đối chiếu chặt chẽ, ngăn chặn tuyệt đối việc trộn lẫn các lần chạy khác nhau.
+- **Tại sao ma trận đơn vị $A=I$ và ma trận không $A=0$ cho kết quả giống nhau trong GKT?**  
+  $\rightarrow$ Xem mục 7.2 trong [**GAP_LEVEL1.md**](file:///root/Knowledge-Tracing/GAP_LEVEL1.md#72-điểm-mù-toán-học-vì-sao-identity-và-zero-hoàn-toàn-đồng-nhất-trong-gkt) hoặc mục 5.1 trong [**01_gkt_module.md**](file:///root/Knowledge-Tracing/docs/01_gkt_module.md).
+- **Tại sao DKT lại chiến thắng mọi biến thể GKT trên ASSISTments 2009?**  
+  $\rightarrow$ Xem mục 7.3 trong [**GAP_LEVEL1.md**](file:///root/Knowledge-Tracing/GAP_LEVEL1.md#73-bản-chất-dữ-liệu-vì-sao-baseline-dkt-thắng-mọi-biến-thể-gkt-trên-assistments-2009) hoặc mục 3 trong [**README.md**](file:///root/Knowledge-Tracing/README.md#34-bốn-phát-hiện-khoa-học-cốt-lõi-của-cấp-độ-1).
+- **Làm sao để làm xAI định lượng với mô hình KT (phản chứng nếu-thì, local graph ablation)?**  
+  $\rightarrow$ Xem mục 4 trong [**03_level1_module.md**](file:///root/Knowledge-Tracing/docs/03_level1_module.md) và cell 28–30 trong [**05_kaggle_level1_notebook.md**](file:///root/Knowledge-Tracing/docs/05_kaggle_level1_notebook.md).
+- **Cơ chế 4 pha của GRKT hoạt động như thế nào?**  
+  $\rightarrow$ Xem mục 11.1 trong [**GAP_LEVEL2.md**](file:///root/Knowledge-Tracing/GAP_LEVEL2.md#111-dòng-dữ-liệu--toán-học-chi-tiết-của-grkt) hoặc mục 3 trong [**02_grkt_module.md**](file:///root/Knowledge-Tracing/docs/02_grkt_module.md).
+- **Tại sao các chỉ số quỹ đạo `consistency_strengthen`, `consistency_spread`, `locality` luôn bằng 1.0?**  
+  $\rightarrow$ Xem mục 11.3 trong [**GAP_LEVEL2.md**](file:///root/Knowledge-Tracing/GAP_LEVEL2.md#113-quỹ-đạo-tri-thức-muc-t-bằng-chứng-thật-vs-cạm-bẫy-bằng-chứng-giả) hoặc mục 4.3 trong [**04_level2_module.md**](file:///root/Knowledge-Tracing/docs/04_level2_module.md).
+- **Tại sao `precedence_gap` lại âm trên cả ASSIST09 và Junyi?**  
+  $\rightarrow$ Xem mục 10.5 & 11.3 trong [**GAP_LEVEL2.md**](file:///root/Knowledge-Tracing/GAP_LEVEL2.md#113-quỹ-đạo-tri-thức-muc-t-bằng-chứng-thật-vs-cạm-bẫy-bằng-chứng-giả).
+- **Làm sao để nạp log Junyi 16.2 triệu dòng mà không bị tràn 3 GB RAM trên Kaggle?**  
+  $\rightarrow$ Xem mục 2 trong [**04_level2_module.md**](file:///root/Knowledge-Tracing/docs/04_level2_module.md) và mục 11.5 trong [**GAP_LEVEL2.md**](file:///root/Knowledge-Tracing/GAP_LEVEL2.md#115-kỹ-thuật-xử-lý-dữ-liệu-lớn-big-data-engineering-với-junyi-academy).
+- **Làm sao để lưu checkpoint và resume an toàn khi session Kaggle bị ngắt sau 12 giờ?**  
+  $\rightarrow$ Xem mục 7 trong [**04_level2_module.md**](file:///root/Knowledge-Tracing/docs/04_level2_module.md) và cell 0.3 trong [**06_kaggle_level2_notebook.md**](file:///root/Knowledge-Tracing/docs/06_kaggle_level2_notebook.md).
