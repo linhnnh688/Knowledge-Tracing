@@ -91,6 +91,42 @@ def _user_ids_from_subset(subset):
     return [_as_id(user_ids[i]) for i in subset.indices]
 
 
+def order_leak_lines(bundle, prep_stats=None):
+    """Leak-report lines on chronological order + duplicated attempts (Level 1 and Level 2).
+
+    Counted on the sequences actually fed to the models (Level 2 asserts its GRKT sequences
+    equal these element by element), so both counters must be 0.
+    """
+    ensure_gkt_on_path()
+    from processing import sequence_order_check
+
+    base = bundle["train_loader"].dataset.dataset
+    prep = prep_stats or getattr(base, "prep_stats", None) or {}
+    chk = sequence_order_check(base)
+    lines = []
+    if prep:
+        lines.append(
+            f"Làm sạch log           : {prep.get('rows_raw')} dòng -> {prep.get('rows_kept')} dòng, "
+            f"{prep.get('users_kept')} người học"
+        )
+        lines.append(
+            f"  sắp lại theo order_id: {prep.get('users_out_of_order')} người học có thứ tự file khác thời gian"
+        )
+        lines.append(
+            f"  gộp lượt trùng       : bỏ {prep.get('duplicate_rows_removed')} dòng trùng order_id (câu nhiều kỹ năng)"
+        )
+    if chk["checked"]:
+        lines.append(
+            f"Thứ tự trong chuỗi     : {chk['targets']} bước dự đoán, order_id không tăng={chk['non_increasing']}, "
+            f"lượt trùng={chk['duplicate_attempts']} (phải = 0)"
+        )
+    else:
+        lines.append(
+            "Thứ tự trong chuỗi     : file không có order_id -> giữ thứ tự file (không kiểm tra được)"
+        )
+    return lines
+
+
 def save_split(bundle, out_path: Path) -> None:
     payload = {
         "train_users": _user_ids_from_subset(bundle["train_loader"].dataset),

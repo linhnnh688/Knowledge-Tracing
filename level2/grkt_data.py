@@ -20,6 +20,9 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 import pandas as pd
 
+from level1.paths import ensure_gkt_on_path
+from level1.pipeline import order_leak_lines
+
 # ---------------------------------------------------------------- sequences của từng người học
 
 
@@ -198,8 +201,9 @@ def build_grkt_data(
 ) -> GRKTData:
     """Nạp CSV chuẩn hoá và dựng chuỗi cho GRKT, ĐỐI CHIẾU với bundle của Cấp độ 1.
 
-    Chuỗi tiền xử lý lặp lại đúng ``GKT/processing.load_dataset`` (bỏ dòng thiếu skill,
-    lọc người có ít hơn ``min_seq_len`` tương tác, ``pd.factorize(skill_id, sort=True)``,
+    Chuỗi tiền xử lý lặp lại đúng ``GKT/processing.load_dataset`` (``prepare_interactions``:
+    bỏ dòng thiếu skill, sắp theo order_id, gộp lượt trùng, lọc người có ít hơn
+    ``min_seq_len`` tương tác; rồi ``pd.factorize(skill_id, sort=True)``,
     ``groupby('user_id', sort=False)``, cắt ``max_seq_len``) để thứ tự người học và chỉ số
     khái niệm giống hệt nhau; kết quả được kiểm tra lại từng người học bằng
     ``_assert_align`` — bằng chứng split/đồ thị/không gian khái niệm là MỘT.
@@ -221,8 +225,13 @@ def build_grkt_data(
     for col in ("user_id", "skill_id", "correct"):
         if col not in df.columns:
             raise KeyError(f"CSV chuẩn hoá thiếu cột bắt buộc '{col}': {path}")
-    df = df.dropna(subset=["skill_id"])
-    df = df.groupby("user_id").filter(lambda q: len(q) >= min_seq_len).copy()
+    # Dùng CHUNG hàm làm sạch với Cấp độ 1: sắp theo order_id trong từng người học và gộp các
+    # dòng trùng order_id (câu nhiều kỹ năng) — nếu không, thời gian học/quên của GRKT được
+    # cộng dồn theo thứ tự sai và problem_id kế tiếp làm lộ nhãn của lượt trùng.
+    ensure_gkt_on_path()
+    from processing import prepare_interactions
+
+    df, prep_stats = prepare_interactions(df, min_seq_len=min_seq_len, verbose=verbose)
     df["skill"], _ = pd.factorize(df["skill_id"], sort=True)
     if "problem_id" in df.columns:
         df["prob"], _ = pd.factorize(df["problem_id"], sort=True)
@@ -311,6 +320,7 @@ def build_grkt_data(
             "n_knows": concept_num,
             "max_seq_len_seen": max(s.length for s in sequences),
             **gap_stats,
+            "prep": prep_stats,
         },
     )
     if verbose:
@@ -580,6 +590,7 @@ def leak_report(
         lines.append(
             f"  biến thể {kind:9s}: rel={info['edges_rel']:6d} pre={info['edges_pre']:6d}"
         )
+    lines.extend(order_leak_lines(bundle, data.stats.get("prep")))
     lines.append(
         "Nhãn hiện tại/tương lai : không dùng. GRKT chỉ dùng knows[i+1] và times[i+1] "
         "(danh tính + thời điểm câu hỏi kế tiếp, KHÔNG dùng kết quả) cho giai đoạn học/quên."

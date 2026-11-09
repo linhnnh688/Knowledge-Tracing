@@ -99,8 +99,10 @@ ASSIST2009 = DatasetSpec(
     min_interactions=3,
     note=(
         "ASSISTments 2009/2010 (skill_builder_data.csv, 525.534 dòng, 4.217 người học, "
-        "123 kỹ năng, 26.688 problem_id). Mỗi dòng đúng một skill_id — cùng tính chất với "
-        "Cấp độ 1, nên không explode Q-matrix. Lọc tối thiểu 3 tương tác/người như Cấp độ 1."
+        "123 kỹ năng, 26.688 problem_id). File xếp theo kỹ năng chứ không theo thời gian, và "
+        "câu nhiều kỹ năng bị tách thành nhiều dòng cùng order_id; GKT/processing."
+        "prepare_interactions sắp lại theo order_id và giữ một dòng mỗi lượt (skill_id nhỏ "
+        "nhất), dùng chung cho Cấp độ 1 và 2. Lọc tối thiểu 3 tương tác/người như Cấp độ 1."
     ),
 )
 
