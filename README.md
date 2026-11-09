@@ -10,25 +10,25 @@
 Dự án tập trung vào bài toán **Knowledge Tracing (KT)**: Dựa trên chuỗi lịch sử làm bài của người học $(q_1, r_1), (q_2, r_2), \dots, (q_t, r_t)$ (với $q_i$ là khái niệm tri thức / bài tập và $r_i \in \{0, 1\}$ là kết quả đúng hoặc sai), mô hình cần dự đoán chính xác xác suất người học trả lời đúng câu hỏi tiếp theo:
 $$P(r_{t+1} = 1 \mid q_{1:t}, r_{1:t}, q_{t+1})$$
 
-```text
+```mermaid
 flowchart TD
-    subgraph Data Layer
+    subgraph DL["Data Layer"]
         A["ASSISTments 2009 (525k tương tác, 123 KCs)"]
         B["Junyi Academy (251k tương tác tập con, 200 KCs)"]
     end
 
-    subgraph Anti-Leakage Protocol
+    subgraph AL["Anti-Leakage Protocol"]
         C["User-wise Split (seed=42)"]
         D["Đồ thị chỉ xây từ Train (Train-only)"]
     end
 
-    subgraph Modeling Paradigms
+    subgraph MP["Modeling Paradigms"]
         E["DKT (Baseline LSTM)"]
         F["GKT (Graph-Recurrent: GNN + GRU)"]
         G["GRKT (KDD 2024: Retrieval + Strengthen + Forgetting)"]
     end
 
-    subgraph Analysis & Evaluation
+    subgraph AE["Analysis & Evaluation"]
         H["Đa seed (5 seeds) + Paired t-test + CI95 + Cohen's dz"]
         I["Ablation Đồ thị (Train-time & Inference-time A:=0)"]
         J["Hiệu chỉnh Xác suất (ECE, ACE, Brier score)"]
@@ -36,9 +36,9 @@ flowchart TD
         L["xAI: Phản chứng nếu-thì + Learner Dashboard"]
     end
 
-    Data Layer --> Anti-Leakage Protocol
-    Anti-Leakage Protocol --> Modeling Paradigms
-    Modeling Paradigms --> Analysis & Evaluation
+    DL --> AL
+    AL --> MP
+    MP --> AE
 ```
 
 ### 1.1 Cấu trúc Thư mục
@@ -183,25 +183,29 @@ Dữ liệu: `skill_builder_data.csv` (525.534 tương tác, 4.217 học sinh, 1
 
 GRKT (Graph-based Retrieval-Knowledge Tracing) giải quyết nhược điểm "hộp đen" của GKT bằng cách xây dựng quy trình cập nhật tri thức 4 pha tường minh:
 
-```text
+```mermaid
+
 sequenceDiagram
     autonumber
     participant Learner as Học sinh (Interaction i)
     participant Retrieval as Pha 1: Knowledge Retrieval (GNN)
     participant Decision as Pha 2: Prediction
     participant Strengthen as Pha 3: Memory Strengthening
-    participant Forget as Pha 4: Learning & Forgetting (Δt)
+    participant Forget as Pha 4: Learning & Forgetting (Delta t)
 
     Learner->>Retrieval: Câu hỏi q_i, Khái niệm c_i
-    Note over Retrieval: Lan truyền h qua rel_map, pre_map, sub_map -> h_tilde
+    Note over Retrieval: Lan truyền h qua rel_map, pre_map, sub_map để tạo h_tilde
     Retrieval->>Decision: Vector mastery tích hợp m_tilde
     Note over Decision: Score = sigmoid(Mastery - Difficulty)
     Decision-->>Learner: Dự đoán xác suất đúng p_i
+
     Learner->>Strengthen: Kết quả thực tế r_i (Đúng/Sai)
-    Note over Strengthen: Đúng: +total_gain; Sai: -total_loss trên đồ thị -> h_strong
-    Strengthen->>Forget: Khoảng thời gian nghỉ Δt = t_{i+1} - t_i
-    Note over Forget: Học trễ: (1 - exp(-k_learn Δt)) * learn<br/>Quên tri thức: history * exp(-k_forget Δt)
-    Forget-->>Learner: Trạng thái tri thức mới h_{i+1}
+    Note over Strengthen: Đúng: +total_gain<br/>Sai: -total_loss trên đồ thị
+    Strengthen->>Forget: Khoảng thời gian nghỉ Delta t = t_next - t_i
+
+    Note over Forget: Học trễ: (1 - exp(-k_learn * Delta t)) * learn<br/>Quên tri thức: history * exp(-k_forget * Delta t)
+    Forget-->>Learner: Trạng thái tri thức mới h_next
+
 ```
 
 1. **Pha 1: Knowledge Retrieval (Truy xuất Tri thức qua GNN)**:
