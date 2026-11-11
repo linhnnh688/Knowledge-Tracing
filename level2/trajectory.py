@@ -303,7 +303,11 @@ def precedence_consistency(
 ) -> dict:
     """Nhất quán tiên quyết: mastery khái niệm TIÊN QUYẾT có cao hơn khái niệm PHỤ thuộc?
 
-    Với mỗi cạnh ``c → d`` của ``pre_map`` (``c`` là tiên quyết của ``d``), xét trạng thái
+    Chiều cạnh: ``pre_map[x, y] = 1`` nghĩa là **y là tiên quyết của x** — theo công thức
+    đếm ``pre = ft / (tf + ft)`` (``ft[x, y]`` = số cặp "x sai, y đúng", xem
+    ``grkt_data.build_relevance_maps``); trên ASSIST2009 ở 86% cạnh cột ``y`` có tỉ lệ đúng
+    cao hơn hàng ``x``. Vì vậy với mỗi phần tử ``pre_map[d, c] = 1`` ta có cạnh tiên quyết
+    ``c → d`` (``c`` là tiên quyết của ``d``), và xét trạng thái
     ``m_pre[i]`` — trạng thái mô hình dùng để dự đoán bước ``i``, trước khi bước đó làm tăng
     mastery của ``d``. Đếm tỉ lệ ``m_pre[i, c] ≥ m_pre[i, d]`` trên các bước người học trả
     lời ĐÚNG ``d``, với điều kiện cả ``c`` lẫn ``d`` đã từng được người đó làm trước bước
@@ -332,7 +336,8 @@ def precedence_consistency(
     pre[0, :] = False
     pre[:, 0] = False
     np.fill_diagonal(pre, False)
-    src, dst = np.nonzero(pre)
+    # hàng = khái niệm phụ thuộc (đích), cột = khái niệm tiên quyết (nguồn)
+    dst, src = np.nonzero(pre)
     if src.size == 0:
         return empty
 
