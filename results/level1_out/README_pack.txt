@@ -1,9 +1,9 @@
 level1_out — sản phẩm Cấp độ 1
-Sinh bởi: 2026-11-08 level1-full+ablation-extend
-Git commit: 639c908478ca78a4c558a0b6696e679c46637ebe
+Sinh bởi: 2026-11-09 level1-full+order-dedup+bn-eval
+Git commit: 2908d1150991dce4fd39dc1a0626ee56dbd06ea4
 Dữ liệu: skill_builder_data.csv (sha256=f4b8791ae5968b884b77ab3b08adec48130503ec57f3113158c9a5af88af3374)
-Cấu hình: epochs=20, batch=32, max_seq_len=200, seeds=[42, 123, 456, 789, 1011]
-Cấu hình train: ['DKT', 'GKT-Transition', 'GKT-Identity', 'GKT-Zero', 'GKT-Shuffled', 'GKT-MHA', 'GKT-ShuffledRow'] (7 cấu hình × 5 seed)
+Cấu hình: epochs=20, batch=32, max_seq_len=200, seeds=[42, 123, 456]
+Cấu hình train: ['DKT', 'GKT-Transition', 'GKT-Zero', 'GKT-Shuffled'] (4 cấu hình × 3 seed)
 
 Cấu trúc:
   tables/                  bảng số liệu CSV (UTF-8 BOM, mở được bằng Excel)
@@ -17,7 +17,7 @@ Cấu trúc:
   run_manifest.json        manifest tái lập
   environment.txt          phiên bản môi trường
   report_summary.md        báo cáo tổng hợp tự động
-  checkpoints/             trọng số của MỌI run đã xong (7 cấu hình × 5 seed)
+  checkpoints/             trọng số của MỌI run đã xong (4 cấu hình × 3 seed)
                            seed 42: <tên>.pt | seed khác: <tên>-seed<s>.pt
                            + ckpt_<tên>-seed<s>.pt của run đang dở (nếu có)
   runs_progress.json       sổ tiến độ từng (mô hình, seed) — dùng để resume
