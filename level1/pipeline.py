@@ -14,7 +14,7 @@ import torch.optim as optim
 from sklearn.metrics import roc_auc_score
 from torch.nn.utils import clip_grad_norm_
 
-from .paths import ensure_gkt_on_path, repo_root
+from .paths import ensure_gkt_on_path, materialize_lfs, repo_root
 
 
 def set_seed(seed: int) -> None:
@@ -30,10 +30,10 @@ def set_seed(seed: int) -> None:
 def resolve_data_file(data_file: str) -> str:
     path = Path(data_file)
     if path.exists():
-        return str(path)
+        return str(materialize_lfs(path))
     candidate = repo_root() / "GKT" / "data" / data_file
     if candidate.exists():
-        return str(candidate)
+        return str(materialize_lfs(candidate))
     raise FileNotFoundError(f"Cannot find data file: {data_file}")
 
 

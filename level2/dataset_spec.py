@@ -262,19 +262,19 @@ def register_spec(spec: DatasetSpec) -> None:
 
 def resolve_canonical_path(spec: DatasetSpec, search_dirs=None) -> Path:
     """Tìm file CSV chuẩn hoá: đường dẫn tuyệt đối -> thư mục Cấp độ 1 -> các thư mục tìm thêm."""
+    from level1.paths import materialize_lfs, repo_root
+
     path = Path(spec.canonical_file)
-    if path.is_absolute() and path.exists():
-        return path
     if path.exists():
-        return path
-    from level1.paths import repo_root
+        return materialize_lfs(path)
 
     candidates = [repo_root() / "GKT" / "data" / spec.canonical_file]
     for d in search_dirs or []:
         candidates.append(Path(d) / spec.canonical_file)
     for c in candidates:
         if c.exists():
-            return c
+            # CSV trong repo lưu bằng Git LFS: trên Kaggle (không có git-lfs) đây chỉ là con trỏ
+            return materialize_lfs(c)
     raise FileNotFoundError(
         f"Không tìm thấy CSV chuẩn hoá của '{spec.name}': {spec.canonical_file}. "
         f"Đã thử: {[str(c) for c in candidates]}"
