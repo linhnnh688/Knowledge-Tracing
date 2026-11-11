@@ -1,8 +1,8 @@
 GÓI KẾT QUẢ CẤP ĐỘ 2 (GRKT) — Knowledge-Tracing
 ============================================================
-notebook     : 2026-11-07a (đóng gói định kỳ + zip tự chứa cho EVAL_ONLY)
-git commit   : 154d4e4 feat: add PeriodicPackager background thread for atomic periodic output archiving in notebook and experiment modules
-xuất lúc     : 2026-11-07T16:07:07Z
+notebook     : 2026-11-09 (order-dedup + bn-eval; đóng gói định kỳ)
+git commit   : fc1882d fix: download Git LFS data files on Kaggle in both levels
+xuất lúc     : 2026-11-11T15:14:40Z
 thiết bị     : cuda
 thư mục gốc  : level2_moderate/
 
