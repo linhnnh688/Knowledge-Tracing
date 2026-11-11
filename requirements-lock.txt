@@ -1,0 +1,14 @@
+# Phiên bản ĐÚNG của lần chạy sinh results/level1_out (xem results/level1_out/environment.txt:
+# Kaggle, Python 3.13, Tesla T4, commit 639c908). Dùng để TÁI LẬP số liệu báo cáo:
+#   pip install -r requirements-lock.txt
+# torch lấy bản CUDA hợp với máy (vd thêm --index-url https://download.pytorch.org/whl/cu130).
+# Trên Kaggle KHÔNG cài file này: image đã có torch GPU; notebook chỉ cài gói thiếu (requirements.txt).
+torch==2.11.0
+numpy==2.1.3
+pandas==2.3.3
+scipy==1.16.3
+scikit-learn==1.6.1
+matplotlib==3.10.0
+# Hai gói dưới không được ghi trong environment.txt; phiên bản là bản đã kiểm bằng test local.
+tqdm==4.70.1
+ipywidgets>=8.0

@@ -7,6 +7,11 @@ from contextlib import contextmanager
 
 import torch
 
+from kt_common.ids import skill_label
+from kt_common.log import get_logger
+
+log = get_logger("level1.explain")
+
 
 def _zero_graph_output(module, inputs, output):
     return torch.zeros_like(output)
@@ -59,10 +64,6 @@ def user_ids_from_loader(loader):
     return list(range(len(ds)))
 
 
-def _skill_name(lookup, skill_id):
-    if lookup and skill_id in lookup:
-        return f"{skill_id}:{lookup[skill_id]}"
-    return str(skill_id)
 
 
 def _neighbors(graph, skill_id, topk=5):
@@ -80,6 +81,10 @@ def _neighbors(graph, skill_id, topk=5):
     return out
 
 
+def _to_list(x):
+    return x.tolist() if hasattr(x, "tolist") else list(x)
+
+
 def _dataset_rows(loader):
     """Rows of the underlying dataset, aligned to the positions of a NON-shuffled loader.
 
@@ -92,8 +97,7 @@ def _dataset_rows(loader):
     rows = []
     for i in indices:
         feats, qs, ans = base[int(i)]
-        to_list = lambda x: x.tolist() if hasattr(x, "tolist") else list(x)
-        rows.append((to_list(feats), to_list(qs), to_list(ans)))
+        rows.append((_to_list(feats), _to_list(qs), _to_list(ans)))
     return rows
 
 
@@ -276,7 +280,7 @@ def collect_cases(
                             {
                                 "t": h,
                                 "skill": sid,
-                                "skill_name": _skill_name(skill_lookup, sid),
+                                "skill_name": skill_label(skill_lookup, sid),
                                 "correct": int(answers[b, h].cpu()),
                             }
                         )
@@ -285,7 +289,7 @@ def collect_cases(
                         "user_id": uid,
                         "t": t + 1,
                         "skill": skill,
-                        "skill_name": _skill_name(skill_lookup, skill),
+                        "skill_name": skill_label(skill_lookup, skill),
                         "y_true": y,
                         "y_prob": yhat,
                         "y_pred": pred_bin,
@@ -304,7 +308,7 @@ def collect_cases(
         try:
             annotate_evidence(model, loader, buckets, graph=graph, device=device)
         except Exception as exc:  # never break a training run over the extras
-            print(
+            log.warning(
                 f"[explain] bỏ qua bằng chứng phản chứng: {type(exc).__name__}: {exc}"
             )
     return buckets

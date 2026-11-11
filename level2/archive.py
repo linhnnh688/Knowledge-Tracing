@@ -19,6 +19,10 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
+from kt_common.log import get_logger
+
+log = get_logger("level2.archive")
+
 #: Mặc định không loại gì. CSV chuẩn hoá (``*_canonical.csv`` + ``.meta.json``) PHẢI nằm
 #: trong zip: có nó thì phiên sau đặt ``EVAL_ONLY=True`` là đánh giá được ngay, không cần
 #: attach lại Junyi thô ~3 GB rồi chuẩn hoá lại hàng chục phút. File quá lớn vẫn bị
@@ -156,7 +160,7 @@ def package_output(
         os.replace(part, zip_path)
 
     if verbose:
-        print(
+        log.info(
             f">>> {zip_path} | {zip_path.stat().st_size / 1024 / 1024:.1f} MB "
             f"(nén từ {len(added)} file, {sum(m for _, m in added):.1f} MB chưa nén)"
         )
@@ -166,11 +170,11 @@ def package_output(
             key = parts[1] if len(parts) > 1 else parts[0]
             n, tot = groups.get(key, (0, 0.0))
             groups[key] = (n + 1, tot + mb)
-        print("    bên trong zip:")
+        log.info("    bên trong zip:")
         for key, (n, tot) in sorted(groups.items()):
-            print(f"      {key:34s} {n:4d} file  {tot:9.1f} MB")
+            log.info(f"      {key:34s} {n:4d} file  {tot:9.1f} MB")
         n_resume = sum(1 for rel, _ in added if is_resume_ckpt(rel.rsplit("/", 1)[-1]))
-        print(
+        log.warning(
             f"    checkpoint resume trong zip: {n_resume}"
             + (
                 ""
@@ -181,7 +185,7 @@ def package_output(
         n_eval = sum(
             1 for rel, _ in added if is_eval_only_input(rel.rsplit("/", 1)[-1])
         )
-        print(
+        log.warning(
             f"    dữ liệu đã chuẩn hoá trong zip: {n_eval}"
             + (
                 ""
@@ -190,15 +194,15 @@ def package_output(
             )
         )
         if unstable:
-            print(f"    bỏ qua {len(unstable)} file đang được ghi song song:")
+            log.info(f"    bỏ qua {len(unstable)} file đang được ghi song song:")
             for rel, why in unstable:
-                print(f"      {rel:52s} | {why}")
+                log.info(f"      {rel:52s} | {why}")
         if skipped:
-            print(
+            log.info(
                 f"    bỏ {len(skipped)} file (tăng max_mb / sửa skip_names / keep_ckpts nếu muốn lấy cả):"
             )
             for rel, mb, why in skipped:
-                print(f"      {rel:52s} {mb:9.1f} MB | {why}")
+                log.info(f"      {rel:52s} {mb:9.1f} MB | {why}")
     return zip_path
 
 
@@ -239,7 +243,7 @@ class PeriodicPackager:
     # ------------------------------------------------------------------ điều khiển
     def start(self) -> "PeriodicPackager":
         if not self.enabled:
-            print(
+            log.info(
                 "[packager] TẮT đóng gói định kỳ (every_min<=0) — zip chỉ được tạo khi "
                 "gọi pack_now / đóng gói thủ công."
             )
@@ -251,7 +255,7 @@ class PeriodicPackager:
             target=self._loop, name=f"packager-{self.zip_path.name}", daemon=True
         )
         self._thread.start()
-        print(
+        log.info(
             f"[packager] luồng nền: mỗi {self.every_s / 60:.0f} phút đóng gói "
             f"{self.save_dir.name} -> {self.zip_path.name} (ghi nguyên tử .part)"
         )
@@ -267,7 +271,7 @@ class PeriodicPackager:
             thread.join(timeout=600)
         if final_pack:
             self.pack_now(reason)
-        print(
+        log.info(
             f"[packager] đã dừng sau {self.n_packs} lần đóng gói"
             + (f" | lỗi cuối: {self.last_error}" if self.last_error else "")
         )
@@ -293,13 +297,13 @@ class PeriodicPackager:
             )
         except Exception as exc:  # luồng nền không được giết buổi train
             self.last_error = f"{type(exc).__name__}: {exc}"
-            print(f"[packager] {reason or 'định kỳ'} THẤT BẠI: {self.last_error}")
+            log.warning(f"[packager] {reason or 'định kỳ'} THẤT BẠI: {self.last_error}")
             return None
         self.n_packs += 1
         self.last_pack = time.time()
         self._signature = tree_signature(self.save_dir)
         mb = out.stat().st_size / 1024 / 1024
-        print(f"[packager] {reason or 'định kỳ'} -> {out.name} ({mb:.1f} MB)")
+        log.info(f"[packager] {reason or 'định kỳ'} -> {out.name} ({mb:.1f} MB)")
         return out
 
     def _loop(self) -> None:
@@ -315,6 +319,6 @@ class PeriodicPackager:
                 continue
             sig = tree_signature(self.save_dir)
             if sig == self._signature:
-                print("[packager] không có file mới kể từ lần đóng gói trước -> bỏ qua")
+                log.info("[packager] không có file mới kể từ lần đóng gói trước -> bỏ qua")
                 continue
             self.pack_now("định kỳ")

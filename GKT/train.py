@@ -10,9 +10,9 @@ import torch
 import torch.optim as optim
 from torch.optim import lr_scheduler
 from torch.autograd import Variable
-from models import GKT, MultiHeadAttention, VAE, DKT
-from metrics import KTLoss, VAELoss
-from processing import load_dataset
+from .models import GKT, MultiHeadAttention, VAE, DKT
+from .metrics import KTLoss, VAELoss
+from .processing import load_dataset
 
 # Graph-based Knowledge Tracing: Modeling Student Proficiency Using Graph Neural Network.
 # For more information, please refer to https://dl.acm.org/doi/10.1145/3350546.3352513

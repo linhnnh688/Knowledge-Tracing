@@ -2,7 +2,7 @@
 
 Hai bất đẳng ích của bản gốc được xử lý ở đây:
 
-1. ``GRKT/Runner.py`` cắt chuỗi mỗi người học thành các cửa sổ 100 tương tác và chia
+1. ``GRKT/Runner.py`` (upstream, đã gỡ khỏi repo) cắt chuỗi mỗi người học thành các cửa sổ 100 tương tác và chia
    k-fold trên cửa sổ — cùng một người học xuất hiện ở cả train lẫn test (phạm
    ``YEU_CAU.md`` §6.4). Ở đây MỖI NGƯỜI HỌC LÀ MỘT chuỗi, và danh sách người học lấy
    thẳng từ split của Cấp độ 1 (``level1.pipeline.save_split``).
@@ -15,10 +15,17 @@ Hai bất đẳng ích của bản gốc được xử lý ở đây:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Sequence
 
 import numpy as np
 import pandas as pd
+
+from kt_common.ids import as_id as _as_id
+from kt_common.interactions import DATA_VERSION, iter_users, load_interactions, truncate_len
+
+from kt_common.log import get_logger
+
+log = get_logger("level2.grkt_data")
 
 # ---------------------------------------------------------------- sequences của từng người học
 
@@ -71,6 +78,8 @@ class GRKTData:
     time_mode: str = "duration_ms"
     gap_cap_min: int = 240
     stats: Dict[str, object] = field(default_factory=dict)
+    #: Phiên bản tiền xử lý (kt_common.interactions.DATA_VERSION).
+    data_version: str = DATA_VERSION
 
     def __post_init__(self):
         self._by_user = {}
@@ -168,14 +177,14 @@ def resolve_time_mode(df: pd.DataFrame, time_mode: str, verbose: bool = True) ->
     if time_mode == "duration_ms" and "ms_first_response" not in df.columns:
         fallback = "timestamp_ms" if "timestamp_ms" in df.columns else "step"
         if verbose:
-            print(
+            log.warning(
                 f"  [cảnh báo] CSV không có ms_first_response -> chuyển sang time_mode='{fallback}'"
             )
         return fallback
     if time_mode == "timestamp_ms" and "timestamp_ms" not in df.columns:
         fallback = "duration_ms" if "ms_first_response" in df.columns else "step"
         if verbose:
-            print(
+            log.warning(
                 f"  [cảnh báo] CSV không có timestamp_ms -> chuyển sang time_mode='{fallback}'"
             )
         return fallback
@@ -217,13 +226,9 @@ def build_grkt_data(
     base_answers = list(base.answers)
     concept_num = int(bundle["concept_num"])
 
-    df = pd.read_csv(path)
-    for col in ("user_id", "skill_id", "correct"):
-        if col not in df.columns:
-            raise KeyError(f"CSV chuẩn hoá thiếu cột bắt buộc '{col}': {path}")
-    df = df.dropna(subset=["skill_id"])
-    df = df.groupby("user_id").filter(lambda q: len(q) >= min_seq_len).copy()
-    df["skill"], _ = pd.factorize(df["skill_id"], sort=True)
+    # CÙNG hàm tiền xử lý với GKT/processing.load_dataset (kt_common.interactions), nên
+    # _assert_align bên dưới chỉ còn là hàng rào phòng hờ chứ không phải bằng chứng duy nhất.
+    df = load_interactions(path, min_seq_len=min_seq_len)
     if "problem_id" in df.columns:
         df["prob"], _ = pd.factorize(df["problem_id"], sort=True)
     else:
@@ -242,10 +247,9 @@ def build_grkt_data(
 
     sequences: List[UserSequence] = []
     positions = 0
-    for user_id, series in df.groupby("user_id", sort=False):
-        # 0/None = KHÔNG cắt, giống `if max_seq_len and len(feats) > max_seq_len` của Cấp độ 1
-        limit = int(max_seq_len) if max_seq_len else len(series)
-        take = min(limit, len(series))
+    for user_id, series in iter_users(df):
+        # 0/None = KHÔNG cắt — cùng quy tắc với Cấp độ 1 (kt_common.interactions.truncate_len)
+        take = truncate_len(len(series), max_seq_len)
         skills0 = series["skill"].to_numpy(dtype="int64")[:take]
         corrs = series["correct"].eq(1).to_numpy(dtype="int64")[:take]
         probs = series["prob"].to_numpy(dtype="int64")[:take]
@@ -314,22 +318,15 @@ def build_grkt_data(
         },
     )
     if verbose:
-        print(
+        log.info(
             f"  GRKT data: {data.stats['users']} người học | {data.stats['interactions']} tương tác | "
             f"n_knows={concept_num} | n_probs={n_probs} | chuỗi dài nhất={data.stats['max_seq_len_seen']}"
         )
-        print(
+        log.info(
             f"  time_mode={time_mode}, Δt phút: p50={data.stats['dt_p50']:.1f} "
             f"p95={data.stats['dt_p95']:.1f} max={data.stats['dt_max']:.1f} (cap {gap_cap_min})"
         )
     return data
-
-
-def _as_id(x):
-    try:
-        return int(x)
-    except (TypeError, ValueError):
-        return x
 
 
 def _assert_align(

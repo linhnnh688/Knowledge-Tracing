@@ -6,8 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
-from layers import MLP, EraseAddGate, MLPEncoder, MLPDecoder, ScaledDotProductAttention
-from utils import gumbel_softmax
+from .layers import MLP, EraseAddGate, MLPEncoder, MLPDecoder, ScaledDotProductAttention
+from .utils import gumbel_softmax
 
 # Graph-based Knowledge Tracing: Modeling Student Proficiency Using Graph Neural Network.
 # For more information, please refer to https://dl.acm.org/doi/10.1145/3350546.3352513

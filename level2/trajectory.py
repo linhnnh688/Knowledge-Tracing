@@ -42,6 +42,10 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 import torch
 
+from kt_common.log import get_logger
+
+log = get_logger("level2.trajectory")
+
 EPS = 1e-9
 
 #: Ba số đo bị cấu trúc mô hình ép về 1 — chỉ dùng để kiểm chứng cài đặt, không dùng làm
@@ -148,9 +152,9 @@ def record_trajectories(
             )
         offset += len(batch_seqs)
         if verbose and (offset // 200) != (offset - len(batch_seqs)) // 200:
-            print(f"  đã ghi quỹ đạo {offset}/{len(seqs)} người học ...")
+            log.info(f"  đã ghi quỹ đạo {offset}/{len(seqs)} người học ...")
     if verbose:
-        print(f"  đã ghi quỹ đạo {len(users)}/{len(seqs)} người học")
+        log.info(f"  đã ghi quỹ đạo {len(users)}/{len(seqs)} người học")
     return {
         "users": users,
         "concept_num": int(
@@ -456,7 +460,7 @@ def stability_under_perturbation(
         deltas.append(float(diff.mean()))
         n_used += 1
     if verbose:
-        print(
+        log.info(
             f"  [stability] lật bước áp chót trên {n_used} người học: "
             f"Spearman={_fmt(rhos)} | đổi={_fmt(changed)}"
         )

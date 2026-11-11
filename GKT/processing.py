@@ -1,11 +1,17 @@
 import numpy as np
-import pandas as pd
-import os
 import torch
-import torch.nn.functional as F
-from torch.utils.data import Dataset, TensorDataset, DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence
-from utils import (
+from kt_common.ids import as_id
+from kt_common.interactions import (
+    DATA_VERSION,
+    interaction_stats,
+    iter_users,
+    load_interactions,
+    skill_lookup,
+    truncate_len,
+)
+from .utils import (
     build_dense_graph,
     build_identity_graph,
     build_zero_graph,
@@ -77,27 +83,9 @@ def load_dataset(
         test_data_loader: data loader of the test dataset
     NOTE: stole some code from https://github.com/lccasagrande/Deep-Knowledge-Tracing/blob/master/deepkt/data_util.py
     """
-    df = pd.read_csv(file_path)
-    if "skill_id" not in df.columns:
-        raise KeyError(f"The column 'skill_id' was not found on {file_path}")
-    if "correct" not in df.columns:
-        raise KeyError(f"The column 'correct' was not found on {file_path}")
-    if "user_id" not in df.columns:
-        raise KeyError(f"The column 'user_id' was not found on {file_path}")
-
-    # if not (df['correct'].isin([0, 1])).all():
-    #     raise KeyError(f"The values of the column 'correct' must be 0 or 1.")
-
-    # Step 1.1 - Remove questions without skill
-    df.dropna(subset=["skill_id"], inplace=True)
-
-    # Step 1.2 - Remove users with too few answers
-    df = df.groupby("user_id").filter(lambda q: len(q) >= min_seq_len).copy()
-
-    # Step 2 - Enumerate skill id
-    df["skill"], _ = pd.factorize(
-        df["skill_id"], sort=True
-    )  # we can also use problem_id to represent exercises
+    # Step 1-2 - drop rows without skill, drop short learners, enumerate skill id.
+    # Một nguồn duy nhất, dùng chung với level2/grkt_data.build_grkt_data.
+    df = load_interactions(file_path, min_seq_len=min_seq_len)
 
     # Step 3 - Cross skill id with answer to form a synthetic feature
     # use_binary: (0,1); !use_binary: (1,2,3,4,5,6,7,8,9,10,11,12). Either way, the correct result index is guaranteed to be 1
@@ -112,29 +100,14 @@ def load_dataset(
     answer_list = []
     seq_len_list = []
     user_id_list = []
-    skill_name_list = []
 
-    def get_data(user_id, series):
-        feats = series["skill_with_answer"].tolist()
-        qs = series["skill"].tolist()
-        ans = series["correct"].eq(1).astype("int").tolist()
-        if max_seq_len and len(feats) > max_seq_len:
-            feats = feats[:max_seq_len]
-            qs = qs[:max_seq_len]
-            ans = ans[:max_seq_len]
-        feature_list.append(feats)
-        question_list.append(qs)
-        answer_list.append(ans)
-        seq_len_list.append(len(ans))
-        try:
-            user_id_list.append(int(user_id))
-        except (TypeError, ValueError):
-            user_id_list.append(user_id)
-        if "skill_name" in series.columns:
-            skill_name_list.append(series["skill_name"].tolist()[: len(ans)])
-
-    for user_id, series in df.groupby("user_id", sort=False):
-        get_data(user_id, series)
+    for user_id, series in iter_users(df):
+        take = truncate_len(len(series), max_seq_len)
+        feature_list.append(series["skill_with_answer"].tolist()[:take])
+        question_list.append(series["skill"].tolist()[:take])
+        answer_list.append(series["correct"].eq(1).astype("int").tolist()[:take])
+        seq_len_list.append(take)
+        user_id_list.append(as_id(user_id))
     print("max seq_len: ", int(np.max(seq_len_list)))
     student_num = len(seq_len_list)
     print("student num: ", student_num)
@@ -149,7 +122,9 @@ def load_dataset(
 
     kt_dataset = KTDataset(feature_list, question_list, answer_list)
     kt_dataset.user_ids = user_id_list
-    kt_dataset.skill_lookup = _skill_lookup(df)
+    kt_dataset.skill_lookup = skill_lookup(df)
+    kt_dataset.data_version = DATA_VERSION
+    kt_dataset.data_stats = interaction_stats(df, max_seq_len)
     train_size = int(train_ratio * student_num)
     val_size = int(val_ratio * student_num)
     test_size = student_num - train_size - val_size
@@ -203,17 +178,6 @@ def load_dataset(
     return concept_num, graph, train_data_loader, valid_data_loader, test_data_loader
 
 
-def _skill_lookup(df):
-    lookup = {}
-    if "skill_name" not in df.columns:
-        return lookup
-    for _, row in (
-        df[["skill", "skill_id", "skill_name"]].drop_duplicates("skill").iterrows()
-    ):
-        lookup[int(row["skill"])] = str(row["skill_name"])
-    return lookup
-
-
 def build_transition_graph(
     question_list, seq_len_list, indices, student_num, concept_num
 ):
@@ -229,18 +193,13 @@ def build_transition_graph(
             next = questions[j + 1]
             graph[pre, next] += 1
     np.fill_diagonal(graph, 0)
-    # row normalization
-    rowsum = np.array(graph.sum(1))
-
-    def inv(x):
-        if x == 0:
-            return x
-        return 1.0 / x
-
-    inv_func = np.vectorize(inv)
-    r_inv = inv_func(rowsum).flatten()
-    r_mat_inv = np.diag(r_inv)
-    graph = r_mat_inv.dot(graph)
+    # Chuẩn hoá theo hàng: chia trực tiếp thay cho diag(1/rowsum) @ graph (nhân ma trận K×K
+    # thừa). Hàng toàn 0 (khái niệm không có chuyển tiếp) giữ nguyên 0.
+    # Nhân với nghịch đảo (không chia) để trùng từng bit với bản cũ.
+    rowsum = graph.sum(axis=1, keepdims=True)
+    r_inv = np.zeros_like(rowsum)
+    np.divide(1.0, rowsum, out=r_inv, where=rowsum != 0)
+    graph = graph * r_inv
     # covert to tensor
     graph = torch.from_numpy(graph).float()
     return graph

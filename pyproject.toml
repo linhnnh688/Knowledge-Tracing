@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kt-graph"
+version = "0.2.0"
+description = "Graph-based Knowledge Tracing: DKT/GKT (Level 1) and GRKT (Level 2) experiments"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24,<3",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "scikit-learn>=1.3",
+    "matplotlib>=3.7",
+    "torch>=2.0",
+    "tqdm>=4.65",
+]
+
+[project.optional-dependencies]
+notebook = ["ipywidgets>=8.0"]
+dev = ["pytest>=8", "ruff>=0.6", "pre-commit>=3"]
+
+[tool.setuptools]
+# `pip install -e .` từ thư mục gốc: notebook chỉ cần cài một lần thay vì chèn sys.path.
+packages = ["GKT", "GRKT", "GRKT.model", "level1", "level2", "kt_common"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -m \"not train\""
+markers = ["train: test có huấn luyện mô hình (bỏ qua mặc định; train chạy trên Kaggle)"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["archive", "*.ipynb", "GRKT/data"]
+
+[tool.ruff.lint]
+# Lỗi thật (cú pháp, tên chưa định nghĩa, import thừa, so sánh sai) + bugbear.
+select = ["E4", "E7", "E9", "F", "B"]
+ignore = [
+    "E741",  # tên biến l/O trong code toán
+    "B905",  # zip(strict=) — Python 3.10+ mới có, code cần chạy trên ảnh Kaggle cũ
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Mã upstream vendored: chỉ bắt lỗi thật, không ép phong cách.
+"GKT/*" = ["B", "E731", "F841"]
+"GRKT/*" = ["B", "E731", "F401", "F403", "F405", "F841"]  # star-import: tên "thừa" có thể được module khác dùng

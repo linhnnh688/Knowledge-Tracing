@@ -80,6 +80,12 @@ kết quả, phải nhìn config của notebook, không nhìn default của hàm
 
 ## 1. Cách hai package bắc cầu sang upstream
 
+> **Cập nhật 2026-11-11 (refactor Mức 1–2, `docs/tasks/improve_checklist.md`):** mục 1.1 bên
+> dưới mô tả cách import CŨ. Hiện `GKT/` là package dùng import tương đối
+> (`from GKT.metrics import KTLoss`), `ensure_gkt_on_path()` chỉ còn đưa repo root vào
+> `sys.path`. Tiền xử lý chung nằm ở `kt_common/interactions.py`; checkpoint mới luôn có hậu tố
+> seed (`DKT-seed42.pt`) và tên cũ vẫn được đọc. Số liệu không đổi (golden test khớp từng bit).
+
 ### 1.1 `GKT/` được import bằng `sys.path`
 
 `GKT/` là mã upstream dùng import tuyệt đối (`from processing import ...`,

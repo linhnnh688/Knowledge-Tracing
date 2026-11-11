@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
-from utils import nll_gaussian, kl_categorical, kl_categorical_uniform, accuracy
+from .utils import nll_gaussian, kl_categorical, kl_categorical_uniform, accuracy
 
 # Graph-based Knowledge Tracing: Modeling Student Proficiency Using Graph Neural Network.
 # For more information, please refer to https://dl.acm.org/doi/10.1145/3350546.3352513

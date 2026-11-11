@@ -13,24 +13,39 @@ sánh được trực tiếp.
 from __future__ import annotations
 
 import json
-import os
-import re
-import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
-import torch.optim as optim
 
+from GKT.metrics import KTLoss
+from kt_common.checkpoint import (
+    atomic_save,
+    check_fingerprint,
+    checkpoint_path,
+    cpu_state_dict,
+    find_checkpoint,
+    manifest_seed,
+    record_checkpoint,
+    seed_from_filename,
+)
+from kt_common.interactions import DATA_VERSION
+from kt_common.log import get_logger
+from kt_common.metrics import auc_acc
 from level1.pipeline import (
-    _epoch_loop,
+    HISTORY_KEYS,  # noqa: F401 - API cũ của module này
+    RESUME_FORMAT,
     _forward,
     _user_ids_from_subset,
     build_model,
+    count_parameters,
     evaluate,
+    fit,
     load_kt_data,
 )
+
+log = get_logger("level2.baselines")
 
 # Cấp độ 1 train với hai giá trị này (kaggle_level1.ipynb, các cell run_experiment)
 LEVEL1_HID_DIM = 32
@@ -102,7 +117,7 @@ def graph_bundle(
     if bundle["concept_num"] != shared["concept_num"]:
         raise AssertionError("Số khái niệm khác nhau giữa hai lần nạp dữ liệu")
     if verbose:
-        print(
+        log.info(
             f"  bundle[{graph_type}]: split khớp với bundle gốc, concept_num={bundle['concept_num']}"
         )
     return bundle
@@ -122,7 +137,7 @@ def load_level1_state(model, ckpt_path: Path, device) -> bool:
     except (
         Exception
     ) as exc:  # noqa: BLE001 - chủ đích: mọi lỗi khớp trọng số đều rơi về train lại
-        print(
+        log.warning(
             f"  [checkpoint] {ckpt_path.name} không nạp được ({type(exc).__name__}: {exc}) -> train lại"
         )
         return False
@@ -131,9 +146,10 @@ def load_level1_state(model, ckpt_path: Path, device) -> bool:
 def checkpoint_seed(ckpt_path) -> Optional[int]:
     """Seed đã train ra checkpoint, đọc từ tên file hoặc metadata; ``None`` nếu không rõ.
 
-    Ba nguồn, theo thứ tự tin cậy: hậu tố ``-seed{s}.pt`` (do ``level1.pipeline.run_experiment``
-    đặt cho seed ≠ 42), ``<tên>.json`` cạnh file (fingerprint ghi khi Cấp độ 2 tự train lại),
-    rồi ``checkpoint_seeds.json`` trong cùng thư mục (khai báo thủ công cho checkpoint cũ).
+    Bốn nguồn, theo thứ tự tin cậy: hậu tố ``-seed{s}.pt`` (mọi checkpoint mới đều có, kể cả
+    seed 42), ``checkpoints_manifest.json`` (ghi bởi ``kt_common.checkpoint.record_checkpoint``),
+    ``<tên>.json`` cạnh file (fingerprint ghi khi Cấp độ 2 tự train lại), rồi
+    ``checkpoint_seeds.json`` trong cùng thư mục (khai báo thủ công cho checkpoint cũ).
 
     ``None`` phải được coi là "KHÔNG BIẾT", không phải 42: checkpoint Cấp độ 1 từng bị vòng
     đa seed ghi đè bằng seed cuối cùng (xem GAP_LEVEL2.md §F2).
@@ -141,9 +157,10 @@ def checkpoint_seed(ckpt_path) -> Optional[int]:
     if not ckpt_path:
         return None
     path = Path(ckpt_path)
-    m = re.search(r"-seed(\d+)\.pt$", path.name)
-    if m:
-        return int(m.group(1))
+    for source in (seed_from_filename, manifest_seed):
+        found = source(path)
+        if found is not None:
+            return found
     meta = path.with_suffix(".json")
     if meta.exists():
         try:
@@ -170,11 +187,6 @@ def collect_level1_probs(
     model, loader, model_type: str, device=None
 ) -> Dict[str, object]:
     """(probs, labels) trên toàn bộ vị trí có nhãn của ``loader`` + AUC/ACC/loss."""
-    from level1.paths import ensure_gkt_on_path
-
-    ensure_gkt_on_path()
-    from metrics import KTLoss
-
     if device is None:
         device = next(model.parameters()).device
     model.eval()
@@ -192,13 +204,7 @@ def collect_level1_probs(
             labels.append(real[mask].detach().cpu().numpy())
     probs = np.concatenate(preds) if preds else np.array([])
     y = np.concatenate(labels) if labels else np.array([])
-    from sklearn.metrics import roc_auc_score
-
-    if y.size and len(np.unique(y)) > 1:
-        auc = float(roc_auc_score(y, probs))
-        acc = float(((probs >= 0.5) == (y >= 0.5)).mean())
-    else:
-        auc, acc = -1.0, -1.0
+    auc, acc = auc_acc(y, probs)
     return {
         "probs": probs,
         "labels": y.astype(float),
@@ -209,50 +215,9 @@ def collect_level1_probs(
 
 
 # ---------------------------------------------------------------- resume đường nền
-#: Định danh payload "train dở" của đường nền (khác ``baselines/<tên>.pt`` chỉ chứa trọng số).
-BASELINE_RESUME_FORMAT = "level1-resume-v1"
-HISTORY_KEYS = (
-    "train_loss",
-    "val_loss",
-    "train_auc",
-    "val_auc",
-    "train_acc",
-    "val_acc",
-)
-
-
-def _atomic_save(payload, path: Path) -> None:
-    """File tạm + ``os.replace``: session bị kill giữa lúc ghi không làm hỏng checkpoint cũ."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    torch.save(payload, tmp)
-    os.replace(tmp, path)
-
-
-def _cpu_state(model) -> Dict[str, torch.Tensor]:
-    return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-
-
-def _optim_cpu(optimizer) -> dict:
-    state = optimizer.state_dict()
-    return {
-        "state": {
-            i: {
-                k: (v.detach().cpu().clone() if torch.is_tensor(v) else v)
-                for k, v in entry.items()
-            }
-            for i, entry in state["state"].items()
-        },
-        "param_groups": state["param_groups"],
-    }
-
-
-def _optim_to_device(optimizer, device) -> None:
-    for entry in optimizer.state.values():
-        for k, v in entry.items():
-            if torch.is_tensor(v):
-                entry[k] = v.to(device)
+#: Định danh payload "train dở" của đường nền — nay định nghĩa ở ``level1.pipeline`` (vòng epoch
+#: chung), giữ tên cũ để code/notebook cũ còn import được.
+BASELINE_RESUME_FORMAT = RESUME_FORMAT
 
 
 def baseline_fingerprint(
@@ -276,7 +241,7 @@ def baseline_fingerprint(
         s: len(_user_ids_from_subset(shared[f"{s}_loader"].dataset))
         for s in ("train", "val", "test")
     }
-    return {
+    fp = {
         "data_path": str(shared["data_path"]),
         "concept_num": int(shared["concept_num"]),
         "model_type": model_type,
@@ -289,21 +254,24 @@ def baseline_fingerprint(
         "val_ratio": float(val_ratio),
         "seed": int(seed),
     }
+    # Checkpoint resume train trên dữ liệu trước bản sửa (còn dòng trùng, sai thứ tự) không có
+    # khoá này -> bị từ chối thay vì train tiếp trên dữ liệu khác.
+    fp["data_version"] = DATA_VERSION
+    return fp
 
 
-def _check_baseline_fingerprint(
-    previous: Optional[dict], current: Optional[dict], name: str
-) -> None:
-    if not previous or not current:
-        return
-    diff = {k: (previous.get(k), v) for k, v in current.items() if previous.get(k) != v}
-    if diff:
-        detail = ", ".join(f"{k}: {old} -> {new}" for k, (old, new) in diff.items())
-        raise RuntimeError(
-            f"Checkpoint đường nền {name} được tạo với cấu hình khác ({detail}). Xoá "
-            f"baselines/{name}.pt, baselines/{name}.json và baselines/ckpt_{name}.pt rồi chạy "
-            "lại — trộn hai split/cấu hình sẽ làm hỏng bảng so sánh."
-        )
+def _checkpoint_data_version(ckpt_path) -> Optional[str]:
+    """``data_version`` ghi trong manifest của checkpoint; ``None`` = checkpoint đời cũ."""
+    from kt_common.checkpoint import manifest_entry
+
+    return (manifest_entry(ckpt_path) or {}).get("data_version")
+
+
+def _fingerprint_hint(name: str) -> str:
+    return (
+        f"Checkpoint đường nền {name}: xoá baselines/{name}*.pt, baselines/{name}*.json và "
+        f"baselines/ckpt_{name}*.pt rồi chạy lại — trộn hai split/cấu hình sẽ làm hỏng bảng so sánh."
+    )
 
 
 def load_retrained_baseline(
@@ -316,9 +284,9 @@ def load_retrained_baseline(
     meta_path = pt_path.with_suffix(".json")
     if meta_path.exists():
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        _check_baseline_fingerprint(meta.get("fingerprint"), fingerprint, pt_path.stem)
+        check_fingerprint(meta.get("fingerprint"), fingerprint, _fingerprint_hint(pt_path.stem))
     else:
-        print(
+        log.warning(
             f"  [cảnh báo] {pt_path.name} không có {meta_path.name}: không kiểm chứng được "
             "split/cấu hình đã train — chỉ nạp khi chắc chắn nó cùng split."
         )
@@ -349,125 +317,29 @@ def train_baseline_resumable(
 
     Đường nền phải train lại (Junyi) chạy 20 epoch × 3 mô hình trên 16,2 triệu lượt — dài hơn
     một phiên Kaggle. Checkpoint theo epoch (không theo batch: một epoch đã hàng chục phút) đủ
-    để phiên sau mất tối đa một epoch mỗi mô hình.
+    để phiên sau mất tối đa một epoch mỗi mô hình. Vòng lặp thật nằm ở
+    :func:`level1.pipeline.fit` (dùng chung với Cấp độ 1).
 
     Trả về ``(history, best_val_auc, paused)``; ``paused=True`` nghĩa là đã hết ``deadline`` và
     checkpoint vừa được ghi — người gọi tự raise ``TrainingPaused``.
     """
-    from level1.paths import ensure_gkt_on_path
-
-    ensure_gkt_on_path()
-    from metrics import KTLoss
-
-    kt_loss = KTLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    model.to(device)
-    history = {k: [] for k in HISTORY_KEYS}
-    best_auc, best_state, wait, epoch = -1.0, None, 0, 0
-    if resume_state:
-        _check_baseline_fingerprint(
-            resume_state.get("fingerprint"), fingerprint, model_type
-        )
-        model.load_state_dict(resume_state["state_dict"])
-        optimizer.load_state_dict(resume_state["optim"])
-        _optim_to_device(optimizer, device)
-        epoch = int(resume_state.get("epoch", 0))
-        best_auc = float(resume_state.get("best_auc", -1.0))
-        best_state = resume_state.get("best_state")
-        wait = int(resume_state.get("wait", 0))
-        history = resume_state.get("history", history)
-        if verbose:
-            print(
-                f"  [{model_type}] RESUME: đã xong {epoch}/{epochs} epoch "
-                f"| best val AUC={best_auc:.4f} | chờ {wait}/{patience}"
-            )
-
-    def _save(ep: int) -> None:
-        if ckpt_path is None:
-            return
-        _atomic_save(
-            {
-                "format": BASELINE_RESUME_FORMAT,
-                "state_dict": _cpu_state(model),
-                "optim": _optim_cpu(optimizer),
-                "epoch": int(ep),
-                "best_auc": float(best_auc),
-                "best_state": best_state,
-                "wait": int(wait),
-                "history": history,
-                "fingerprint": fingerprint or {},
-            },
-            ckpt_path,
-        )
-
-    t0, paused = time.time(), False
-    last_epoch_s: Optional[float] = None
-    while epoch < int(epochs):
-        if deadline is not None and time.time() >= deadline:
-            _save(epoch)
-            paused = True
-            break
-        current = epoch + 1
-        # Checkpoint chỉ ghi ở ranh giới epoch (một epoch Junyi đã hàng chục phút), nên nếu
-        # epoch này không kịp xong thì dừng NGAY: Kaggle kill giữa epoch sẽ mất cả epoch đó.
-        if (
-            deadline is not None
-            and last_epoch_s is not None
-            and time.time() + last_epoch_s * 1.1 > deadline
-        ):
-            _save(epoch)
-            paused = True
-            if verbose:
-                print(
-                    f"  [{model_type}] dừng TRƯỚC epoch {current}: epoch trước mất "
-                    f"{last_epoch_s / 60:.0f} phút, chỉ còn "
-                    f"{max(0.0, deadline - time.time()) / 60:.0f} phút ngân sách — checkpoint "
-                    f"đã ghi, phiên sau train tiếp từ epoch {epoch}"
-                )
-            break
-        t_epoch = time.time()
-        tr = _epoch_loop(
-            model, bundle["train_loader"], model_type, device, kt_loss, optimizer
-        )
-        va = _epoch_loop(
-            model, bundle["val_loader"], model_type, device, kt_loss, optimizer=None
-        )
-        last_epoch_s = time.time() - t_epoch
-        history["train_loss"].append(tr["loss"])
-        history["val_loss"].append(va["loss"])
-        history["train_auc"].append(tr["auc"])
-        history["val_auc"].append(va["auc"])
-        history["train_acc"].append(tr["acc"])
-        history["val_acc"].append(va["acc"])
-        improved = va["auc"] > best_auc
-        if improved:
-            best_auc = va["auc"]
-            best_state = _cpu_state(model)
-            wait = 0
-        else:
-            wait += 1
-        epoch = current
-        _save(epoch)
-        if verbose:
-            print(
-                f"  [{model_type}] epoch {epoch:02d}/{epochs} "
-                f"train loss={tr['loss']:.4f} auc={tr['auc']:.4f} "
-                f"val loss={va['loss']:.4f} auc={va['auc']:.4f} acc={va['acc']:.4f}"
-                + (" *" if improved else "")
-            )
-        if wait >= patience:
-            if verbose:
-                print(f"  [{model_type}] early stopping tại epoch {epoch}")
-            break
-    if not paused and best_state is not None:
-        model.load_state_dict(best_state)
-        model.to(device)
-    if verbose:
-        print(
-            f"  [{model_type}] {'DỪNG theo ngân sách' if paused else 'xong'} sau "
-            f"{time.time() - t0:.1f}s | best val AUC={best_auc:.4f}"
-        )
-    return history, float(best_auc), paused
+    out = fit(
+        model,
+        bundle["train_loader"],
+        bundle["val_loader"],
+        model_type,
+        epochs=epochs,
+        lr=lr,
+        device=device,
+        patience=patience,
+        ckpt_path=ckpt_path,
+        fingerprint=fingerprint,
+        fingerprint_hint=_fingerprint_hint(model_type),
+        resume_state=resume_state,
+        deadline=deadline,
+        verbose=verbose,
+    )
+    return out["history"], out["best_val_auc"], out["paused"]
 
 
 def level1_baseline(
@@ -539,10 +411,30 @@ def level1_baseline(
             dropout=0.0,
             device=device,
         )
-        ckpt = (ckpt_dir / f"{name}.pt") if ckpt_dir else None
+        # Đọc: tên mới ``<tên>-seed<s>.pt`` trước, rồi tên cũ ``<tên>.pt`` (seed 42).
+        # Ghi: luôn tên mới (kt_common.checkpoint.checkpoint_path).
+        ckpt = find_checkpoint(ckpt_dir, name, seed)
+        if ckpt is not None and _checkpoint_data_version(ckpt) != DATA_VERSION:
+            # Checkpoint Cấp độ 1 train trên dữ liệu tiền xử lý CŨ (còn dòng trùng một lượt, sai
+            # thứ tự): cùng shape nên load_state_dict không báo lỗi, nhưng số liệu sẽ sai.
+            log.warning(
+                f"  [baseline] {name}: {ckpt.name} có data_version="
+                f"{_checkpoint_data_version(ckpt)!r}, cần {DATA_VERSION!r} -> KHÔNG nạp, train lại"
+            )
+            ckpt = None
         base_dir = (Path(save_dir) / "baselines") if save_dir is not None else None
-        final_ckpt = (base_dir / f"{name}.pt") if base_dir is not None else None
-        rolling_ckpt = (base_dir / f"ckpt_{name}.pt") if base_dir is not None else None
+        final_found = find_checkpoint(base_dir, name, seed)
+        final_ckpt = (
+            checkpoint_path(base_dir, name, seed) if base_dir is not None else None
+        )
+        rolling_ckpt = (
+            (
+                find_checkpoint(base_dir, name, seed, prefix="ckpt_")
+                or checkpoint_path(base_dir, name, seed, prefix="ckpt_")
+            )
+            if base_dir is not None
+            else None
+        )
         fingerprint = (
             None
             if base_dir is None
@@ -561,10 +453,10 @@ def level1_baseline(
         loaded_from = None
         if ckpt and load_level1_state(model, ckpt, device):
             loaded_from = ckpt
-        elif final_ckpt is not None and load_retrained_baseline(
-            model, final_ckpt, fingerprint, device
+        elif final_found is not None and load_retrained_baseline(
+            model, final_found, fingerprint, device
         ):
-            loaded_from = final_ckpt
+            loaded_from = final_found
         loaded = loaded_from is not None
         ckpt_seed = None
         resume_state = None
@@ -578,34 +470,34 @@ def level1_baseline(
         if loaded:
             ckpt_seed = checkpoint_seed(loaded_from)
             if ckpt_seed is None:
-                print(
+                log.warning(
                     f"  [checkpoint-seed] {name}: KHÔNG xác định được seed của "
                     f"{loaded_from.name} -> bảng ghi seed=None. Sửa bằng cách train lại "
                     "đường nền (baseline_ckpt_dir=None) hoặc khai báo checkpoint_seeds.json."
                 )
             elif int(ckpt_seed) != int(seed):
-                print(
+                log.warning(
                     f"  [checkpoint-seed] {name}: checkpoint là seed {ckpt_seed}, KHÁC "
                     f"split_seed={seed} -> dòng này không cùng seed khởi tạo với GRKT; "
                     "phải ghi rõ trong báo cáo."
                 )
             if verbose:
-                print(f"  [baseline] {name}: dùng checkpoint {loaded_from}")
+                log.info(f"  [baseline] {name}: dùng checkpoint {loaded_from}")
             history, best_val_auc = {}, None
         else:
             if not allow_retrain:
                 if verbose:
-                    print(
+                    log.info(
                         f"  [baseline] {name}: bỏ qua (không có checkpoint, allow_retrain=False)"
                     )
                 continue
             if resume_state is not None:
-                print(
+                log.info(
                     f"  [baseline] {name}: tiếp tục từ {rolling_ckpt.name} "
                     f"(epoch {resume_state.get('epoch')}/{epochs})"
                 )
             else:
-                print(
+                log.info(
                     f"  [baseline] {name}: không có checkpoint -> huấn luyện lại {epochs} epoch"
                 )
             history, best_val_auc, paused = train_baseline_resumable(
@@ -632,7 +524,7 @@ def level1_baseline(
             if final_ckpt is not None:
                 # Ghi vào thư mục Cấp độ 2, TUYỆT ĐỐI không ghi đè ckpt_dir: thư mục đó là
                 # sản phẩm của Cấp độ 1 (và tên file trùng khớp, vd DKT.pt).
-                _atomic_save(_cpu_state(model), final_ckpt)
+                atomic_save(cpu_state_dict(model), final_ckpt)
                 final_ckpt.with_suffix(".json").write_text(
                     json.dumps(
                         {
@@ -644,6 +536,15 @@ def level1_baseline(
                         indent=1,
                     ),
                     encoding="utf-8",
+                )
+                record_checkpoint(
+                    final_ckpt,
+                    name=name,
+                    seed=int(seed),
+                    data_version=DATA_VERSION,
+                    fingerprint=fingerprint,
+                    best_val_auc=best_val_auc,
+                    epochs=int(epochs),
                 )
                 if rolling_ckpt is not None and rolling_ckpt.exists():
                     rolling_ckpt.unlink()
@@ -675,12 +576,13 @@ def level1_baseline(
             "ckpt_seed": ckpt_seed,
             "ckpt_source": str(loaded_from) if loaded_from is not None else None,
             "from_checkpoint": bool(loaded),
+            "n_params": count_parameters(model),
         }
         if got is not None:
             res["test_n"] = int(got["labels"].size)
             probs[name] = (got["probs"], got["labels"])
         results.append(res)
-        print(
+        log.info(
             f">>> {name} test AUC={res['test_auc']:.4f} Acc={res['test_acc']:.4f} "
             f"Loss={res['test_loss']:.4f} (checkpoint={'có' if loaded else 'train lại'})"
         )

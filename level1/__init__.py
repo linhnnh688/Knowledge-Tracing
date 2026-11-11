@@ -1,6 +1,15 @@
 """Level-1 Knowledge Tracing: DKT baseline, GKT, graph ablation, cases."""
 
-from .pipeline import evaluate, load_kt_data, run_experiment, run_level1, save_split, train_one
+from .pipeline import (
+    ExperimentConfig,
+    evaluate,
+    fit,
+    load_kt_data,
+    run_experiment,
+    run_level1,
+    save_split,
+    train_one,
+)
 from .explain import (
     annotate_evidence,
     collect_cases,
@@ -10,10 +19,12 @@ from .explain import (
 )
 
 __all__ = [
+    "ExperimentConfig",
     "load_kt_data",
     "save_split",
     "run_experiment",
     "run_level1",
+    "fit",
     "train_one",
     "evaluate",
     "collect_cases",

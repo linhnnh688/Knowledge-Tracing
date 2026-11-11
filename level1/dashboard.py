@@ -9,14 +9,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import numpy as np
 import torch
 
+from kt_common.ids import skill_label
 
-def _skill_name(lookup, skill_id):
-    if lookup and skill_id in lookup:
-        return f"{skill_id}:{lookup[skill_id]}"
-    return str(skill_id)
+
 
 
 def export_learner_view(
@@ -74,7 +71,7 @@ def export_learner_view(
                     step = {
                         "t": t + 1,
                         "skill": skill,
-                        "skill_name": _skill_name(skill_lookup, skill),
+                        "skill_name": skill_label(skill_lookup, skill),
                         "y_true": y,
                         "y_prob": round(yhat, 4),
                         "y_pred": int(yhat >= 0.5),

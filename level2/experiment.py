@@ -3,7 +3,7 @@
 Notebook ``kaggle_level2.ipynb`` chỉ gọi :func:`run_dataset` (và lặp qua danh sách tập dữ
 liệu); mọi logic nằm ở đây để tái lập được ngoài Kaggle.
 
-Thứ tự các bước — trùng với các mục in ra màn hình:
+Thứ tự các bước — mỗi bước là một hàm ``_step_*`` riêng, trùng với các mục in ra màn hình:
 
 1. Chuẩn hoá CSV + nạp bằng pipeline Cấp độ 1 (``level1.pipeline.load_kt_data``) → split
    theo người học, seed 42; lưu ``split.json``.
@@ -18,12 +18,16 @@ Thứ tự các bước — trùng với các mục in ra màn hình:
    ép ≡ 1, không dùng làm bằng chứng).
 7. Hiệu chỉnh dự đoán (ECE/Brier) cho mọi mô hình.
 8. Đa seed cho GRKT (split cố định, chỉ đổi khởi tạo + thứ tự batch).
+
+Thứ tự gọi các bước KHÔNG được đổi: RNG toàn cục được tiêu thụ lần lượt qua B4 → B8, đổi thứ
+tự sẽ đổi số liệu dù code từng bước giữ nguyên.
 """
 
 from __future__ import annotations
 
 import json
 import time
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
@@ -31,10 +35,18 @@ import numpy as np
 import pandas as pd
 import torch
 
+from kt_common.log import get_logger
+
 from .baselines import level1_baseline
 from .calibration import calibration_table, reliability_plot, save_reliability_rows
-from .dataset_spec import ensure_canonical, get_spec, has_canonical, probe_columns
-from .grkt_api import TrainingPaused, predict_grkt, run_grkt_experiment
+from .dataset_spec import DatasetSpec, ensure_canonical, get_spec, has_canonical, probe_columns
+from .grkt_api import (
+    TrainingPaused,
+    find_grkt_resume,
+    grkt_checkpoint_name,
+    predict_grkt,
+    run_grkt_experiment,
+)
 from .grkt_data import (
     adjacency_from_graphs,
     build_grkt_data,
@@ -52,6 +64,8 @@ from .trajectory import (
     stability_under_perturbation,
     trajectory_metrics_table,
 )
+
+log = get_logger("level2.experiment")
 
 #: Bốn biến thể đồ thị GRKT hỗ trợ. Ablation cấu trúc đồ thị là yêu cầu Cấp độ 1 (đã có số
 #: liệu trong outputs/level1), nên mặc định của run_dataset chỉ train ``("train",)`` — mỗi biến
@@ -116,6 +130,82 @@ TABLE_COLUMNS: list = [
 ]
 
 
+@dataclass
+class Level2Config:
+    """Mọi tham số của :func:`run_dataset` (trừ ``dataset``/``device``) — một nơi cho mặc định.
+
+    ``run_dataset(**kwargs)`` dựng đối tượng này; ``asdict(cfg)`` được ghi vào ``summary.json``
+    (khoá ``config``) để người đọc artifact biết GRKT train bao nhiêu epoch, siêu tham số nào.
+    """
+
+    raw_path: Optional[str] = None
+    save_root: Optional[str] = None
+    epochs: int = 8
+    batch_size: int = 32
+    max_seq_len: int = 100
+    lr: float = 1e-3
+    patience: int = 3
+    d_hidden: int = 128
+    k_hidden: int = 16
+    k_hop: int = 1
+    alpha: float = 0.01
+    tau: float = 0.2
+    graph_thresh: float = 0.6
+    bin_thresh: float = 0.5
+    cold_thresh: int = 5
+    gap_cap_min: int = 240
+    max_users: Optional[int] = None
+    min_interactions: Optional[int] = None
+    top_concepts: Optional[int] = None
+    content_path: Optional[str] = None
+    split_seed: int = 42
+    train_ratio: float = 0.6
+    val_ratio: float = 0.2
+    variants: Sequence[str] = ("train",)
+    run_baselines: bool = True
+    baseline_ckpt_dir: Optional[str] = None
+    baseline_epochs: Optional[int] = None
+    allow_retrain_baselines: bool = True
+    record_trajectory: bool = True
+    trajectory_users: int = 150
+    trajectory_batch: int = 16
+    run_calibration: bool = False
+    run_multi_seed: bool = False
+    seeds: Sequence[int] = (42, 123, 456)
+    resume_grkt_ckpt: bool = False
+    time_budget_min: Optional[float] = None
+    deadline: Optional[float] = None
+    ckpt_every_min: float = 10.0
+    verbose: bool = True
+
+    def grkt_kwargs(self) -> dict:
+        """Tham số chung của mọi lần gọi :func:`~level2.grkt_api.run_grkt_experiment`."""
+        return dict(
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            lr=self.lr,
+            patience=self.patience,
+            d_hidden=self.d_hidden,
+            k_hidden=self.k_hidden,
+            k_hop=self.k_hop,
+            alpha=self.alpha,
+            tau=self.tau,
+            thresh=self.bin_thresh,
+            deadline=self.deadline,
+            ckpt_every_min=self.ckpt_every_min,
+            verbose=self.verbose,
+        )
+
+    def to_json(self) -> dict:
+        return {
+            k: (list(v) if isinstance(v, tuple) else (str(v) if isinstance(v, Path) else v))
+            for k, v in asdict(self).items()
+        }
+
+
+_LEVEL2_FIELDS = {f.name for f in fields(Level2Config)}
+
+
 def _device_of(device):
     if device is None:
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -132,58 +222,538 @@ def _safe_plot(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except Exception as exc:
-        print(
+        log.warning(
             f"[cảnh báo] {getattr(fn, '__name__', fn)} thất bại: {type(exc).__name__}: {exc} "
             "— số liệu vẫn còn, chỉ thiếu hình vẽ."
         )
         return None
 
 
+def _deadline_passed(cfg: Level2Config) -> bool:
+    return cfg.deadline is not None and time.time() >= cfg.deadline
+
+
+# ---------------------------------------------------------------- B1
+def _step_prepare(spec: DatasetSpec, cfg: Level2Config, save_dir: Path, device, out: dict):
+    log.info("=" * 72)
+    log.info(f">>> [C2-B1] Chuẩn hoá dữ liệu và chia split theo người học: {spec.name}")
+    log.info("=" * 72)
+    # Chỉ cảnh báo khi CSV chuẩn hoá ĐÃ có sẵn (repo hoặc lần chạy trước): lúc đó file được
+    # dùng lại nguyên trạng nên max_users/min_interactions/top_concepts không làm thay đổi
+    # tập người học/khái niệm. Trước lần chuẩn hoá đầu tiên chúng VẪN có tác dụng.
+    if has_canonical(spec, save_dir) and (
+        cfg.max_users is not None
+        or cfg.min_interactions is not None
+        or cfg.top_concepts is not None
+    ):
+        log.warning(
+            f"  [cảnh báo] {spec.name}: dùng lại CSV chuẩn hoá có sẵn nên max_users/"
+            f"min_interactions/top_concepts KHÔNG được áp dụng (chỉ có tác dụng khi chuẩn hoá "
+            f"lại từ file gốc; muốn chạy nhanh: dataset='assist2009_smoke')."
+        )
+    canonical = ensure_canonical(
+        spec,
+        out_dir=save_dir,
+        raw_path=cfg.raw_path,
+        max_users=cfg.max_users,
+        min_interactions=cfg.min_interactions,
+        top_concepts=cfg.top_concepts,
+        content_path=cfg.content_path,
+        verbose=cfg.verbose,
+    )
+    min_seq = int(
+        cfg.min_interactions if cfg.min_interactions is not None else spec.min_interactions
+    )
+    log.info(f"  CSV chuẩn hoá: {canonical}")
+    log.info(f"  Cột: {probe_columns(canonical)}")
+
+    from level1.pipeline import load_kt_data, save_split
+
+    shared = load_kt_data(
+        str(canonical),
+        batch_size=cfg.batch_size,
+        graph_type="Transition",
+        model_type="GKT",
+        train_ratio=cfg.train_ratio,
+        val_ratio=cfg.val_ratio,
+        seed=cfg.split_seed,
+        max_seq_len=cfg.max_seq_len,
+        min_seq_len=min_seq,
+        use_cuda=device.type == "cuda",
+    )
+    log.info(f"  data_stats: {shared['data_stats']}")
+    out["data_stats"] = shared["data_stats"]
+    split = save_split(shared, save_dir / "split.json")
+    n_tr, n_va, n_te = (len(split[f"{k}_users"]) for k in ("train", "val", "test"))
+    log.info(
+        f"  concept_num={shared['concept_num']} | split user train/val/test = {n_tr}/{n_va}/{n_te} (seed={cfg.split_seed})"
+    )
+    out["split"] = split
+    out["concept_num"] = int(shared["concept_num"])
+    out["artifacts"]["split"] = str(save_dir / "split.json")
+    return canonical, min_seq, shared, split
+
+
+# ---------------------------------------------------------------- B2
+def _step_grkt_data(spec, cfg: Level2Config, shared, canonical, min_seq, split, out: dict):
+    log.info(
+        ">>> [C2-B2] Dựng chuỗi GRKT từ cùng file chuẩn hoá và đối chiếu với Cấp độ 1 ..."
+    )
+    data = build_grkt_data(
+        shared,
+        canonical,
+        time_mode=spec.time_mode,
+        gap_cap_min=cfg.gap_cap_min,
+        max_seq_len=cfg.max_seq_len,
+        min_seq_len=min_seq,
+        max_concepts=spec.max_concepts,
+        dataset=spec.name,
+        verbose=cfg.verbose,
+    )
+    splits = split_sequences(data, split)
+    out["grkt_data"] = data
+    out["splits"] = splits
+    return data, splits
+
+
+# ---------------------------------------------------------------- B3
+def _step_graphs(cfg: Level2Config, data, splits, shared, save_dir: Path, out: dict) -> dict:
+    log.info(">>> [C2-B3] Đếm rel_map/pre_map CHỈ từ tập train + sinh biến thể đồ thị ...")
+    maps_train = build_relevance_maps(
+        splits["train"]["sequences"], data.concept_num, cold_thresh=cfg.cold_thresh
+    )
+    maps_val = build_relevance_maps(
+        splits["val"]["sequences"], data.concept_num, cold_thresh=cfg.cold_thresh
+    )
+    graphs = {
+        kind: graph_variant(
+            maps_train, kind, data.concept_num, thresh=cfg.graph_thresh, seed=cfg.split_seed
+        )
+        for kind in cfg.variants
+    }
+    # adjacency phục vụ tiêu chí quỹ đạo LU LU là đồ thị train thật (biến thể "train"),
+    # kể cả khi lần chạy này không huấn luyện biến thể đó (vd VARIANTS=("zero",) smoke test).
+    train_graph = graphs.get("train") or graph_variant(
+        maps_train, "train", data.concept_num, thresh=cfg.graph_thresh, seed=cfg.split_seed
+    )
+    adj = adjacency_from_graphs(train_graph["rel_map"], train_graph["pre_map"])
+    if int(train_graph["edges_rel"]) + int(train_graph["edges_pre"]) == 0:
+        # Xảy ra với tập quá nhỏ (smoke) hoặc cold_thresh/graph_thresh quá cao: GRKT-train khi
+        # đó chạy y hệt GRKT-zero, mọi kết luận về "tác động của đồ thị" đều vô nghĩa.
+        log.warning(
+            f"  [cảnh báo] đồ thị train RỖNG (rel={train_graph['edges_rel']} pre={train_graph['edges_pre']}) "
+            f"với cold_thresh={cfg.cold_thresh}, graph_thresh={cfg.graph_thresh} trên "
+            f"{len(splits['train']['sequences'])} người học. Ablation sẽ không phân biệt được; "
+            "hạ cold_thresh/graph_thresh hoặc chạy ở chế độ đầy đủ."
+        )
+    report = leak_report(
+        data,
+        splits,
+        shared,
+        maps_train,
+        maps_val,
+        graphs,
+        train_ratio=cfg.train_ratio,
+        val_ratio=cfg.val_ratio,
+        seed=cfg.split_seed,
+    )
+    log.info(report)
+    (save_dir / "leak_report.txt").write_text(report + "\n", encoding="utf-8")
+    out["maps"] = maps_train
+    out["graphs"] = graphs
+    out["adj"] = adj
+    out["artifacts"]["leak_report"] = str(save_dir / "leak_report.txt")
+    np.savez_compressed(
+        save_dir / "graphs_train_only.npz",
+        rel=maps_train["rel"],
+        pre=maps_train["pre"],
+        rel_bin=train_graph["rel_map"],
+        pre_bin=train_graph["pre_map"],
+    )
+    out["artifacts"]["graphs"] = str(save_dir / "graphs_train_only.npz")
+    return {
+        "maps_train": maps_train,
+        "maps_val": maps_val,
+        "graphs": graphs,
+        "train_graph": train_graph,
+        "adj": adj,
+    }
+
+
+# ---------------------------------------------------------------- B4
+def _resume_path(cfg: Level2Config, save_dir: Path, kind: str, seed: int) -> Optional[str]:
+    """Checkpoint GRKT để resume (đã xong -> chỉ đánh giá; giữa epoch -> train tiếp)."""
+    if not cfg.resume_grkt_ckpt:
+        return None
+    found = find_grkt_resume(save_dir, kind, seed)
+    if found is None and cfg.verbose:
+        log.info(
+            f"  [resume] không có checkpoint {grkt_checkpoint_name(kind)} (seed {seed}) "
+            "-> train từ đầu"
+        )
+    return str(found) if found is not None else None
+
+
+def _step_train_grkt(spec, cfg: Level2Config, data, splits, graphs, save_dir: Path, device, out):
+    log.info(">>> [C2-B4] Huấn luyện GRKT cho từng biến thể đồ thị ...")
+    gib = grkt_activation_gib(data.concept_num, cfg.batch_size, cfg.max_seq_len, cfg.k_hidden)
+    log.info(
+        f"  [bộ nhớ] GRKT giữ ước lượng {gib:.1f} GiB tensor kích hoạt cho MỘT batch "
+        f"(K={data.concept_num}, B={cfg.batch_size}, S={cfg.max_seq_len}, k_hidden={cfg.k_hidden})"
+    )
+    if gib > 8.0:
+        log.warning(
+            f"  [cảnh báo] {gib:.1f} GiB là sát/near vượt VRAM T4 (15 GiB) — giảm top_concepts "
+            "(nhiều khái niệm hiếm chỉ làm đồ thị to lên chứ không thêm tín hiệu), rồi mới tới "
+            "batch_size hoặc max_seq_len. Xem mục 'Sự cố thường gặp' của notebook."
+        )
+    if cfg.resume_grkt_ckpt:
+        log.info(
+            "  [resume] BẬT: ưu tiên GRKT-<graph>-seed<s>.pt (đã train xong -> chỉ đánh giá); "
+            "nếu chưa có thì dùng ckpt_GRKT-<graph>-seed<s>.pt (dừng giữa epoch -> train tiếp). "
+            "Tên cũ không hậu tố seed (GRKT-<graph>.pt) vẫn được nhận cho seed 42. Chỉ dùng khi "
+            "lần chạy trước có CÙNG split/đồ thị/siêu tham số — fingerprint trong checkpoint "
+            "sẽ chặn nếu khác."
+        )
+    if cfg.deadline is not None:
+        log.info(
+            f"  [ngân sách] còn {max(0.0, cfg.deadline - time.time()) / 60.0:.0f} phút; checkpoint "
+            f"giữa epoch mỗi {cfg.ckpt_every_min:g} phút -> {save_dir}/ckpt_GRKT-<graph>-seed<s>.pt"
+        )
+    if _deadline_passed(cfg):
+        # Ngân sách đã cạn trước cả batch đầu (thường do tập trước ăn hết thời gian): dừng
+        # luôn thay vì sinh checkpoint khởi tạo ngẫu nhiên rồi mới raise.
+        raise TrainingPaused(
+            f"[{spec.name}] hết ngân sách thời gian TRƯỚC khi bắt đầu GRKT. Không có checkpoint "
+            f"mới; tăng TIME_BUDGET_MIN (hoặc chạy riêng tập này ở phiên sau)."
+        )
+    grkt_results: List[dict] = []
+    for kind in cfg.variants:
+        log.info(f"\n--- GRKT với đồ thị '{kind}' ---")
+        try:
+            res = run_grkt_experiment(
+                data,
+                splits,
+                graphs[kind],
+                graph_kind=kind,
+                seed=cfg.split_seed,
+                dataset=spec.name,
+                device=device,
+                save_dir=save_dir,
+                resume_ckpt=_resume_path(cfg, save_dir, kind, cfg.split_seed),
+                **cfg.grkt_kwargs(),
+            )
+        except TrainingPaused:
+            # Hết ngân sách giữa biến thể này. Checkpoint của nó đã được train_grkt ghi trước
+            # khi raise; phần còn thiếu là BẢNG của các biến thể đã train xong — không ghi thì
+            # phiên sau và §3.1 không thấy tập này đã đo được gì.
+            _write_partial_table(save_dir, grkt_results)
+            raise
+        grkt_results.append(res)
+    out["grkt_results"] = grkt_results
+
+    # Hết ngân sách ngay sau GRKT: ghi bảng của những gì đã có rồi dừng, thay vì chạy đường
+    # nền/quỹ đạo và bị Kaggle kill giữa chừng (checkpoint GRKT vẫn còn để phiên sau train tiếp).
+    if _deadline_passed(cfg):
+        _write_partial_table(save_dir, grkt_results)
+        raise TrainingPaused(
+            f"[{spec.name}] hết ngân sách thời gian sau GRKT. Đã ghi {save_dir/'level2_metrics.csv'} "
+            f"(chỉ các dòng GRKT) và checkpoint trong {save_dir}. Phiên sau attach lại zip, đặt "
+            "RESUME_GRKT_CKPT=True và tăng TIME_BUDGET_MIN để chạy tiếp đường nền/quỹ đạo."
+        )
+    return grkt_results
+
+
+# ---------------------------------------------------------------- B5
+def _step_baselines(spec, cfg: Level2Config, shared, min_seq, grkt_results, save_dir, device, out):
+    base_results: List[dict] = []
+    base_probs: Dict[str, tuple] = {}
+    if cfg.run_baselines:
+        log.info("\n>>> [C2-B5] Đánh giá đường nền DKT / GKT trên CÙNG split ...")
+        # Checkpoint của Cấp độ 1 chỉ tồn tại cho ASSISTments 2009. Với tập khác (Junyi) phải
+        # huấn luyện lại, và số epoch lấy theo công thức Cấp độ 1 (baseline_epochs) để đường
+        # nền không bị yếu một cách nhân tạo khi đặt cạnh GRKT.
+        ckpt_dir = cfg.baseline_ckpt_dir if spec.name in LEVEL1_CKPT_DATASETS else None
+        if cfg.baseline_ckpt_dir and ckpt_dir is None and cfg.verbose:
+            log.info(
+                f"  [baseline] {spec.name} không có checkpoint Cấp độ 1 -> huấn luyện lại "
+                f"{cfg.baseline_epochs or cfg.epochs} epoch (trọng số ghi vào {save_dir}/baselines)"
+            )
+        try:
+            got = level1_baseline(
+                shared,
+                specs=BASELINE_SPECS,
+                ckpt_dir=ckpt_dir,
+                epochs=int(cfg.baseline_epochs or cfg.epochs),
+                batch_size=cfg.batch_size,
+                max_seq_len=cfg.max_seq_len,
+                min_seq_len=min_seq,
+                train_ratio=cfg.train_ratio,
+                val_ratio=cfg.val_ratio,
+                lr=cfg.lr,
+                seed=cfg.split_seed,
+                device=device,
+                allow_retrain=cfg.allow_retrain_baselines,
+                collect_probs=True,
+                shared_graph_type="Transition",
+                save_dir=save_dir,
+                deadline=cfg.deadline,
+                verbose=cfg.verbose,
+            )
+        except TrainingPaused:
+            # Đường nền hết ngân sách giữa chừng. Bảng GRKT vẫn PHẢI nằm trên đĩa: không có nó
+            # thì phiên sau (và cell §3.1 kiểm tra sản phẩm P0) không biết tập này đã đo được
+            # gì, còn checkpoint đường nền thì đã được train_baseline_resumable ghi trước đó.
+            _write_partial_table(save_dir, grkt_results)
+            raise
+        base_results, base_probs = got["results"], got["probs"]
+    out["baseline_results"] = base_results
+    return base_results, base_probs
+
+
+def _step_table(base_results, grkt_results, save_dir: Path, out: dict) -> pd.DataFrame:
+    table = pd.DataFrame(
+        [_table_row(r) for r in base_results + grkt_results], columns=TABLE_COLUMNS
+    )
+    table = table.sort_values("auc", ascending=False)
+    table.to_csv(save_dir / "level2_metrics.csv", index=False)
+    out["table"] = table
+    out["artifacts"]["metrics"] = str(save_dir / "level2_metrics.csv")
+    log.info("\n=== BẢNG SO SÁNH DKT / GKT / GRKT (cùng split, cùng chỉ số) ===")
+    log.info(table.to_string(index=False))
+    return table
+
+
+# ---------------------------------------------------------------- B6
+def _step_trajectories(cfg: Level2Config, data, splits, grkt_results, graph_ctx, save_dir, device, out):
+    traj_runs: Dict[str, dict] = {}
+    stability_runs: Dict[str, dict] = {}
+    if not cfg.record_trajectory:
+        return None
+    log.info("\n>>> [C2-B6] Ghi quỹ đạo mastery m(u,c,t) và đo tiêu chí hợp lý ...")
+    plot_dir = save_dir / "trajectories"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    test_seqs = splits["test"]["sequences"][: cfg.trajectory_users]
+    for res in grkt_results:
+        kind = res["graph_type"]
+        model = res["model"].to(device)
+        traj = record_trajectories(
+            model,
+            test_seqs,
+            device=device,
+            batch_size=cfg.trajectory_batch,
+            concept_num=data.concept_num,
+            graph_kind=kind,
+            seed=cfg.split_seed,
+            verbose=False,
+        )
+        traj_runs[kind] = traj
+        stability_runs[kind] = stability_under_perturbation(
+            model,
+            test_seqs,
+            device=device,
+            batch_size=cfg.trajectory_batch,
+            concept_num=data.concept_num,
+            graph_kind=kind,
+            seed=cfg.split_seed,
+            verbose=cfg.verbose,
+        )
+        save_trajectories(traj, plot_dir / f"traj_{kind}.npz")
+        export_mastery_csv(
+            traj,
+            plot_dir / f"mastery_{kind}.csv",
+            max_users=25,
+            skill_lookup=data.skill_lookup,
+        )
+        _safe_plot(
+            plot_mastery_heatmap,
+            traj,
+            plot_dir / f"heatmap_{kind}.png",
+            user_index=0,
+            skill_lookup=data.skill_lookup,
+        )
+        _safe_plot(
+            plot_mastery_curves,
+            traj,
+            plot_dir / f"curves_{kind}.png",
+            user_indices=(0, 1),
+            skill_lookup=data.skill_lookup,
+        )
+        model.cpu()
+    traj_table = trajectory_metrics_table(
+        traj_runs,
+        adj=graph_ctx["adj"],
+        pre_map=graph_ctx["train_graph"]["pre_map"],
+        stability=stability_runs,
+        seed=cfg.split_seed,
+    )
+    traj_table.to_csv(save_dir / "trajectory_metrics.csv", index=False)
+    out["trajectories"] = traj_runs
+    out["stability"] = stability_runs
+    out["trajectory_table"] = traj_table
+    out["artifacts"]["trajectory_metrics"] = str(save_dir / "trajectory_metrics.csv")
+    out["artifacts"]["trajectory_plots"] = str(plot_dir)
+    log.info(
+        "\n=== TIÊU CHÍ QUỸ ĐẠO (láng giềng/cạnh tiên quyết cố định theo đồ thị train) ==="
+    )
+    log.info(traj_table.to_string(index=False))
+    log.info(
+        "  * Tiêu chí THẬT (có thể sai): precedence, precedence_gap, stability_spearman,\n"
+        "    stability_changed_frac, forget_slope, pearson_dt_dm.\n"
+        "  * consistency_strengthen / consistency_spread / locality bị cấu trúc mô hình\n"
+        "    (Positive_Linear dương, k_hop=1) ép về 1 — chỉ là kiểm chứng cài đặt, KHÔNG\n"
+        "    dùng làm bằng chứng vai trò đồ thị."
+    )
+    return traj_table
+
+
+# ---------------------------------------------------------------- B7
+def _step_calibration(cfg: Level2Config, splits, grkt_results, base_probs, save_dir, device, out):
+    cal = pd.DataFrame()
+    entries: Dict[str, tuple] = dict(base_probs)
+    if cfg.run_calibration:
+        log.info("\n>>> [C2-B7] Hiệu chỉnh dự đoán (ECE / Brier) ...")
+        for res in grkt_results:
+            model = res["model"].to(device)
+            p, y = predict_grkt(model, splits["test"]["items"], device=device)
+            entries[res["name"]] = (p, y)
+            model.cpu()
+        cal = calibration_table(
+            entries,
+            n_bins=10,
+            extra={r["name"]: {"graph": r["graph_type"]} for r in grkt_results},
+        )
+        cal.to_csv(save_dir / "calibration.csv", index=False)
+        _safe_plot(reliability_plot, entries, save_dir / "reliability.png")
+        save_reliability_rows(entries, save_dir / "reliability_rows.csv")
+        out["artifacts"]["calibration"] = str(save_dir / "calibration.csv")
+        out["artifacts"]["reliability"] = str(save_dir / "reliability.png")
+        log.info(cal.to_string(index=False))
+    out["calibration"] = cal
+    out["calibration_probs"] = entries
+    return cal
+
+
+# ---------------------------------------------------------------- B8
+def _step_multi_seed(spec, cfg: Level2Config, data, splits, graphs, save_dir, device, out):
+    if not cfg.run_multi_seed:
+        return
+    ms_kind = "train" if "train" in graphs else cfg.variants[0]
+    log.info(
+        "\n>>> [C2-B8] Đa seed cho GRKT-%s (split cố định seed=%d) ..."
+        % (ms_kind, cfg.split_seed)
+    )
+    rows = []
+    paused = None
+    try:
+        for s in cfg.seeds:
+            s = int(s)
+            # Seed bằng split seed dùng lại checkpoint của lần chạy chính (khỏi train lại);
+            # seed khác có file riêng để resume đúng seed.
+            res = run_grkt_experiment(
+                data,
+                splits,
+                graphs[ms_kind],
+                graph_kind=ms_kind,
+                seed=s,
+                dataset=spec.name,
+                device=device,
+                save_dir=save_dir,
+                resume_ckpt=_resume_path(cfg, save_dir, ms_kind, s),
+                **cfg.grkt_kwargs(),
+            )
+            # Bỏ hậu tố seed khỏi tên mô hình để groupby gộp đúng các seed thành MỘT dòng
+            # mean ± std; tên file checkpoint vẫn tách theo seed.
+            rows.append(
+                {
+                    "model": grkt_checkpoint_name(ms_kind),
+                    "seed": s,
+                    "test_auc": res["test_auc"],
+                    "test_acc": res["test_acc"],
+                    "test_loss": res["test_loss"],
+                }
+            )
+            del res
+    except TrainingPaused as exc:
+        # Giữ kết quả các seed ĐÃ xong thay vì mất trắng vì seed đang dở; checkpoint của
+        # seed dở đã được train_grkt ghi trước khi raise.
+        paused = exc
+    if rows:
+        ms = pd.DataFrame(rows)
+        agg = (
+            ms.groupby("model")
+            .agg(
+                auc_mean=("test_auc", "mean"),
+                auc_std=("test_auc", "std"),
+                acc_mean=("test_acc", "mean"),
+                acc_std=("test_acc", "std"),
+                loss_mean=("test_loss", "mean"),
+                loss_std=("test_loss", "std"),
+                n_seed=("seed", "count"),
+            )
+            .reset_index()
+        )
+        # ddof=1 với n=3 cho std mẫu; ghi cả số seed để người đọc không nhầm với tổng thể
+        agg.to_csv(save_dir / "multiseed_metrics.csv", index=False)
+        out["multiseed_raw"] = ms
+        out["multiseed"] = agg
+        out["artifacts"]["multiseed"] = str(save_dir / "multiseed_metrics.csv")
+        log.info(agg.to_string(index=False))
+    if paused is not None:
+        raise paused
+
+
+def _write_summary(spec, cfg, canonical, data, graph_ctx, base_results, grkt_results, traj_table, cal, save_dir, out):
+    maps_train, maps_val = graph_ctx["maps_train"], graph_ctx["maps_val"]
+    summary = {
+        "dataset": spec.name,
+        "canonical": str(canonical),
+        "time_mode": data.time_mode,
+        "data_stats_l1": out.get("data_stats"),
+        "config": cfg.to_json(),
+        "data_stats": {
+            k: (float(v) if isinstance(v, (int, float, np.floating)) else v)
+            for k, v in data.stats.items()
+        },
+        "graph_edges": {
+            k: {"rel": int(v["edges_rel"]), "pre": int(v["edges_pre"])}
+            for k, v in graph_ctx["graphs"].items()
+        },
+        "counts": {
+            "train_edges_from_train": int(
+                (maps_train["rel"] > 0).sum() + (maps_train["pre"] > 0).sum()
+            ),
+            "train_edges_from_val": int(
+                (maps_val["rel"] > 0).sum() + (maps_val["pre"] > 0).sum()
+            ),
+        },
+        "models": [_table_row(r) for r in base_results + grkt_results],
+        # Số tham số cạnh AUC: DKT/GKT (hid 32) và GRKT (d_hidden 128) chênh dung lượng —
+        # improve_checklist 0.4; không thêm vào level2_metrics.csv để giữ schema cũ.
+        "n_params": {r["name"]: r.get("n_params") for r in base_results + grkt_results},
+        "trajectory": (
+            None if traj_table is None else traj_table.to_dict(orient="records")
+        ),
+        "calibration": cal.to_dict(orient="records"),
+    }
+    (save_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+    )
+    out["artifacts"]["summary"] = str(save_dir / "summary.json")
+
+
 def run_dataset(
     dataset: str = "assist2009",
     *,
-    raw_path=None,
-    save_root=None,
-    epochs: int = 8,
-    batch_size: int = 32,
-    max_seq_len: int = 100,
-    lr: float = 1e-3,
-    patience: int = 3,
-    d_hidden: int = 128,
-    k_hidden: int = 16,
-    k_hop: int = 1,
-    alpha: float = 0.01,
-    tau: float = 0.2,
-    graph_thresh: float = 0.6,
-    bin_thresh: float = 0.5,
-    cold_thresh: int = 5,
-    gap_cap_min: int = 240,
-    max_users: Optional[int] = None,
-    min_interactions: Optional[int] = None,
-    top_concepts: Optional[int] = None,
-    content_path=None,
-    split_seed: int = 42,
-    train_ratio: float = 0.6,
-    val_ratio: float = 0.2,
-    variants: Sequence[str] = ("train",),
-    run_baselines: bool = True,
-    baseline_ckpt_dir=None,
-    baseline_epochs: Optional[int] = None,
-    allow_retrain_baselines: bool = True,
-    record_trajectory: bool = True,
-    trajectory_users: int = 150,
-    trajectory_batch: int = 16,
-    run_calibration: bool = False,
-    run_multi_seed: bool = False,
-    seeds: Sequence[int] = (42, 123, 456),
-    resume_grkt_ckpt: bool = False,
-    time_budget_min: Optional[float] = None,
-    deadline: Optional[float] = None,
-    ckpt_every_min: float = 10.0,
     device=None,
-    verbose: bool = True,
+    config: Optional[Level2Config] = None,
+    **kwargs,
 ) -> Dict[str, object]:
     """Chạy toàn bộ pipeline Cấp độ 2 trên một tập dữ liệu; trả về dict chứa bảng + đường dẫn.
+
+    Tham số: ``config=Level2Config(...)`` hoặc từng trường của :class:`Level2Config` dạng
+    kwargs như trước (``epochs=``, ``variants=``, ``resume_grkt_ckpt=``...). kwargs ghi đè
+    ``config``.
 
     Mặc định chỉ làm đúng những gì yêu cầu Cấp độ 2 nêu: train GRKT trên đồ thị ``train``,
     đánh giá trên cùng split với đường nền Cấp độ 1, và ghi quỹ đạo m(u,c,t) kèm tiêu chí hợp
@@ -202,304 +772,43 @@ def run_dataset(
     checkpoint Cấp độ 1). Mặc định ``None`` = dùng chung ``epochs`` với GRKT; nên đặt 20 theo
     đúng công thức Cấp độ 1 để đường nền không yếu một cách nhân tạo.
 
-    Resume qua nhiều phiên Kaggle: ``resume_grkt_ckpt=True`` nạp lại ``GRKT-<graph>.pt`` (đã
-    train xong -> bỏ qua train) hoặc ``ckpt_GRKT-<graph>.pt`` (dừng giữa epoch -> train tiếp
-    đúng batch còn lại). ``time_budget_min``/``deadline`` là ngân sách thời gian: khi hết,
-    ``train_grkt`` ghi checkpoint rồi raise :class:`~level2.grkt_api.TrainingPaused` để phiên
-    Kaggle không bị kill giữa lúc ghi. ``ckpt_every_min`` là nhịp ghi checkpoint giữa epoch.
+    Resume qua nhiều phiên Kaggle: ``resume_grkt_ckpt=True`` nạp lại ``GRKT-<graph>-seed<s>.pt``
+    (hoặc tên cũ ``GRKT-<graph>.pt``; đã train xong -> bỏ qua train) hoặc
+    ``ckpt_GRKT-<graph>-seed<s>.pt`` (dừng giữa epoch -> train tiếp đúng batch còn lại).
+    ``time_budget_min``/``deadline`` là ngân sách thời gian: khi hết, ``train_grkt`` ghi
+    checkpoint rồi raise :class:`~level2.grkt_api.TrainingPaused` để phiên Kaggle không bị kill
+    giữa lúc ghi. ``ckpt_every_min`` là nhịp ghi checkpoint giữa epoch.
     """
+    unknown = set(kwargs) - _LEVEL2_FIELDS
+    if unknown:
+        raise TypeError(f"run_dataset: tham số lạ {sorted(unknown)}")
+    # Luôn tạo bản sao: bên dưới gán cfg.deadline, không được sửa object của người gọi.
+    cfg = Level2Config(**{**asdict(config or Level2Config()), **kwargs})
     spec = get_spec(dataset)
     device = _device_of(device)
     save_dir = (
-        Path(save_root if save_root is not None else Path(spec.canonical_file).parent)
+        Path(cfg.save_root if cfg.save_root is not None else Path(spec.canonical_file).parent)
         / spec.name
     )
     save_dir.mkdir(parents=True, exist_ok=True)
-    out = {"dataset": spec.name, "save_dir": str(save_dir), "artifacts": {}}
+    out = {"dataset": spec.name, "save_dir": str(save_dir), "artifacts": {}, "config": cfg}
     # ``run_level2`` truyền xuống một ``deadline`` tuyệt đối chung cho mọi tập; gọi trực tiếp
     # ``run_dataset`` thì ``time_budget_min`` được quy ra mốc tuyệt đối ngay tại đây.
-    if deadline is None and time_budget_min:
-        deadline = time.time() + float(time_budget_min) * 60.0
+    if cfg.deadline is None and cfg.time_budget_min:
+        cfg.deadline = time.time() + float(cfg.time_budget_min) * 60.0
 
-    # ------------------------------------------------------------ 1. chuẩn hoá + split
-    print("=" * 72)
-    print(f">>> [C2-B1] Chuẩn hoá dữ liệu và chia split theo người học: {spec.name}")
-    print("=" * 72)
-    # Chỉ cảnh báo khi CSV chuẩn hoá ĐÃ có sẵn (repo hoặc lần chạy trước): lúc đó file được
-    # dùng lại nguyên trạng nên max_users/min_interactions/top_concepts không làm thay đổi
-    # tập người học/khái niệm. Trước lần chuẩn hoá đầu tiên chúng VẪN có tác dụng.
-    if has_canonical(spec, save_dir) and (
-        max_users is not None
-        or min_interactions is not None
-        or top_concepts is not None
-    ):
-        print(
-            f"  [cảnh báo] {spec.name}: dùng lại CSV chuẩn hoá có sẵn nên max_users/"
-            f"min_interactions/top_concepts KHÔNG được áp dụng (chỉ có tác dụng khi chuẩn hoá "
-            f"lại từ file gốc; muốn chạy nhanh: dataset='assist2009_smoke')."
-        )
-    canonical = ensure_canonical(
-        spec,
-        out_dir=save_dir,
-        raw_path=raw_path,
-        max_users=max_users,
-        min_interactions=min_interactions,
-        top_concepts=top_concepts,
-        content_path=content_path,
-        verbose=verbose,
+    canonical, min_seq, shared, split = _step_prepare(spec, cfg, save_dir, device, out)
+    data, splits = _step_grkt_data(spec, cfg, shared, canonical, min_seq, split, out)
+    graph_ctx = _step_graphs(cfg, data, splits, shared, save_dir, out)
+    grkt_results = _step_train_grkt(
+        spec, cfg, data, splits, graph_ctx["graphs"], save_dir, device, out
     )
-    min_seq = int(
-        min_interactions if min_interactions is not None else spec.min_interactions
+    base_results, base_probs = _step_baselines(
+        spec, cfg, shared, min_seq, grkt_results, save_dir, device, out
     )
-    print(f"  CSV chuẩn hoá: {canonical}")
-    print(f"  Cột: {probe_columns(canonical)}")
+    table = _step_table(base_results, grkt_results, save_dir, out)
 
-    from level1.pipeline import load_kt_data, save_split
-
-    shared = load_kt_data(
-        str(canonical),
-        batch_size=batch_size,
-        graph_type="Transition",
-        model_type="GKT",
-        train_ratio=train_ratio,
-        val_ratio=val_ratio,
-        seed=split_seed,
-        max_seq_len=max_seq_len,
-        min_seq_len=min_seq,
-        use_cuda=device.type == "cuda",
-    )
-    split = save_split(shared, save_dir / "split.json")
-    n_tr, n_va, n_te = (len(split[f"{k}_users"]) for k in ("train", "val", "test"))
-    print(
-        f"  concept_num={shared['concept_num']} | split user train/val/test = {n_tr}/{n_va}/{n_te} (seed={split_seed})"
-    )
-    out["split"] = split
-    out["concept_num"] = int(shared["concept_num"])
-    out["artifacts"]["split"] = str(save_dir / "split.json")
-
-    # ------------------------------------------------------------ 2. chuỗi GRKT
-    print(
-        ">>> [C2-B2] Dựng chuỗi GRKT từ cùng file chuẩn hoá và đối chiếu với Cấp độ 1 ..."
-    )
-    data = build_grkt_data(
-        shared,
-        canonical,
-        time_mode=spec.time_mode,
-        gap_cap_min=gap_cap_min,
-        max_seq_len=max_seq_len,
-        min_seq_len=min_seq,
-        max_concepts=spec.max_concepts,
-        dataset=spec.name,
-        verbose=verbose,
-    )
-    splits = split_sequences(data, split)
-    out["grkt_data"] = data
-    out["splits"] = splits
-
-    # ------------------------------------------------------------ 3. đồ thị từ train
-    print(">>> [C2-B3] Đếm rel_map/pre_map CHỈ từ tập train + sinh biến thể đồ thị ...")
-    maps_train = build_relevance_maps(
-        splits["train"]["sequences"], data.concept_num, cold_thresh=cold_thresh
-    )
-    maps_val = build_relevance_maps(
-        splits["val"]["sequences"], data.concept_num, cold_thresh=cold_thresh
-    )
-    graphs = {
-        kind: graph_variant(
-            maps_train, kind, data.concept_num, thresh=graph_thresh, seed=split_seed
-        )
-        for kind in variants
-    }
-    # adjacency phục vụ tiêu chí quỹ đạo LU LU là đồ thị train thật (biến thể "train"),
-    # kể cả khi lần chạy này không huấn luyện biến thể đó (vd VARIANTS=("zero",) smoke test).
-    train_graph = graphs.get("train") or graph_variant(
-        maps_train, "train", data.concept_num, thresh=graph_thresh, seed=split_seed
-    )
-    adj = adjacency_from_graphs(train_graph["rel_map"], train_graph["pre_map"])
-    if int(train_graph["edges_rel"]) + int(train_graph["edges_pre"]) == 0:
-        # Xảy ra với tập quá nhỏ (smoke) hoặc cold_thresh/graph_thresh quá cao: GRKT-train khi
-        # đó chạy y hệt GRKT-zero, mọi kết luận về "tác động của đồ thị" đều vô nghĩa.
-        print(
-            f"  [cảnh báo] đồ thị train RỖNG (rel={train_graph['edges_rel']} pre={train_graph['edges_pre']}) "
-            f"với cold_thresh={cold_thresh}, graph_thresh={graph_thresh} trên "
-            f"{len(splits['train']['sequences'])} người học. Ablation sẽ không phân biệt được; "
-            "hạ cold_thresh/graph_thresh hoặc chạy ở chế độ đầy đủ."
-        )
-    report = leak_report(
-        data,
-        splits,
-        shared,
-        maps_train,
-        maps_val,
-        graphs,
-        train_ratio=train_ratio,
-        val_ratio=val_ratio,
-        seed=split_seed,
-    )
-    print(report)
-    (save_dir / "leak_report.txt").write_text(report + "\n", encoding="utf-8")
-    out["maps"] = maps_train
-    out["graphs"] = graphs
-    out["adj"] = adj
-    out["artifacts"]["leak_report"] = str(save_dir / "leak_report.txt")
-    np.savez_compressed(
-        save_dir / "graphs_train_only.npz",
-        rel=maps_train["rel"],
-        pre=maps_train["pre"],
-        rel_bin=train_graph["rel_map"],
-        pre_bin=train_graph["pre_map"],
-    )
-    out["artifacts"]["graphs"] = str(save_dir / "graphs_train_only.npz")
-
-    # ------------------------------------------------------------ 4. GRKT
-    print(">>> [C2-B4] Huấn luyện GRKT cho từng biến thể đồ thị ...")
-    gib = grkt_activation_gib(data.concept_num, batch_size, max_seq_len, k_hidden)
-    print(
-        f"  [bộ nhớ] GRKT giữ ước lượng {gib:.1f} GiB tensor kích hoạt cho MỘT batch "
-        f"(K={data.concept_num}, B={batch_size}, S={max_seq_len}, k_hidden={k_hidden})"
-    )
-    if gib > 8.0:
-        print(
-            f"  [cảnh báo] {gib:.1f} GiB là sát/near vượt VRAM T4 (15 GiB) — giảm top_concepts "
-            "(nhiều khái niệm hiếm chỉ làm đồ thị to lên chứ không thêm tín hiệu), rồi mới tới "
-            "batch_size hoặc max_seq_len. Xem mục 'Sự cố thường gặp' của notebook."
-        )
-    if resume_grkt_ckpt:
-        print(
-            "  [resume] BẬT: ưu tiên GRKT-<graph>.pt (đã train xong -> chỉ đánh giá); nếu chưa "
-            "có thì dùng ckpt_GRKT-<graph>.pt (dừng giữa epoch -> train tiếp). Chỉ dùng khi "
-            "lần chạy trước có CÙNG split/đồ thị/siêu tham số — fingerprint trong checkpoint "
-            "sẽ chặn nếu khác."
-        )
-    if deadline is not None:
-        print(
-            f"  [ngân sách] còn {max(0.0, deadline - time.time()) / 60.0:.0f} phút; checkpoint "
-            f"giữa epoch mỗi {ckpt_every_min:g} phút -> {save_dir}/ckpt_GRKT-<graph>.pt"
-        )
-    if deadline is not None and time.time() >= deadline:
-        # Ngân sách đã cạn trước cả batch đầu (thường do tập trước ăn hết thời gian): dừng
-        # luôn thay vì sinh checkpoint khởi tạo ngẫu nhiên rồi mới raise.
-        raise TrainingPaused(
-            f"[{spec.name}] hết ngân sách thời gian TRƯỚC khi bắt đầu GRKT. Không có checkpoint "
-            f"mới; tăng TIME_BUDGET_MIN (hoặc chạy riêng tập này ở phiên sau)."
-        )
-    grkt_results: List[dict] = []
-    for kind in variants:
-        print(f"\n--- GRKT với đồ thị '{kind}' ---")
-        final_ckpt = save_dir / f"GRKT-{kind}.pt"
-        rolling_ckpt = save_dir / f"ckpt_GRKT-{kind}.pt"
-        resume = None
-        if resume_grkt_ckpt:
-            resume = (
-                final_ckpt
-                if final_ckpt.exists()
-                else (rolling_ckpt if rolling_ckpt.exists() else None)
-            )
-            if resume is None and verbose:
-                print(
-                    f"  [resume] không có {final_ckpt.name} lẫn {rolling_ckpt.name} -> train từ đầu"
-                )
-        try:
-            res = run_grkt_experiment(
-                data,
-                splits,
-                graphs[kind],
-                graph_kind=kind,
-                epochs=epochs,
-                batch_size=batch_size,
-                lr=lr,
-                patience=patience,
-                d_hidden=d_hidden,
-                k_hidden=k_hidden,
-                k_hop=k_hop,
-                alpha=alpha,
-                tau=tau,
-                thresh=bin_thresh,
-                seed=split_seed,
-                dataset=spec.name,
-                device=device,
-                save_dir=save_dir,
-                resume_ckpt=(str(resume) if resume is not None else None),
-                deadline=deadline,
-                ckpt_every_min=ckpt_every_min,
-                verbose=verbose,
-            )
-        except TrainingPaused:
-            # Hết ngân sách giữa biến thể này. Checkpoint của nó đã được train_grkt ghi trước
-            # khi raise; phần còn thiếu là BẢNG của các biến thể đã train xong — không ghi thì
-            # phiên sau và §3.1 không thấy tập này đã đo được gì.
-            _write_partial_table(save_dir, grkt_results)
-            raise
-        grkt_results.append(res)
-    out["grkt_results"] = grkt_results
-
-    # Hết ngân sách ngay sau GRKT: ghi bảng của những gì đã có rồi dừng, thay vì chạy đường
-    # nền/quỹ đạo và bị Kaggle kill giữa chừng (checkpoint GRKT vẫn còn để phiên sau train tiếp).
-    if deadline is not None and time.time() >= deadline:
-        _write_partial_table(save_dir, grkt_results)
-        raise TrainingPaused(
-            f"[{spec.name}] hết ngân sách thời gian sau GRKT. Đã ghi {save_dir/'level2_metrics.csv'} "
-            f"(chỉ các dòng GRKT) và checkpoint trong {save_dir}. Phiên sau attach lại zip, đặt "
-            "RESUME_GRKT_CKPT=True và tăng TIME_BUDGET_MIN để chạy tiếp đường nền/quỹ đạo."
-        )
-
-    # ------------------------------------------------------------ 5. đường nền Cấp độ 1
-    base_results: List[dict] = []
-    base_probs: Dict[str, tuple] = {}
-    if run_baselines:
-        print("\n>>> [C2-B5] Đánh giá đường nền DKT / GKT trên CÙNG split ...")
-        # Checkpoint của Cấp độ 1 chỉ tồn tại cho ASSISTments 2009. Với tập khác (Junyi) phải
-        # huấn luyện lại, và số epoch lấy theo công thức Cấp độ 1 (baseline_epochs) để đường
-        # nền không bị yếu một cách nhân tạo khi đặt cạnh GRKT.
-        ckpt_dir = baseline_ckpt_dir if spec.name in LEVEL1_CKPT_DATASETS else None
-        if baseline_ckpt_dir and ckpt_dir is None and verbose:
-            print(
-                f"  [baseline] {spec.name} không có checkpoint Cấp độ 1 -> huấn luyện lại "
-                f"{baseline_epochs or epochs} epoch (trọng số ghi vào {save_dir}/baselines)"
-            )
-        try:
-            got = level1_baseline(
-                shared,
-                specs=BASELINE_SPECS,
-                ckpt_dir=ckpt_dir,
-                epochs=int(baseline_epochs or epochs),
-                batch_size=batch_size,
-                max_seq_len=max_seq_len,
-                min_seq_len=min_seq,
-                train_ratio=train_ratio,
-                val_ratio=val_ratio,
-                lr=lr,
-                seed=split_seed,
-                device=device,
-                allow_retrain=allow_retrain_baselines,
-                collect_probs=True,
-                shared_graph_type="Transition",
-                save_dir=save_dir,
-                deadline=deadline,
-                verbose=verbose,
-            )
-        except TrainingPaused:
-            # Đường nền hết ngân sách giữa chừng. Bảng GRKT vẫn PHẢI nằm trên đĩa: không có nó
-            # thì phiên sau (và cell §3.1 kiểm tra sản phẩm P0) không biết tập này đã đo được
-            # gì, còn checkpoint đường nền thì đã được train_baseline_resumable ghi trước đó.
-            _write_partial_table(save_dir, grkt_results)
-            raise
-        base_results, base_probs = got["results"], got["probs"]
-    out["baseline_results"] = base_results
-
-    # ------------------------------------------------------------ bảng so sánh
-    table = pd.DataFrame(
-        [_table_row(r) for r in base_results + grkt_results], columns=TABLE_COLUMNS
-    )
-    table = table.sort_values("auc", ascending=False)
-    table.to_csv(save_dir / "level2_metrics.csv", index=False)
-    out["table"] = table
-    out["artifacts"]["metrics"] = str(save_dir / "level2_metrics.csv")
-    print("\n=== BẢNG SO SÁNH DKT / GKT / GRKT (cùng split, cùng chỉ số) ===")
-    print(table.to_string(index=False))
-
-    # ------------------------------------------------------------ 6. quỹ đạo mastery
-    if deadline is not None and time.time() >= deadline:
+    if _deadline_passed(cfg):
         # Bảng so sánh và mọi checkpoint đã an toàn trên đĩa; phần còn lại (quỹ đạo, hiệu
         # chỉnh, đa seed) chỉ là phân tích. Dừng ở đây có nghĩa là phiên sau nạp lại toàn bộ
         # trọng số (skipped_training) và chạy thẳng phần phân tích, không tốn GPU train lại.
@@ -509,230 +818,14 @@ def run_dataset(
             "chỉnh và đa seed. Phiên sau attach lại zip: trọng số được nạp (không train lại) nên "
             "§6-§8 chạy ngay; đặt TIME_BUDGET_MIN lớn hơn nếu muốn trọn vẹn trong một phiên."
         )
-    traj_runs: Dict[str, dict] = {}
-    stability_runs: Dict[str, dict] = {}
-    traj_table = None
-    if record_trajectory:
-        print("\n>>> [C2-B6] Ghi quỹ đạo mastery m(u,c,t) và đo tiêu chí hợp lý ...")
-        plot_dir = save_dir / "trajectories"
-        plot_dir.mkdir(parents=True, exist_ok=True)
-        for res in grkt_results:
-            kind = res["graph_type"]
-            model = res["model"].to(device)
-            traj = record_trajectories(
-                model,
-                splits["test"]["sequences"][:trajectory_users],
-                device=device,
-                batch_size=trajectory_batch,
-                concept_num=data.concept_num,
-                graph_kind=kind,
-                seed=split_seed,
-                verbose=False,
-            )
-            traj_runs[kind] = traj
-            stability_runs[kind] = stability_under_perturbation(
-                model,
-                splits["test"]["sequences"][:trajectory_users],
-                device=device,
-                batch_size=trajectory_batch,
-                concept_num=data.concept_num,
-                graph_kind=kind,
-                seed=split_seed,
-                verbose=verbose,
-            )
-            save_trajectories(traj, plot_dir / f"traj_{kind}.npz")
-            export_mastery_csv(
-                traj,
-                plot_dir / f"mastery_{kind}.csv",
-                max_users=25,
-                skill_lookup=data.skill_lookup,
-            )
-            _safe_plot(
-                plot_mastery_heatmap,
-                traj,
-                plot_dir / f"heatmap_{kind}.png",
-                user_index=0,
-                skill_lookup=data.skill_lookup,
-            )
-            _safe_plot(
-                plot_mastery_curves,
-                traj,
-                plot_dir / f"curves_{kind}.png",
-                user_indices=(0, 1),
-                skill_lookup=data.skill_lookup,
-            )
-            model.cpu()
-        traj_table = trajectory_metrics_table(
-            traj_runs,
-            adj=adj,
-            pre_map=train_graph["pre_map"],
-            stability=stability_runs,
-            seed=split_seed,
-        )
-        traj_table.to_csv(save_dir / "trajectory_metrics.csv", index=False)
-        out["trajectories"] = traj_runs
-        out["stability"] = stability_runs
-        out["trajectory_table"] = traj_table
-        out["artifacts"]["trajectory_metrics"] = str(
-            save_dir / "trajectory_metrics.csv"
-        )
-        out["artifacts"]["trajectory_plots"] = str(plot_dir)
-        print(
-            "\n=== TIÊU CHÍ QUỸ ĐẠO (láng giềng/cạnh tiên quyết cố định theo đồ thị train) ==="
-        )
-        print(traj_table.to_string(index=False))
-        print(
-            "  * Tiêu chí THẬT (có thể sai): precedence, precedence_gap, stability_spearman,\n"
-            "    stability_changed_frac, forget_slope, pearson_dt_dm.\n"
-            "  * consistency_strengthen / consistency_spread / locality bị cấu trúc mô hình\n"
-            "    (Positive_Linear dương, k_hop=1) ép về 1 — chỉ là kiểm chứng cài đặt, KHÔNG\n"
-            "    dùng làm bằng chứng vai trò đồ thị."
-        )
-
-    # ------------------------------------------------------------ 7. calibration
-    cal = pd.DataFrame()
-    entries: Dict[str, tuple] = dict(base_probs)
-    if run_calibration:
-        print("\n>>> [C2-B7] Hiệu chỉnh dự đoán (ECE / Brier) ...")
-        for res in grkt_results:
-            model = res["model"].to(device)
-            p, y = predict_grkt(model, splits["test"]["items"], device=device)
-            entries[res["name"]] = (p, y)
-            model.cpu()
-        cal = calibration_table(
-            entries,
-            n_bins=10,
-            extra={r["name"]: {"graph": r["graph_type"]} for r in grkt_results},
-        )
-        cal.to_csv(save_dir / "calibration.csv", index=False)
-        _safe_plot(reliability_plot, entries, save_dir / "reliability.png")
-        save_reliability_rows(entries, save_dir / "reliability_rows.csv")
-        out["artifacts"]["calibration"] = str(save_dir / "calibration.csv")
-        out["artifacts"]["reliability"] = str(save_dir / "reliability.png")
-        print(cal.to_string(index=False))
-    out["calibration"] = cal
-    out["calibration_probs"] = entries
-
-    # ------------------------------------------------------------ 8. đa seed
-    multi = None
-    if run_multi_seed:
-        ms_kind = "train" if "train" in graphs else variants[0]
-        print(
-            "\n>>> [C2-B8] Đa seed cho GRKT-%s (split cố định seed=%d) ..."
-            % (ms_kind, split_seed)
-        )
-        rows = []
-        paused = None
-        try:
-            for s in seeds:
-                s = int(s)
-                # Cùng quy ước tên với grkt_api: seed 42 dùng lại checkpoint của lần chạy
-                # chính (khỏi train lại), seed khác có file riêng để resume đúng seed.
-                suffix = "" if s == split_seed else f"-seed{s}"
-                seed_name = f"GRKT-{ms_kind}{suffix}"
-                final_ckpt = save_dir / f"{seed_name}.pt"
-                rolling_ckpt = save_dir / f"ckpt_{seed_name}.pt"
-                resume = None
-                if resume_grkt_ckpt:
-                    resume = (
-                        str(final_ckpt)
-                        if final_ckpt.exists()
-                        else (str(rolling_ckpt) if rolling_ckpt.exists() else None)
-                    )
-                res = run_grkt_experiment(
-                    data,
-                    splits,
-                    graphs[ms_kind],
-                    graph_kind=ms_kind,
-                    epochs=epochs,
-                    batch_size=batch_size,
-                    lr=lr,
-                    patience=patience,
-                    d_hidden=d_hidden,
-                    k_hidden=k_hidden,
-                    k_hop=k_hop,
-                    alpha=alpha,
-                    tau=tau,
-                    thresh=bin_thresh,
-                    seed=s,
-                    dataset=spec.name,
-                    device=device,
-                    save_dir=save_dir,
-                    resume_ckpt=resume,
-                    deadline=deadline,
-                    ckpt_every_min=ckpt_every_min,
-                    verbose=verbose,
-                )
-                # Bỏ hậu tố seed khỏi tên mô hình để groupby gộp đúng 3 seed thành MỘT dòng
-                # mean ± std; tên file checkpoint vẫn tách theo seed.
-                rows.append(
-                    {
-                        "model": f"GRKT-{ms_kind}",
-                        "seed": s,
-                        "test_auc": res["test_auc"],
-                        "test_acc": res["test_acc"],
-                        "test_loss": res["test_loss"],
-                    }
-                )
-                del res
-        except TrainingPaused as exc:
-            # Giữ kết quả các seed ĐÃ xong thay vì mất trắng vì seed đang dở; checkpoint của
-            # seed dở đã được train_grkt ghi trước khi raise.
-            paused = exc
-        if rows:
-            ms = pd.DataFrame(rows)
-            agg = (
-                ms.groupby("model")
-                .agg(
-                    auc_mean=("test_auc", "mean"),
-                    auc_std=("test_auc", "std"),
-                    acc_mean=("test_acc", "mean"),
-                    acc_std=("test_acc", "std"),
-                    loss_mean=("test_loss", "mean"),
-                    loss_std=("test_loss", "std"),
-                    n_seed=("seed", "count"),
-                )
-                .reset_index()
-            )
-            # ddof=1 với n=3 cho std mẫu; ghi cả số seed để người đọc không nhầm với tổng thể
-            agg.to_csv(save_dir / "multiseed_metrics.csv", index=False)
-            out["multiseed_raw"] = ms
-            out["multiseed"] = agg
-            out["artifacts"]["multiseed"] = str(save_dir / "multiseed_metrics.csv")
-            print(agg.to_string(index=False))
-        if paused is not None:
-            raise paused
-
-    summary = {
-        "dataset": spec.name,
-        "canonical": str(canonical),
-        "time_mode": data.time_mode,
-        "data_stats": {
-            k: (float(v) if isinstance(v, (int, float, np.floating)) else v)
-            for k, v in data.stats.items()
-        },
-        "graph_edges": {
-            k: {"rel": int(v["edges_rel"]), "pre": int(v["edges_pre"])}
-            for k, v in graphs.items()
-        },
-        "counts": {
-            "train_edges_from_train": int(
-                (maps_train["rel"] > 0).sum() + (maps_train["pre"] > 0).sum()
-            ),
-            "train_edges_from_val": int(
-                (maps_val["rel"] > 0).sum() + (maps_val["pre"] > 0).sum()
-            ),
-        },
-        "models": [_table_row(r) for r in base_results + grkt_results],
-        "trajectory": (
-            None if traj_table is None else traj_table.to_dict(orient="records")
-        ),
-        "calibration": cal.to_dict(orient="records"),
-    }
-    (save_dir / "summary.json").write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+    traj_table = _step_trajectories(
+        cfg, data, splits, grkt_results, graph_ctx, save_dir, device, out
     )
-    out["artifacts"]["summary"] = str(save_dir / "summary.json")
+    cal = _step_calibration(cfg, splits, grkt_results, base_probs, save_dir, device, out)
+    _step_multi_seed(spec, cfg, data, splits, graph_ctx["graphs"], save_dir, device, out)
+    _write_summary(
+        spec, cfg, canonical, data, graph_ctx, base_results, grkt_results, traj_table, cal, save_dir, out
+    )
     out["spec"] = spec
     return out
 
@@ -774,7 +867,7 @@ def _write_partial_table(save_dir, rows: List[dict]) -> Optional[pd.DataFrame]:
     này đã có bảng, che mất cảnh báo "chưa đo được gì".
     """
     if not rows:
-        print("  [bảng] chưa có kết quả nào -> không ghi level2_metrics.csv")
+        log.info("  [bảng] chưa có kết quả nào -> không ghi level2_metrics.csv")
         return None
     table = pd.DataFrame([_table_row(r) for r in rows], columns=TABLE_COLUMNS)
     table = table.sort_values("auc", ascending=False)
@@ -817,9 +910,9 @@ def run_level2(
     frames = []
     ms_set = set(multi_seed_datasets) if multi_seed_datasets is not None else None
     for name in datasets:
-        print("\n" + "#" * 72)
-        print(f"# TẬP DỮ LIỆU: {name}")
-        print("#" * 72)
+        log.info("\n" + "#" * 72)
+        log.info(f"# TẬP DỮ LIỆU: {name}")
+        log.info("#" * 72)
         ds_kwargs = dict(kwargs)
         if variants_by_dataset is not None:
             # Tập ngoài bảng PHẢI nhận đúng một biến thể; nếu thừa hưởng `variants` toàn cục

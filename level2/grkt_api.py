@@ -22,9 +22,7 @@ from __future__ import annotations
 
 import argparse
 import gc
-import os
 import random
-import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
@@ -32,16 +30,29 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 import torch
 
-from level1.paths import repo_root
+from kt_common.checkpoint import (
+    atomic_save,
+    check_fingerprint,
+    checkpoint_path,
+    cpu_state_dict,
+    find_checkpoint,
+    optimizer_state_cpu,
+    optimizer_state_to_device,
+    record_checkpoint,
+    restore_rng,
+    rng_state,
+)
+from kt_common.log import get_logger
+from kt_common.metrics import PROB_EPS, auc_acc
+from level1.paths import ensure_repo_on_path
+
+log = get_logger("level2.grkt_api")
 
 
 # ---------------------------------------------------------------- import GRKT
 def ensure_grkt_importable() -> Path:
     """Đảm bảo ``import GRKT`` hoạt động dù notebook chạy từ /kaggle/working."""
-    root = str(repo_root())
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    return repo_root()
+    return ensure_repo_on_path()
 
 
 def import_grkt():
@@ -125,8 +136,9 @@ def make_args(
         bar=int(bar),
         save_model=int(save_model),
         save=int(save),
-        # các khoá Runner còn tham chiếu (không dùng tới vòng lặp của Runner)
-        model="GRKT",  # GRKT/Training.py đọc args.model để tra MODEL_REGISTRY
+        # các khoá mà Runner/Training upstream từng đọc (đã gỡ khỏi repo); giữ để args của
+        # checkpoint cũ và mới có cùng bộ khoá
+        model="GRKT",
         k_exps=1,
         n_exps=1,
         repeat=1,
@@ -181,85 +193,24 @@ class TrainingPaused(RuntimeError):
     """Hết ngân sách thời gian. Checkpoint đã được ghi NGAY TRƯỚC khi raise."""
 
 
-def _atomic_torch_save(payload, path: Path) -> None:
-    """Ghi ra file tạm rồi ``os.replace`` — session bị kill giữa lúc ghi không làm hỏng file cũ."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    torch.save(payload, tmp)
-    os.replace(tmp, path)
+def _grkt_fingerprint_hint() -> str:
+    return (
+        "Xoá checkpoint cũ (cả ckpt_GRKT-*.pt lẫn GRKT-*.pt) rồi train lại — tiếp tục với cấu "
+        "hình khác sẽ cho kết quả không tái lập được."
+    )
 
 
-def _cpu_state_dict(state: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-    return {k: v.detach().cpu().clone() for k, v in state.items()}
+def grkt_checkpoint_name(graph_kind: str) -> str:
+    """Tên gốc (không seed) của checkpoint GRKT; file thật là ``<tên>-seed<s>.pt``."""
+    return f"GRKT-{graph_kind}"
 
 
-def _optimizer_state_cpu(optim) -> dict:
-    """Đưa trạng thái Adam về CPU; checkpoint nhỏ, nạp lại ở phiên khác không phụ thuộc GPU."""
-    state = optim.state_dict()
-    return {
-        "state": {
-            idx: {
-                k: (v.detach().cpu().clone() if torch.is_tensor(v) else v)
-                for k, v in entry.items()
-            }
-            for idx, entry in state["state"].items()
-        },
-        "param_groups": state["param_groups"],
-    }
-
-
-def _optimizer_state_to_device(optim, device) -> None:
-    for entry in optim.state.values():
-        for k, v in entry.items():
-            if torch.is_tensor(v):
-                entry[k] = v.to(device)
-
-
-def _rng_state() -> dict:
-    """RNG của cả ba thư viện: GRKT dùng ``gumbel_softmax`` ngay cả lúc eval.
-
-    Không lưu thì lần resume sẽ bắt đầu một dòng ngẫu nhiên khác, nên val/test AUC sau khi
-    resume lệch so với lần chạy liền mạch dù trọng số đúng — và tiêu chí dừng sớm bị nhiễu.
-    """
-    return {
-        "python": random.getstate(),
-        "numpy": np.random.get_state(),
-        "torch": torch.get_rng_state(),
-        "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
-    }
-
-
-def _restore_rng(state: Optional[dict]) -> None:
-    if not state:
-        return
-    try:
-        random.setstate(state["python"])
-        np.random.set_state(state["numpy"])
-        torch.set_rng_state(state["torch"])
-        if state.get("cuda") and torch.cuda.is_available():
-            torch.cuda.set_rng_state_all(state["cuda"])
-    except (
-        Exception
-    ) as exc:  # noqa: BLE001 - RNG khác thiết bị không đáng làm chết lần resume
-        print(
-            f"  [resume] không khôi phục được RNG ({type(exc).__name__}: {exc}) — train tiếp "
-            "với dòng ngẫu nhiên mới; kết quả không trùng bit-for-bit với lần chạy liền mạch."
-        )
-
-
-def _check_fingerprint(previous: Optional[dict], current: dict) -> None:
-    """Từ chối resume nếu split/đồ thị/siêu tham số đã đổi (load_state_dict không bắt được)."""
-    if not previous:
-        return
-    diff = {k: (previous.get(k), v) for k, v in current.items() if previous.get(k) != v}
-    if diff:
-        detail = ", ".join(f"{k}: {old} -> {new}" for k, (old, new) in diff.items())
-        raise RuntimeError(
-            "Checkpoint được tạo với cấu hình khác (" + detail + "). Xoá checkpoint cũ "
-            "(cả ckpt_GRKT-*.pt lẫn GRKT-*.pt) rồi train lại — tiếp tục với cấu hình khác "
-            "sẽ cho kết quả không tái lập được."
-        )
+def find_grkt_resume(save_dir, graph_kind: str, seed: int) -> Optional[Path]:
+    """Checkpoint để resume: ưu tiên bản đã train xong, rồi bản giữa epoch (tên mới hoặc cũ)."""
+    name = grkt_checkpoint_name(graph_kind)
+    return find_checkpoint(save_dir, name, seed) or find_checkpoint(
+        save_dir, name, seed, prefix="ckpt_"
+    )
 
 
 # ---------------------------------------------------------------- train
@@ -305,12 +256,14 @@ def train_grkt(
     order: Optional[List[int]] = None
     loss_sum, loss_count = 0.0, 0
     if resume_state:
-        _check_fingerprint(resume_state.get("fingerprint"), fingerprint or {})
+        check_fingerprint(
+            resume_state.get("fingerprint"), fingerprint or {}, _grkt_fingerprint_hint()
+        )
         model.load_state_dict(resume_state["state_dict"])
         model.optim.load_state_dict(resume_state["optim"])
-        _optimizer_state_to_device(model.optim, device)
+        optimizer_state_to_device(model.optim, device)
         model.to(device)
-        _restore_rng(resume_state.get("rng"))
+        restore_rng(resume_state.get("rng"))
         epoch = int(resume_state.get("epoch", 0))
         batch_pos = int(resume_state.get("batch_pos", 0))
         order = resume_state.get("order")
@@ -321,7 +274,7 @@ def train_grkt(
         wait = int(resume_state.get("wait", 0))
         history = resume_state.get("history", history)
         if verbose:
-            print(
+            log.info(
                 f"  [{tag}] RESUME: đã xong epoch {epoch}, đang ở batch {batch_pos} "
                 f"| best val AUC={best_auc:.4f} | chờ {wait}/{patience}"
             )
@@ -331,11 +284,11 @@ def train_grkt(
     ) -> None:
         if ckpt_path is None:
             return
-        _atomic_torch_save(
+        atomic_save(
             {
                 "format": RESUME_FORMAT,
-                "state_dict": _cpu_state_dict(model.state_dict()),
-                "optim": _optimizer_state_cpu(model.optim),
+                "state_dict": cpu_state_dict(model),
+                "optim": optimizer_state_cpu(model.optim),
                 "epoch": int(ep),
                 "batch_pos": int(pos),
                 "order": ord_,
@@ -345,7 +298,7 @@ def train_grkt(
                 "best_state": best_state,
                 "wait": int(wait),
                 "history": history,
-                "rng": _rng_state(),
+                "rng": rng_state(),
                 "fingerprint": fingerprint or {},
                 "tag": tag,
             },
@@ -398,7 +351,7 @@ def train_grkt(
                 _save(current - 1, bidx + 1, order, loss_sum, loss_count)
                 last_ckpt = now
                 if verbose:
-                    print(
+                    log.info(
                         f"  [{tag}] checkpoint giữa epoch: epoch {current}, batch {bidx + 1}/"
                         f"{n_batches} -> {Path(ckpt_path).name}"
                     )
@@ -413,12 +366,12 @@ def train_grkt(
         improved = va["auc"] > best_auc
         if improved:
             best_auc = va["auc"]
-            best_state = _cpu_state_dict(model.state_dict())
+            best_state = cpu_state_dict(model)
             wait = 0
         else:
             wait += 1
         if verbose:
-            print(
+            log.info(
                 f"  [{tag}] epoch {epoch:02d}/{epochs} train loss={float(train_loss):.4f} "
                 f"val loss={va['loss']:.4f} val auc={va['auc']:.4f} val acc={va['acc']:.4f}"
                 + (" *" if improved else "")
@@ -427,14 +380,14 @@ def train_grkt(
         last_ckpt = time.time()
         if wait >= patience:
             if verbose:
-                print(f"  [{tag}] early stopping tại epoch {epoch}")
+                log.info(f"  [{tag}] early stopping tại epoch {epoch}")
             break
     if best_state is not None:
         model.load_state_dict(best_state)
         model.to(device)
     elapsed = time.time() - t0
     if verbose:
-        print(f"  [{tag}] xong sau {elapsed:.1f}s | val AUC tốt nhất={best_auc:.4f}")
+        log.info(f"  [{tag}] xong sau {elapsed:.1f}s | val AUC tốt nhất={best_auc:.4f}")
     return {"history": history, "best_val_auc": float(best_auc), "seconds": elapsed}
 
 
@@ -443,8 +396,6 @@ def _eval_items(
     model, items: Sequence[list], device, tag: str = ""
 ) -> Dict[str, float]:
     """Đánh giá TOÀN CỤC (nối mọi batch rồi tính AUC/BCE một lần), giống ``_epoch_loop`` Cấp độ 1."""
-    from sklearn.metrics import roc_auc_score
-
     model.eval()
     scores, labels, losses, counts = [], [], [], []
     for batch in batch_items(items, model.args.batch_size, shuffle=False):
@@ -456,7 +407,7 @@ def _eval_items(
             continue
         scores.append(s)
         labels.append(y)
-        p = s.clamp(1e-6, 1.0 - 1e-6)
+        p = s.clamp(PROB_EPS, 1.0 - PROB_EPS)
         bce = -(y * torch.log(p) + (1.0 - y) * torch.log(1.0 - p))
         losses.append(bce.sum())
         counts.append(int(y.numel()))
@@ -466,11 +417,7 @@ def _eval_items(
     y_pred = torch.cat(scores).numpy()
     n = int(sum(counts))
     loss = float(sum(losses) / max(n, 1))
-    if len(np.unique(y_true)) > 1:
-        auc = float(roc_auc_score(y_true, y_pred))
-        acc = float(((y_pred >= 0.5) == (y_true >= 0.5)).mean())
-    else:
-        auc, acc = -1.0, -1.0
+    auc, acc = auc_acc(y_true, y_pred)
     return {"auc": auc, "acc": acc, "loss": loss, "n": n}
 
 
@@ -565,7 +512,7 @@ def run_grkt_experiment(
     model = build_grkt(args, device=device)
     if verbose:
         n_param = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(
+        log.info(
             f"  GRKT[{graph_kind}] n_knows={args.n_knows} n_probs={args.n_probs} "
             f"edges rel/pre={int(np.asarray(rel).sum())}/{int(np.asarray(pre).sum())} "
             f"| tham số={n_param / 1e6:.2f}M"
@@ -574,13 +521,10 @@ def run_grkt_experiment(
     train_items = split_sets["train"]["items"]
     val_items = split_sets["val"]["items"]
     test_items = split_sets["test"]["items"]
-    # Seed 42 giữ tên cũ (GRKT-<graph>.pt) để không phá sản phẩm đã có; seed khác mang hậu tố
-    # riêng, nếu không vòng đa seed sẽ ghi đè checkpoint của lần chạy chính và resume sai seed.
-    name = (
-        f"GRKT-{graph_kind}"
-        if int(seed) == 42
-        else f"GRKT-{graph_kind}-seed{int(seed)}"
-    )
+    # ``name`` là NHÃN trong bảng (giữ như cũ: seed 42 không hậu tố). Tên FILE checkpoint luôn
+    # mang seed (``GRKT-<graph>-seed<s>.pt``), bên đọc vẫn tìm được tên cũ ``GRKT-<graph>.pt``.
+    base_name = grkt_checkpoint_name(graph_kind)
+    name = base_name if int(seed) == 42 else f"{base_name}-seed{int(seed)}"
 
     # Vân tay dữ liệu/cấu hình: load_state_dict chỉ bắt khác kiến trúc, KHÔNG bắt khác split,
     # đồ thị hay batch_size — trong khi resume sai split sẽ cho kết quả không tái lập được.
@@ -605,8 +549,15 @@ def run_grkt_experiment(
         "edges_rel": int(np.asarray(rel).sum()),
         "edges_pre": int(np.asarray(pre).sum()),
     }
+    # Checkpoint GRKT train trên dữ liệu trước bản sửa không có khoá này -> bị từ chối.
+    fingerprint["data_version"] = getattr(grkt_data, "data_version", None)
     rolling_ckpt = (
-        (Path(save_dir) / f"ckpt_{name}.pt") if save_dir is not None else None
+        (
+            find_checkpoint(save_dir, base_name, seed, prefix="ckpt_")
+            or checkpoint_path(save_dir, base_name, seed, prefix="ckpt_")
+        )
+        if save_dir is not None
+        else None
     )
 
     loaded_from = None
@@ -621,11 +572,9 @@ def run_grkt_experiment(
         except Exception as exc:  # noqa: BLE001 - checkpoint ghi dở lúc bị kill
             # ``GRKT-<graph>.pt`` được ghi nguyên tử nên trường hợp này chỉ xảy ra với file do
             # bản cũ sinh ra; còn ``ckpt_GRKT-<graph>.pt`` thì vẫn resume tiếp được.
-            fallback = (
-                (Path(save_dir) / f"ckpt_{name}.pt") if save_dir is not None else None
-            )
+            fallback = rolling_ckpt
             if fallback is not None and fallback.exists():
-                print(
+                log.warning(
                     f"  [resume] {loaded_from} hỏng ({type(exc).__name__}: {exc}) -> "
                     f"dùng {fallback.name}"
                 )
@@ -642,7 +591,7 @@ def run_grkt_experiment(
         if fmt == RESUME_FORMAT:
             resume_state = payload
             if verbose:
-                print(
+                log.info(
                     f"  [resume] {loaded_from}: tiếp tục từ epoch {payload.get('epoch')}, "
                     f"batch {payload.get('batch_pos')} | best val AUC="
                     f"{float(payload.get('best_auc', -1.0)):.4f}"
@@ -650,14 +599,16 @@ def run_grkt_experiment(
         elif fmt == FINAL_FORMAT:
             # Không có bước này thì đổi split/đồ thị giữa hai phiên vẫn nạp được trọng số
             # (cùng shape) và bảng so sánh trộn hai lần chạy mà không báo lỗi.
-            _check_fingerprint(payload.get("fingerprint"), fingerprint)
+            check_fingerprint(
+                payload.get("fingerprint"), fingerprint, _grkt_fingerprint_hint()
+            )
             model.load_state_dict(payload["state_dict"])
             skipped_training = True
         elif isinstance(payload, dict) and any(
             torch.is_tensor(v) for v in payload.values()
         ):
             # Checkpoint đời cũ: chỉ có trọng số nên KHÔNG kiểm chứng được split/cấu hình.
-            print(
+            log.warning(
                 f"  [cảnh báo] {loaded_from} chỉ chứa trọng số (không có fingerprint): "
                 "không kiểm chứng được nó train trên cùng split. Chỉ nạp khi chắc chắn."
             )
@@ -678,14 +629,14 @@ def run_grkt_experiment(
                 "seconds": 0.0,
             }
             if verbose:
-                print(
+                log.info(
                     f"  [resume] nạp {loaded_from}, BỎ QUA HUẤN LUYỆN "
                     f"(val AUC={val_metrics['auc']:.4f}). Đánh giá lại nên số lệch nhẹ so với "
                     "phiên trước là do ``gumbel_softmax`` ở eval, không phải trọng số khác."
                 )
     if not skipped_training:
         if resume_ckpt is not None and resume_state is None and verbose:
-            print(f"  [resume] không có {resume_ckpt} -> huấn luyện bình thường")
+            log.info(f"  [resume] không có {resume_ckpt} -> huấn luyện bình thường")
         out = train_grkt(
             model,
             train_items,
@@ -717,6 +668,7 @@ def run_grkt_experiment(
         "test_n": test_metrics["n"],
         "history": out["history"],
         "train_seconds": out["seconds"],
+        "n_params": int(sum(p.numel() for p in model.parameters() if p.requires_grad)),
         "seed": seed,
         "edges_rel": int(rel.sum()) if hasattr(rel, "sum") else 0,
         "edges_pre": int(pre.sum()) if hasattr(pre, "sum") else 0,
@@ -729,13 +681,13 @@ def run_grkt_experiment(
     if save_dir is not None:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
-        ckpt = save_dir / f"{result['name']}.pt"
+        ckpt = checkpoint_path(save_dir, base_name, seed)
         # Nguyên tử + kèm fingerprint: phiên sau nạp file này để BỎ QUA train, nên nó phải tự
         # chứng minh được là được train trên đúng split/cấu hình đang dùng.
-        _atomic_torch_save(
+        atomic_save(
             {
                 "format": FINAL_FORMAT,
-                "state_dict": _cpu_state_dict(model.state_dict()),
+                "state_dict": cpu_state_dict(model),
                 "fingerprint": fingerprint,
                 "best_val_auc": float(out["best_val_auc"]),
                 "epochs": int(epochs),
@@ -743,13 +695,21 @@ def run_grkt_experiment(
             },
             ckpt,
         )
+        record_checkpoint(
+            ckpt,
+            name=name,
+            seed=int(seed),
+            fingerprint=fingerprint,
+            best_val_auc=float(out["best_val_auc"]),
+            epochs=int(epochs),
+        )
         result["ckpt"] = str(ckpt)
         if rolling_ckpt is not None and rolling_ckpt.exists():
             # Đã có checkpoint cuối: giữ bản giữa epoch chỉ làm zip resume nặng thêm và dễ
             # khiến người đọc tưởng lần chạy còn dở.
             rolling_ckpt.unlink()
     result["model"] = model.cpu()
-    print(
+    log.info(
         f">>> {result['name']} test AUC={result['test_auc']:.4f} "
         f"Acc={result['test_acc']:.4f} Loss={result['test_loss']:.4f}"
     )

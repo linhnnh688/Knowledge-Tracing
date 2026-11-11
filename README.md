@@ -49,6 +49,8 @@ flowchart TD
 | [`GRKT/`](file:///root/Knowledge-Tracing/GRKT) | Mã nguồn upstream GRKT (Cui et al., KDD 2024 - đã patched & package-hóa): `model/GRKT.py`, `BaseModel.py`. | [docs/02_grkt_module.md](file:///root/Knowledge-Tracing/docs/02_grkt_module.md) |
 | [`level1/`](file:///root/Knowledge-Tracing/level1) | Gói điều phối Cấp độ 1: nạp dữ liệu, chống rò rỉ, huấn luyện DKT/GKT, xAI phản chứng (`explain.py`), dashboard (`dashboard.py`). | [docs/03_level1_module.md](file:///root/Knowledge-Tracing/docs/03_level1_module.md) |
 | [`level2/`](file:///root/Knowledge-Tracing/level2) | Gói điều phối Cấp độ 2: Hợp đồng 8 cột CSV, chuẩn hóa Junyi streaming, đếm $rel/pre$ train-only, `grkt_api`, quỹ đạo mastery (`trajectory.py`), calibration (`calibration.py`), nén định kỳ (`archive.py`). | [docs/04_level2_module.md](file:///root/Knowledge-Tracing/docs/04_level2_module.md) |
+| `kt_common/` | Tiện ích dùng chung hai cấp: tiền xử lý CSV một nguồn (`interactions.py`), checkpoint/fingerprint/tên file (`checkpoint.py`), metric AUC/ACC (`metrics.py`), seed, logger. | [docs/tasks/improve_checklist.md](docs/tasks/improve_checklist.md) |
+| `tests/` | Test chống rò rỉ (split theo người học, đồ thị chỉ từ train, dự đoán nhân quả), quy ước checkpoint, smoke đầu-cuối Level 1/2. | — |
 | [`kaggle_level1_full.ipynb`](file:///root/Knowledge-Tracing/kaggle_level1_full.ipynb) | Notebook 39 cells chạy Cấp độ 1 trên Kaggle GPU: 7 mô hình × 5 seed, kiểm định paired t-test, ablation suy luận, 10 case study có bằng chứng. | [docs/05_kaggle_level1_notebook.md](file:///root/Knowledge-Tracing/docs/05_kaggle_level1_notebook.md) |
 | [`kaggle_level2_full.ipynb`](file:///root/Knowledge-Tracing/kaggle_level2_full.ipynb) | Notebook 37 cells chạy Cấp độ 2 trên Kaggle GPU: ASSIST09 + Junyi tập con 3.000 learners, quỹ đạo mastery, calibration, dashboard Cấp 2, đóng gói tự động. | [docs/06_kaggle_level2_notebook.md](file:///root/Knowledge-Tracing/docs/06_kaggle_level2_notebook.md) |
 | [`results/level1_out/`](file:///root/Knowledge-Tracing/results/level1_out) | Artifact thực nghiệm đầy đủ của Cấp độ 1 (7 mô hình × 5 seed, metrics, paired tests, ablation, calibration, figures). | [GAP_LEVEL1.md](file:///root/Knowledge-Tracing/GAP_LEVEL1.md) |
@@ -316,15 +318,32 @@ Repo thiết lập 5 tầng bảo vệ chống rò rỉ dữ liệu khoa học n
 ### 6.1 Chạy Local bằng Python CLI
 
 ```bash
-# 1. Cài đặt môi trường
-pip install -r requirements.txt
+# 1. Cài đặt môi trường (chạy mọi lệnh từ THƯ MỤC GỐC repo)
+pip install -e ".[dev]"            # hoặc: pip install -r requirements.txt
+# Tái lập đúng phiên bản của lần chạy báo cáo: pip install -r requirements-lock.txt
 
-# 2. Chạy smoke test Cấp độ 1 (kiểm tra nhanh pipeline trên 15 học sinh)
-python -c "from level1.pipeline import run_level1; run_level1(data_file='assistment_test15.csv', epochs=2)"
+# 2. Bộ test chống rò rỉ + smoke (CPU, ~20 giây)
+python -m pytest
 
-# 3. Chạy smoke test Cấp độ 2 (kiểm tra pipeline GRKT trên 15 học sinh)
+# 3. Smoke test Cấp độ 1 (15 học sinh) — CLI
+python -m level1 --quick --graph-types Transition Zero
+
+# 4. Smoke test Cấp độ 2 (kiểm tra pipeline GRKT trên 15 học sinh)
 python -c "from level2.experiment import run_level2; run_level2(datasets=['assist2009_smoke'], epochs=2)"
+
+# 5. Lint
+ruff check .
 ```
+
+Tiền xử lý (`kt_common/interactions.py`, `DATA_VERSION = "dedup-sorted-v1"`): chuỗi mỗi người học
+được sắp theo `order_id` và các dòng trùng một lượt của ASSIST09 được gộp (bỏ rò nhãn — xem
+`docs/tasks/improve_checklist.md` §0). **Số liệu trong `results/` và `archive/` được tính TRƯỚC bản
+sửa này** nên không so trực tiếp với lần chạy mới; checkpoint cũ (không có `data_version`) bị từ chối.
+
+Quy ước checkpoint: mọi file mới mang seed trong tên (`DKT-seed42.pt`, `GRKT-train-seed42.pt`)
+kèm `checkpoints_manifest.json`; tên cũ không hậu tố (`DKT.pt`) vẫn được đọc như seed 42
+(`kt_common.checkpoint.find_checkpoint`). `GKT/` là package (import tương đối): dùng
+`from GKT.metrics import KTLoss`, không chèn `GKT/` vào `sys.path`.
 
 ### 6.2 Chạy Thực nghiệm Đầy đủ trên Kaggle GPU
 
