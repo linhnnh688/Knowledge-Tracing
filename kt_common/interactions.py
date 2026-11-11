@@ -9,12 +9,14 @@ Các bước:
 2. **sắp chuỗi từng người học theo ``order_id``** (ổn định), giữ thứ tự người học theo lần xuất
    hiện đầu tiên — file ASSISTments 2009 gốc KHÔNG theo thời gian (~27 nghìn lần ``order_id``
    đi lùi), trong khi mô hình chỉ được dùng tương tác TRƯỚC thời điểm dự đoán (checklist 0.2);
-3. **gộp dòng trùng ``(user_id, order_id)``**, giữ dòng đầu: file gốc nhân bản MỘT lượt trả lời
+3. **gộp dòng trùng ``(user_id, order_id)``**, giữ dòng có ``skill_id`` NHỎ NHẤT (tất định, không
+   phụ thuộc thứ tự file; trùng quy ước với ``prepare_interactions`` của nhánh
+   ``fix/assist2009-leak-batchnorm``): file gốc nhân bản MỘT lượt trả lời
    thành nhiều dòng khi câu hỏi gắn nhiều kỹ năng (~34% số dòng); hai dòng liền nhau mang CÙNG
    nhãn nên mô hình "đoán" bước t+1 sau khi đã thấy chính nhãn đó — rò nhãn (Xiong et al., EDM
-   2016; pyKT, NeurIPS 2022; checklist 0.1). Mô hình ở đây nhận một khái niệm mỗi bước nên giữ
-   kỹ năng đầu tiên theo thứ tự file; khái niệm chỉ xuất hiện ở vị trí thứ hai bị mất (ASSIST09:
-   123 → 112). Q-matrix đa khái niệm cần sửa mô hình;
+   2016; pyKT, NeurIPS 2022; checklist 0.1). Mô hình ở đây nhận một khái niệm mỗi bước nên
+   khái niệm không bao giờ là ``skill_id`` nhỏ nhất của lượt nào thì bị mất. Q-matrix đa khái
+   niệm cần sửa mô hình;
 4. bỏ người học có ít hơn ``min_seq_len`` lượt (đếm SAU khi gộp);
 5. ``skill`` = ``pd.factorize(skill_id, sort=True)`` (0-based).
 
@@ -37,7 +39,7 @@ REQUIRED_COLUMNS = ("skill_id", "correct", "user_id")
 #: Phiên bản quy trình tiền xử lý. Ghi vào fingerprint/manifest của mọi checkpoint mới: checkpoint
 #: không mang đúng giá trị này (vd train trên dữ liệu trùng/sai thứ tự trước bản sửa) bị từ chối
 #: thay vì nạp âm thầm — cùng shape nên ``load_state_dict`` không bắt được.
-DATA_VERSION = "dedup-sorted-v1"
+DATA_VERSION = "order-dedup-v1"
 
 
 def _sort_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
@@ -45,7 +47,7 @@ def _sort_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
         return df
     # Thứ hạng người học theo lần xuất hiện đầu tiên -> giữ thứ tự người học như file.
     user_rank = pd.Series(pd.factorize(df["user_id"])[0], index=df.index)
-    df = df.assign(_u=user_rank).sort_values(["_u", "order_id"], kind="mergesort")
+    df = df.assign(_u=user_rank).sort_values(["_u", "order_id", "skill_id"], kind="mergesort")
     df = df.drop_duplicates(subset=["user_id", "order_id"], keep="first")
     return df.drop(columns="_u")
 
@@ -80,6 +82,46 @@ def skill_lookup(df: pd.DataFrame) -> dict:
         return {}
     first = df[["skill", "skill_name"]].drop_duplicates("skill")
     return {int(k): str(v) for k, v in zip(first["skill"], first["skill_name"])}
+
+
+def sequence_order_check(order_ids) -> dict:
+    """Đếm triệu chứng rò rỉ trên ĐÚNG chuỗi đưa vào mô hình (danh sách ``order_id`` mỗi người học).
+
+    ``non_increasing``: bước có ``order_id`` không lớn hơn bước trước (tương lai nằm trong lịch
+    sử); ``duplicate_attempts``: bước trùng ``order_id`` với bước trước (cùng một lượt). Cả hai
+    phải bằng 0. ``checked=False`` khi file không có ``order_id`` (không kiểm được).
+    """
+    out = {"users": len(order_ids), "targets": 0, "non_increasing": 0, "duplicate_attempts": 0}
+    for seq in order_ids:
+        for prev, cur in zip(seq[:-1], seq[1:]):
+            out["targets"] += 1
+            out["non_increasing"] += int(cur <= prev)
+            out["duplicate_attempts"] += int(cur == prev)
+    out["checked"] = any(len(s) for s in order_ids)
+    return out
+
+
+def order_report_lines(dataset) -> list:
+    """Dòng leak report về thứ tự thời gian + lượt trùng (dùng chung Level 1 và Level 2)."""
+    st = dict(getattr(dataset, "data_stats", {}) or {})
+    chk = sequence_order_check(getattr(dataset, "order_ids", []) or [])
+    lines = [
+        f"Tiền xử lý ({st.get('data_version', DATA_VERSION)}): {st.get('users')} người học, "
+        f"{st.get('interactions')} lượt, {st.get('concepts')} khái niệm"
+    ]
+    if chk["checked"]:
+        lines.append(
+            f"Thứ tự trong chuỗi: {chk['targets']} bước dự đoán, order_id không tăng="
+            f"{chk['non_increasing']}, lượt trùng={chk['duplicate_attempts']} (phải = 0)"
+        )
+    else:
+        lines.append("Thứ tự trong chuỗi: file không có order_id -> giữ thứ tự file (không kiểm được)")
+    if st.get("max_seq_len"):
+        lines.append(
+            f"Cắt chuỗi max_seq_len={st['max_seq_len']}: bỏ {st.get('truncated_rows')} lượt "
+            f"({100 * st.get('truncated_frac', 0):.1f}%) của {st.get('users_truncated')} người học"
+        )
+    return lines
 
 
 def interaction_stats(df: pd.DataFrame, max_seq_len=None) -> dict:

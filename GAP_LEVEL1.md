@@ -619,6 +619,20 @@ DKT thắng mọi biến thể GKT từ **+0,0194 đến +0,0286 AUC**.
 
 ---
 
+## 6.6 Cập nhật 2026-11-12 — nhánh `features/clean-dry-enhancement`
+
+Các phát hiện ở §6.4 được xử lý trong code (chưa có số liệu mới: phải train lại trên Kaggle).
+
+| Mục | Xử lý | Kiểm chứng (CPU, không train) |
+|---|---|---|
+| Rò nhãn do dòng trùng + sai thứ tự (không có trong §6.4) | `kt_common/interactions.py`: sắp theo `order_id`, gộp lượt trùng (giữ `skill_id` nhỏ nhất), `DATA_VERSION="order-dedup-v1"`; dữ liệu **trùng khít** `prepare_interactions` của nhánh `fix/assist2009-leak-batchnorm` | `tests/test_leakage.py`; ASSIST09 282.619 lượt, 0 lượt trùng, 0 lần đi lùi |
+| 6.4.3 case không tái lập | cherry-pick `09d9431` (BatchNorm luôn chạy ở eval) — nguyên nhân gốc; notebook: occlusion so với `p` của chính lượt chạy một hàng, ghi `p_recheck_gap` | `tests/test_batch_invariance.py`: không có bản sửa -> `re-run p=0.4221 != logged p=0.3979`; có bản sửa -> mọi case `ok` |
+| 6.4.5 MHA lệch checkpoint | chưa xác định nguyên nhân bằng đọc code; notebook nạp lại checkpoint ngay sau khi lưu, ghi `reload_test_auc` và cảnh báo nếu lệch | lộ ra ở lần train tới |
+| 6.4.4 hai định nghĩa NLL | chưa đổi (đổi số); ghi chú khi trích số | — |
+| 6.4.6 Identity ≡ Zero | chưa đổi; giữ như kiểm chứng cài đặt | — |
+
+Mọi số trong §6.1–§6.5 là số TRƯỚC các bản sửa này. Checkpoint/zip cũ bị chặn (`data_version`).
+
 ## 7. Cẩm nang Học tập Chuyên sâu Cấp độ 1 (Deep-dive Learning Guide)
 
 Mục này được thiết kế như một **giáo trình học tập chi tiết** giúp bạn hiểu thấu đáo kiến trúc toán học, mã nguồn, bản chất thực nghiệm và các bài học cốt tử của bài toán Knowledge Tracing trên đồ thị ở Cấp độ 1.

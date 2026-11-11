@@ -100,6 +100,8 @@ def load_dataset(
     answer_list = []
     seq_len_list = []
     user_id_list = []
+    order_id_list = []
+    has_order = "order_id" in df.columns
 
     for user_id, series in iter_users(df):
         take = truncate_len(len(series), max_seq_len)
@@ -108,6 +110,7 @@ def load_dataset(
         answer_list.append(series["correct"].eq(1).astype("int").tolist()[:take])
         seq_len_list.append(take)
         user_id_list.append(as_id(user_id))
+        order_id_list.append(series["order_id"].tolist()[:take] if has_order else [])
     print("max seq_len: ", int(np.max(seq_len_list)))
     student_num = len(seq_len_list)
     print("student num: ", student_num)
@@ -124,6 +127,8 @@ def load_dataset(
     kt_dataset.user_ids = user_id_list
     kt_dataset.skill_lookup = skill_lookup(df)
     kt_dataset.data_version = DATA_VERSION
+    # order_id của ĐÚNG các bước đưa vào mô hình -> kiểm thứ tự/lượt trùng trên dữ liệu thật.
+    kt_dataset.order_ids = order_id_list
     kt_dataset.data_stats = interaction_stats(df, max_seq_len)
     train_size = int(train_ratio * student_num)
     val_size = int(val_ratio * student_num)

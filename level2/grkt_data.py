@@ -21,7 +21,13 @@ import numpy as np
 import pandas as pd
 
 from kt_common.ids import as_id as _as_id
-from kt_common.interactions import DATA_VERSION, iter_users, load_interactions, truncate_len
+from kt_common.interactions import (
+    DATA_VERSION,
+    iter_users,
+    load_interactions,
+    order_report_lines,
+    truncate_len,
+)
 
 from kt_common.log import get_logger
 
@@ -584,4 +590,6 @@ def leak_report(
     lines.append(
         "Padding                 : chỉ số 0 (khái niệm & câu hỏi); hàng/cột 0 của đồ thị luôn = 0."
     )
+    # Đếm trên chuỗi Cấp độ 1 (_assert_align đã chứng minh chuỗi GRKT trùng từng phần tử).
+    lines.extend(order_report_lines(bundle["train_loader"].dataset.dataset))
     return "\n".join(lines)

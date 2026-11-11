@@ -30,6 +30,11 @@ trọng số), 10 case xAI, dashboard, toàn bộ `run_dataset` Level 2 (GRKT tr
 liệu và tên file checkpoint (thêm `-seed42`). Code gốc chạy hai lần cũng khớp từng bit, nên phép
 so sánh có ý nghĩa.
 
+**Cập nhật 2026-11-12 — đối chiếu `GAP_LEVEL1.md` §6.4:** cherry-pick `09d9431` (BatchNorm eval —
+nguyên nhân 10/10 case xAI không tái lập), sửa occlusion trong notebook, thêm kiểm tra nạp lại
+checkpoint (GAP 6.4.5), tiền xử lý trùng khít nhánh `fix/assist2009-leak-batchnorm`. Chi tiết:
+`GAP_LEVEL1.md` §6.6.
+
 **Phát hiện mới trong lúc làm** (chưa sửa, cần quyết định):
 
 - **2.10** 🟠 Fingerprint baseline chứa `data_path` **tuyệt đối** (`level2/baselines.baseline_fingerprint`),
