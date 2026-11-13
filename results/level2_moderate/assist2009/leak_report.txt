@@ -1,12 +1,16 @@
 === BÁO CÁO CHỐNG RÒ RÌ (Cấp độ 2 / GRKT) ===
 File chuẩn hoá          : assist2009 | time_mode=duration_ms
-Người học train/val/test: 2330/776/778 (split seed=42, tỉ lệ 0.6/0.2)
+Người học train/val/test: 2311/770/771 (split seed=42, tỉ lệ 0.6/0.2)
 Giám sát giao nhau      : train∩val=0 train∩test=0 val∩test=0 (phải = 0)
-Số tương tác            : {'train': 142299, 'val': 47508, 'test': 48136}
-Không gian khái niệm    : n_knows=123 (Cấp độ 1 + 1 cho padding), n_probs=17737
-Số cạnh đồ thị từ train : 14024
-Số cạnh nếu dựng từ val : 11081 (khác train => đồ thị phụ thuộc tập huấn luyện)
-  biến thể train    : rel=  2720 pre=  2642
+Số tương tác            : {'train': 116964, 'val': 41224, 'test': 40156}
+Không gian khái niệm    : n_knows=112 (Cấp độ 1 + 1 cho padding), n_probs=17737
+Số cạnh đồ thị từ train : 14013
+Số cạnh nếu dựng từ val : 11415 (khác train => đồ thị phụ thuộc tập huấn luyện)
+  biến thể train    : rel=  3246 pre=  2609
   biến thể zero     : rel=     0 pre=     0
+Làm sạch log           : 525534 dòng -> 282619 dòng, 3852 người học
+  sắp lại theo order_id: 2893 người học có thứ tự file khác thời gian
+  gộp lượt trùng       : bỏ 176103 dòng trùng (user_id, order_id): dòng lặp y hệt + kỹ năng phụ của câu nhiều kỹ năng, giữ skill_id nhỏ nhất
+Thứ tự trong chuỗi     : 194492 bước dự đoán, order_id không tăng=0, lượt trùng=0 (phải = 0)
 Nhãn hiện tại/tương lai : không dùng. GRKT chỉ dùng knows[i+1] và times[i+1] (danh tính + thời điểm câu hỏi kế tiếp, KHÔNG dùng kết quả) cho giai đoạn học/quên.
 Padding                 : chỉ số 0 (khái niệm & câu hỏi); hàng/cột 0 của đồ thị luôn = 0.

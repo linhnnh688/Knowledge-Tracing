@@ -7,5 +7,9 @@ Không gian khái niệm    : n_knows=200 (Cấp độ 1 + 1 cho padding), n_pro
 Số cạnh đồ thị từ train : 52391
 Số cạnh nếu dựng từ val : 36557 (khác train => đồ thị phụ thuộc tập huấn luyện)
   biến thể train    : rel= 17866 pre= 10173
+Làm sạch log           : 340601 dòng -> 340601 dòng, 3000 người học
+  sắp lại theo order_id: 0 người học có thứ tự file khác thời gian
+  gộp lượt trùng       : bỏ 0 dòng trùng (user_id, order_id): dòng lặp y hệt + kỹ năng phụ của câu nhiều kỹ năng, giữ skill_id nhỏ nhất
+Thứ tự trong chuỗi     : 248598 bước dự đoán, order_id không tăng=0, lượt trùng=0 (phải = 0)
 Nhãn hiện tại/tương lai : không dùng. GRKT chỉ dùng knows[i+1] và times[i+1] (danh tính + thời điểm câu hỏi kế tiếp, KHÔNG dùng kết quả) cho giai đoạn học/quên.
 Padding                 : chỉ số 0 (khái niệm & câu hỏi); hàng/cột 0 của đồ thị luôn = 0.

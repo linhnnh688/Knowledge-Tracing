@@ -9,5 +9,5 @@ matplotlib: 3.10.0
 device: cuda
 gpu: Tesla T4
 cpu_count: 4
-git_commit: 154d4e4 feat: add PeriodicPackager background thread for atomic periodic output archiving in notebook and experiment modules
-notebook: 2026-11-07a (đóng gói định kỳ + zip tự chứa cho EVAL_ONLY)
+git_commit: fc1882d fix: download Git LFS data files on Kaggle in both levels
+notebook: 2026-11-09 (order-dedup + bn-eval; đóng gói định kỳ)

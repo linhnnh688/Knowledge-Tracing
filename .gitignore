@@ -221,3 +221,6 @@ __marimo__/
 # outputs/
 # outputs/level2/
 GKT/data/assistments_2009_2010.csv
+
+# Local IDE / agent settings
+.qoder/

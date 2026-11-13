@@ -88,11 +88,9 @@ def load_dataset(
     # if not (df['correct'].isin([0, 1])).all():
     #     raise KeyError(f"The values of the column 'correct' must be 0 or 1.")
 
-    # Step 1.1 - Remove questions without skill
-    df.dropna(subset=["skill_id"], inplace=True)
-
-    # Step 1.2 - Remove users with too few answers
-    df = df.groupby("user_id").filter(lambda q: len(q) >= min_seq_len).copy()
+    # Step 1 - Drop rows without skill, restore chronological order, merge multi-skill
+    # duplicates and remove users with too few answers (see prepare_interactions)
+    df, prep_stats = prepare_interactions(df, min_seq_len=min_seq_len)
 
     # Step 2 - Enumerate skill id
     df["skill"], _ = pd.factorize(
@@ -113,18 +111,23 @@ def load_dataset(
     seq_len_list = []
     user_id_list = []
     skill_name_list = []
+    order_id_list = []
+    has_order = "order_id" in df.columns
 
     def get_data(user_id, series):
         feats = series["skill_with_answer"].tolist()
         qs = series["skill"].tolist()
         ans = series["correct"].eq(1).astype("int").tolist()
+        orders = series["order_id"].tolist() if has_order else []
         if max_seq_len and len(feats) > max_seq_len:
             feats = feats[:max_seq_len]
             qs = qs[:max_seq_len]
             ans = ans[:max_seq_len]
+            orders = orders[:max_seq_len]
         feature_list.append(feats)
         question_list.append(qs)
         answer_list.append(ans)
+        order_id_list.append(orders)
         seq_len_list.append(len(ans))
         try:
             user_id_list.append(int(user_id))
@@ -150,6 +153,8 @@ def load_dataset(
     kt_dataset = KTDataset(feature_list, question_list, answer_list)
     kt_dataset.user_ids = user_id_list
     kt_dataset.skill_lookup = _skill_lookup(df)
+    kt_dataset.order_ids = order_id_list
+    kt_dataset.prep_stats = prep_stats
     train_size = int(train_ratio * student_num)
     val_size = int(val_ratio * student_num)
     test_size = student_num - train_size - val_size
@@ -201,6 +206,72 @@ def load_dataset(
         if use_cuda and graph_type in static_types and graph is not None:
             graph = graph.cuda()
     return concept_num, graph, train_data_loader, valid_data_loader, test_data_loader
+
+
+# Bump whenever prepare_interactions changes the sequences: notebooks lock it in run_config /
+# resume fingerprints so checkpoints trained on an older preprocessing are never reused.
+PREP_VERSION = "order-dedup-v1"
+
+
+def prepare_interactions(df, min_seq_len=3, verbose=True):
+    r"""Turn a raw log into one chronological row per attempt per learner.
+
+    ASSISTments 2009 (skill_builder_data.csv) has two traps that leak labels:
+      * the file is grouped by skill, not by time, so ``groupby('user_id')`` in file order
+        puts later attempts into the history of earlier ones;
+      * a problem tagged with k skills is stored as k rows sharing one ``order_id`` (same
+        attempt, same label), so the next-step target is often a copy of the previous step.
+    When ``order_id`` exists, rows are sorted by it inside each learner (learners keep their
+    first-appearance order) and only one row per ``(user_id, order_id)`` is kept: the one with
+    the smallest ``skill_id``. Logs without ``order_id`` are left in file order.
+    Shared by Level 1 (``load_dataset``) and Level 2 (``level2.grkt_data.build_grkt_data``).
+    """
+    stats = {"rows_raw": int(len(df))}
+    df = df.dropna(subset=["skill_id"])
+    stats["rows_with_skill"] = int(len(df))
+    stats["has_order_id"] = "order_id" in df.columns
+    stats["users_out_of_order"] = 0
+    stats["duplicate_rows_removed"] = 0
+    if stats["has_order_id"]:
+        backwards = df.groupby("user_id", sort=False)["order_id"].diff() < 0
+        stats["users_out_of_order"] = int(backwards.groupby(df["user_id"]).any().sum())
+        user_rank, _ = pd.factorize(df["user_id"])
+        df = (
+            df.assign(_user_rank=user_rank)
+            .sort_values(["_user_rank", "order_id", "skill_id"], kind="mergesort")
+            .drop(columns="_user_rank")
+        )
+        dup = df.duplicated(subset=["user_id", "order_id"], keep="first")
+        stats["duplicate_rows_removed"] = int(dup.sum())
+        df = df[~dup]
+    df = df.groupby("user_id", sort=False).filter(lambda q: len(q) >= min_seq_len).copy()
+    stats["rows_kept"] = int(len(df))
+    stats["users_kept"] = int(df["user_id"].nunique())
+    if verbose:
+        print(
+            "prepare_interactions: rows {rows_raw} -> {rows_kept}, users kept {users_kept}, "
+            "re-sorted users {users_out_of_order}, rows sharing (user_id, order_id) removed "
+            "{duplicate_rows_removed} (exact duplicates + extra skills of multi-skill items)".format(**stats)
+        )
+    return df, stats
+
+
+def sequence_order_check(dataset):
+    r"""Count leakage symptoms in the sequences actually fed to the models.
+
+    ``dataset`` is the ``KTDataset`` returned inside the loaders (``loader.dataset.dataset``).
+    Both counters must be 0: a step whose ``order_id`` is not larger than every earlier step
+    means future attempts sit in the history; an equal ``order_id`` means a duplicated attempt.
+    """
+    orders = getattr(dataset, "order_ids", None) or []
+    out = {"users": len(orders), "targets": 0, "non_increasing": 0, "duplicate_attempts": 0}
+    for seq in orders:
+        for prev, cur in zip(seq[:-1], seq[1:]):
+            out["targets"] += 1
+            out["non_increasing"] += int(cur <= prev)
+            out["duplicate_attempts"] += int(cur == prev)
+    out["checked"] = bool(orders) and any(len(s) for s in orders)
+    return out
 
 
 def _skill_lookup(df):

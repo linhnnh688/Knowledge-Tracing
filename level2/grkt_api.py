@@ -253,6 +253,14 @@ def _check_fingerprint(previous: Optional[dict], current: dict) -> None:
     if not previous:
         return
     diff = {k: (previous.get(k), v) for k, v in current.items() if previous.get(k) != v}
+    if "prep_version" in diff and "prep_version" not in previous:
+        # Checkpoint ghi trước khi fingerprint có prep_version: không bác bỏ được, chỉ cảnh báo
+        # (các khoá còn lại như n_knows/n_steps_train vẫn bắt được hầu hết đổi tiền xử lý).
+        diff.pop("prep_version")
+        print(
+            "  [cảnh báo] checkpoint không ghi prep_version — không xác minh được nó train trên "
+            f"tiền xử lý hiện tại ({current.get('prep_version')})."
+        )
     if diff:
         detail = ", ".join(f"{k}: {old} -> {new}" for k, (old, new) in diff.items())
         raise RuntimeError(
@@ -528,6 +536,7 @@ def run_grkt_experiment(
     deadline: Optional[float] = None,
     ckpt_every_min: float = 10.0,
     verbose: bool = True,
+    ckpt_name: Optional[str] = None,
 ) -> Dict[str, object]:
     """Huấn luyện một biến thể đồ thị của GRKT và trả về dict ĐỦ KHOÁ như ``level1.pipeline.run_experiment``.
 
@@ -574,9 +583,11 @@ def run_grkt_experiment(
     train_items = split_sets["train"]["items"]
     val_items = split_sets["val"]["items"]
     test_items = split_sets["test"]["items"]
-    # Seed 42 giữ tên cũ (GRKT-<graph>.pt) để không phá sản phẩm đã có; seed khác mang hậu tố
-    # riêng, nếu không vòng đa seed sẽ ghi đè checkpoint của lần chạy chính và resume sai seed.
-    name = (
+    # Tên checkpoint do bên gọi quyết định (experiment.py: seed == split_seed -> không hậu tố),
+    # để file ghi ra trùng đúng file mà bên gọi tìm khi resume. Mặc định giữ quy ước cũ: seed 42
+    # giữ tên GRKT-<graph>.pt, seed khác mang hậu tố riêng (không thì vòng đa seed ghi đè
+    # checkpoint của lần chạy chính và resume sai seed).
+    name = ckpt_name or (
         f"GRKT-{graph_kind}"
         if int(seed) == 42
         else f"GRKT-{graph_kind}-seed{int(seed)}"
@@ -604,6 +615,7 @@ def run_grkt_experiment(
         "lr": float(lr),
         "edges_rel": int(np.asarray(rel).sum()),
         "edges_pre": int(np.asarray(pre).sum()),
+        "prep_version": (getattr(grkt_data, "stats", None) or {}).get("prep_version"),
     }
     rolling_ckpt = (
         (Path(save_dir) / f"ckpt_{name}.pt") if save_dir is not None else None

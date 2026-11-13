@@ -8,5 +8,5 @@ scikit-learn: 1.6.1
 matplotlib: 3.10.0
 device: cuda
 gpu: Tesla T4
-git_commit: 639c908478ca78a4c558a0b6696e679c46637ebe
-notebook: 2026-11-08 level1-full+ablation-extend
+git_commit: 2908d1150991dce4fd39dc1a0626ee56dbd06ea4
+notebook: 2026-11-09 level1-full+order-dedup+bn-eval

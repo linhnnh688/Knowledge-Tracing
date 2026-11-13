@@ -34,8 +34,13 @@ class MLP(nn.Module):
                 m.bias.data.zero_()
 
     def batch_norm(self, inputs):
-        if inputs.numel() == self.output_dim or inputs.numel() == 0:
-            # batch_size == 1 or 0 will cause BatchNorm error, so return the input directly
+        if inputs.numel() == 0:
+            return inputs
+        if self.training and inputs.numel() == self.output_dim:
+            # BatchNorm cannot estimate batch statistics from a single row while training, so
+            # return the input directly. In eval mode it uses running statistics and must always
+            # be applied: skipping it there made a learner's prediction depend on how many other
+            # learners were still active at that step of the batch.
             return inputs
         if len(inputs.size()) == 3:
             x = inputs.view(inputs.size(0) * inputs.size(1), -1)

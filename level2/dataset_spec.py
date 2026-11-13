@@ -99,8 +99,10 @@ ASSIST2009 = DatasetSpec(
     min_interactions=3,
     note=(
         "ASSISTments 2009/2010 (skill_builder_data.csv, 525.534 dòng, 4.217 người học, "
-        "123 kỹ năng, 26.688 problem_id). Mỗi dòng đúng một skill_id — cùng tính chất với "
-        "Cấp độ 1, nên không explode Q-matrix. Lọc tối thiểu 3 tương tác/người như Cấp độ 1."
+        "123 kỹ năng, 26.688 problem_id). File xếp theo kỹ năng chứ không theo thời gian, và "
+        "câu nhiều kỹ năng bị tách thành nhiều dòng cùng order_id; GKT/processing."
+        "prepare_interactions sắp lại theo order_id và giữ một dòng mỗi lượt (skill_id nhỏ "
+        "nhất), dùng chung cho Cấp độ 1 và 2. Lọc tối thiểu 3 tương tác/người như Cấp độ 1."
     ),
 )
 
@@ -260,19 +262,19 @@ def register_spec(spec: DatasetSpec) -> None:
 
 def resolve_canonical_path(spec: DatasetSpec, search_dirs=None) -> Path:
     """Tìm file CSV chuẩn hoá: đường dẫn tuyệt đối -> thư mục Cấp độ 1 -> các thư mục tìm thêm."""
+    from level1.paths import materialize_lfs, repo_root
+
     path = Path(spec.canonical_file)
-    if path.is_absolute() and path.exists():
-        return path
     if path.exists():
-        return path
-    from level1.paths import repo_root
+        return materialize_lfs(path)
 
     candidates = [repo_root() / "GKT" / "data" / spec.canonical_file]
     for d in search_dirs or []:
         candidates.append(Path(d) / spec.canonical_file)
     for c in candidates:
         if c.exists():
-            return c
+            # CSV trong repo lưu bằng Git LFS: trên Kaggle (không có git-lfs) đây chỉ là con trỏ
+            return materialize_lfs(c)
     raise FileNotFoundError(
         f"Không tìm thấy CSV chuẩn hoá của '{spec.name}': {spec.canonical_file}. "
         f"Đã thử: {[str(c) for c in candidates]}"
@@ -844,7 +846,9 @@ def _check_canonical_meta(target: Path, requested: dict, verbose: bool = True) -
             )
         return
     try:
-        previous = json.loads(meta_path.read_text(encoding="utf-8"))
+        from level1.paths import read_json
+
+        previous = read_json(meta_path)
     except (OSError, json.JSONDecodeError):
         return
     diff = {

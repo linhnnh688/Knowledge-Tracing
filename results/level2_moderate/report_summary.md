@@ -1,8 +1,8 @@
 # Báo cáo Cấp độ 2 — GRKT (KDD 2024) và liên kết Cấp độ 1
 
-- Notebook: `2026-11-07a (đóng gói định kỳ + zip tự chứa cho EVAL_ONLY)`
-- Git commit: `154d4e4 feat: add PeriodicPackager background thread for atomic periodic output archiving in notebook and experiment modules`
-- Sinh lúc (UTC): 2026-11-07T16:07:07Z
+- Notebook: `2026-11-09 (order-dedup + bn-eval; đóng gói định kỳ)`
+- Git commit: `fc1882d fix: download Git LFS data files on Kaggle in both levels`
+- Sinh lúc (UTC): 2026-11-11T15:14:40Z
 - Thiết bị: `cuda`
 
 ## 0. Cấu hình đã khoá (run_config.json)
@@ -30,6 +30,7 @@
     "assist2009"
   ],
   "patience": 5,
+  "prep_version": "order-dedup-v1",
   "run_baselines": true,
   "run_calibration": true,
   "seeds": [
@@ -55,7 +56,7 @@
 
 | tập | người học | tương tác | khái niệm | train/val/test | cạnh rel/pre (train) |
 |---|---|---|---|---|---|
-| assist2009 | 3884.0 | 237943.0 |  | 2330/776/778 | 2720/2642 |
+| assist2009 | 3852.0 | 198344.0 |  | 2311/770/771 | 3246/2609 |
 | junyi | 3000.0 | 251598.0 |  | 1800/600/600 | 17866/10173 |
 
 > **Junyi là TẬP CON**: 3,000.0 / 72,630 người (4.1%), 251,598.0 / 16,217,311 lượt (1.6%). Không trích như 'toàn bộ Junyi'.
@@ -66,14 +67,14 @@
 
 | model | graph | auc | acc | loss | val_auc | n_test | seed | checkpoint_seed |
 |---|---|---|---|---|---|---|---|---|
-| GRKT-train | train | 0.7972 | 0.7399 | 0.5217 | 0.8035 | 47358 | 42 |  |
-| DKT |  | 0.7859 | 0.7357 | 0.5278 | 0.7926 | 47358 | 42 | 42.0 |
-| GRKT-zero | zero | 0.784 | 0.7317 | 0.5311 | 0.7924 | 47358 | 42 |  |
-| GKT-Zero | Zero | 0.7644 | 0.7199 | 0.5475 | 0.7758 | 47358 | 42 | 42.0 |
-| GKT-Transition | Transition | 0.7536 | 0.7091 | 0.5595 | 0.7626 | 47358 | 42 | 42.0 |
+| GRKT-train | train | 0.7691 | 0.7259 | 0.547 | 0.7584 | 39385 | 42 |  |
+| DKT |  | 0.7608 | 0.7237 | 0.5493 | 0.7532 | 39385 | 42 | 42.0 |
+| GRKT-zero | zero | 0.7538 | 0.7131 | 0.5625 | 0.7468 | 39385 | 42 |  |
+| GKT-Transition | Transition | 0.7325 | 0.7081 | 0.5721 | 0.7191 | 39385 | 42 | 42.0 |
+| GKT-Zero | Zero | 0.7233 | 0.7 | 0.5833 | 0.7181 | 39385 | 42 | 42.0 |
 
-- GRKT tốt nhất (`GRKT-train`) − baseline tốt nhất (`DKT`) = **+0.0113 AUC**.
-- ΔAUC(train − zero) = **+0.0132** (có lợi ích từ đồ thị).
+- GRKT tốt nhất (`GRKT-train`) − baseline tốt nhất (`DKT`) = **+0.0083 AUC**.
+- ΔAUC(train − zero) = **+0.0153** (có lợi ích từ đồ thị).
 
 ### junyi
 
@@ -94,18 +95,18 @@
 
 | graph | users | precedence | precedence_gap | stability_spearman | stability_changed_frac | forget_slope | pearson_dt_dm |
 |---|---|---|---|---|---|---|---|
-| train | 150 | 0.3418125544056485 | -0.1107746084273089 | 0.9711989827281317 | 0.4459078590785908 | -0.0004629093395165 | -0.6103817004512125 |
-| zero | 150 | 0.2014701615243253 | -0.0776421198699963 | 0.9936149352134392 | 0.008130081300813 | -0.0002380656562116 | -0.2289733702604383 |
+| train | 150 | 0.5098097502972652 | -0.0071608469892874 | 0.982812449115501 | 0.5272023809523809 | -0.000422374162078 | -0.3086845057340957 |
+| zero | 150 | 0.3535969084423305 | -0.0363963780418224 | 0.9926087286850748 | 0.0089285714285714 | -0.0004166143467372 | -0.5904860135159451 |
 
 **Kiểm chứng cài đặt (kỳ vọng = 1,0; KHÔNG phải bằng chứng):**
 
 | graph | consistency_strengthen | consistency_spread | locality |
 |---|---|---|---|
-| train | 1.0 | 1.0 | 1.0000000012624355 |
+| train | 1.0 | 1.0 | 0.9999999987612744 |
 | zero | 1.0 |  | 1.0 |
 
-- `precedence_gap` trung bình = **-0.0942** -> mastery khái niệm tiên quyết KHÔNG cao hơn — tiêu chí thứ tự chưa đạt; phải ghi đúng như vậy trong báo cáo, không suy diễn ngược.
-- `forget_slope` trung bình = **-3.505e-04** (âm = mastery giảm khi không luyện).
+- `precedence_gap` trung bình = **-0.0218** -> mastery khái niệm tiên quyết KHÔNG cao hơn — tiêu chí thứ tự chưa đạt; phải ghi đúng như vậy trong báo cáo, không suy diễn ngược.
+- `forget_slope` trung bình = **-4.195e-04** (âm = mastery giảm khi không luyện).
 
 ### junyi
 
@@ -113,7 +114,7 @@
 
 | graph | users | precedence | precedence_gap | stability_spearman | stability_changed_frac | forget_slope | pearson_dt_dm |
 |---|---|---|---|---|---|---|---|
-| train | 150 | 0.3650800463539208 | -0.1014209058011958 | 0.9861028345811428 | 0.5119666666666668 | 1.0079433011140092e-05 | -0.0002112530722936 |
+| train | 150 | 0.6851065472513898 | 0.0187043647139911 | 0.9861028345811428 | 0.5119666666666668 | 1.0079433011140092e-05 | -0.0002112530722936 |
 
 **Kiểm chứng cài đặt (kỳ vọng = 1,0; KHÔNG phải bằng chứng):**
 
@@ -121,7 +122,7 @@
 |---|---|---|---|
 | train | 1.0 | 1.0 | 1.0000000002684435 |
 
-- `precedence_gap` trung bình = **-0.1014** -> mastery khái niệm tiên quyết KHÔNG cao hơn — tiêu chí thứ tự chưa đạt; phải ghi đúng như vậy trong báo cáo, không suy diễn ngược.
+- `precedence_gap` trung bình = **+0.0187** -> mastery khái niệm tiên quyết cao hơn khái niệm phụ thuộc (đúng chiều).
 - `forget_slope` trung bình = **1.008e-05** (âm = mastery giảm khi không luyện).
 
 ## 4. Hiệu chỉnh xác suất
@@ -130,13 +131,13 @@
 
 | model | n | brier | ece | ace | mean_pred | observed_rate | over_prediction | graph |
 |---|---|---|---|---|---|---|---|---|
-| GKT-Transition | 47358 | 0.1893437170425469 | 0.0096924949486622 | 0.0198379730093662 | 0.6196052444359883 | 0.6262933400903754 | -0.0066880956543871 |  |
-| DKT | 47358 | 0.1768346525215318 | 0.0134278220413272 | 0.0179147140124384 | 0.6356979908988083 | 0.6262933400903754 | 0.0094046508084328 |  |
-| GKT-Zero | 47358 | 0.1847556527285321 | 0.0163140640029623 | 0.0184711314105118 | 0.6287431370801577 | 0.6262933400903754 | 0.0024497969897823 |  |
-| GRKT-zero | 47358 | 0.1788288616473821 | 0.0290956494223673 | 0.0313706764241773 | 0.6300819979092406 | 0.6262933400903754 | 0.0037886578188651 | zero |
-| GRKT-train | 47358 | 0.1743184730745666 | 0.0379275056173355 | 0.042842135128782 | 0.6238332634405898 | 0.6262933400903754 | -0.0024600766497856 | train |
+| DKT | 39385 | 0.18505384010133 | 0.0064902483729317 | 0.0099226082095602 | 0.6259017435869991 | 0.6255935000634759 | 0.0003082435235232 |  |
+| GRKT-train | 39385 | 0.1830727741162462 | 0.0117398284637094 | 0.019431204362873 | 0.6198644873177719 | 0.6255935000634759 | -0.005729012745704 | train |
+| GKT-Transition | 39385 | 0.1945733166565406 | 0.0132242346277761 | 0.0167639553472307 | 0.6353656093652507 | 0.6255935000634759 | 0.0097721093017747 |  |
+| GRKT-zero | 39385 | 0.189883733518714 | 0.0332175748935489 | 0.0410111067990395 | 0.6187230964510517 | 0.6255935000634759 | -0.0068704036124241 | zero |
+| GKT-Zero | 39385 | 0.1992653956698506 | 0.036631996013102 | 0.0345457217049666 | 0.6621453218469466 | 0.6255935000634759 | 0.0365518217834707 |  |
 
-- ECE thấp nhất: `GKT-Transition` = **0.0097**.
+- ECE thấp nhất: `DKT` = **0.0065**.
 
 ### junyi
 
@@ -155,30 +156,15 @@
 
 | model | auc_mean | auc_std | acc_mean | acc_std | loss_mean | loss_std | n_seed |
 |---|---|---|---|---|---|---|---|
-| GRKT-train | 0.7983377393155631 | 0.0009387878018991 | 0.742401846924842 | 0.0022609970181526 | 0.5170153776804606 | 0.0037454328032328 | 3 |
+| GRKT-train | 0.7693924690451363 | 0.0006394944146464 | 0.7257416105962508 | 0.0010083954810955 | 0.5488933324813843 | 0.0028899382804771 | 3 |
+| GRKT-zero | 0.7551422893799264 | 0.0011319668659784 | 0.7152638483348145 | 0.0019243717236673 | 0.560550332069397 | 0.0016638398713251 | 3 |
 
 ## 6. Liên kết Cấp độ 1
 
-- `split.json` C1: **git-lfs-pointer** | C2: **ok**
+- `split.json` C1: **missing** | C2: **ok**
 - Tập người học trùng Cấp độ 1: **None** (max_seq_len=200, split_seed=42)
 
-**Đường nền train lại seed 42 so với `level1_metrics.csv`:**
-
-| model | level1_auc | level2_auc | delta | tolerance | checkpoint_seed | same_weights | status |
-|---|---|---|---|---|---|---|---|
-| DKT | 0.7866 | 0.7859 | -0.0007 | 0.02 | 42 | False | OK |
-| GKT-Transition | 0.7443 | 0.7536 | 0.0093 | 0.02 | 42 | False | OK |
-| GKT-Zero | 0.7549 | 0.7644 | 0.0095 | 0.02 | 42 | False | OK |
-
-> same_weights=False -> dung sai 0.02. Δ nhỏ là kiểm tra split/cửa sổ, không chứng minh trọng số trùng Cấp độ 1.
-
-**Checkpoint Cấp độ 1 đã commit (GAP F2):** Checkpoint cũ KHÔNG tái lập bảng C1 -> khớp GAP F2; dùng đường nền train lại.
-
-| model | legacy_auc | legacy_acc | legacy_loss | checkpoint_seed | ckpt_source |
-|---|---|---|---|---|---|
-| DKT | 0.7851 | 0.7329 | 0.5282 |  | /kaggle/working/Knowledge-Tracing/outputs/level1/DKT.pt |
-| GKT-Transition | 0.7722 | 0.7253 | 0.5414 |  | /kaggle/working/Knowledge-Tracing/outputs/level1/GKT-Transition.pt |
-| GKT-Zero | 0.762 | 0.712 | 0.5505 |  | /kaggle/working/Knowledge-Tracing/outputs/level1/GKT-Zero.pt |
+**Checkpoint Cấp độ 1 đã commit (GAP F2):** EVAL_COMMITTED_CKPTS=False hoặc không có checkpoint -> bỏ qua.
 
 ## 7. Dashboard người học
 
@@ -186,16 +172,16 @@
 
 | dataset | graph | user_id | steps | acc | mean_pred | brier | auc | corr_pred_correct | mastery_first | mastery_last | mastery_delta | mean_neighbor_mastery | evidence_rate | alignment | model |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| assist2009 | train | 86709 | 6 | 0.8333 | 0.8512 | 0.0979 | 1.0 | 0.9474 | 0.7769 | 0.8899 | 0.113 | 0.5016 | 1.0 | khớp S-1 | GRKT-train |
-| assist2009 | train | 87115 | 40 | 0.6 | 0.8619 | 0.2994 | 0.6172 | 0.1954 | 0.8713 | 0.9028 | 0.0315 | 0.493 | 1.0 | khớp S-1 | GRKT-train |
-| assist2009 | train | 88793 | 41 | 0.1707 | 0.3631 | 0.1766 | 0.7647 | 0.3171 | 0.5217 | 0.4274 | -0.0943 | 0.392 | 0.8537 | khớp S-1 | GRKT-train |
-| assist2009 | train | 89200 | 24 | 0.6667 | 0.6967 | 0.2477 | 0.5078 | -0.0319 | 0.5654 | 0.5173 | -0.0481 | 0.5086 | 0.75 | khớp S-1 | GRKT-train |
-| assist2009 | train | 88038 | 25 | 0.52 | 0.6294 | 0.2125 | 0.7628 | 0.4447 | 0.4722 | 0.5808 | 0.1086 | 0.4641 | 0.8 | khớp S-1 | GRKT-train |
-| assist2009 | train | 83306 | 87 | 0.5632 | 0.6009 | 0.1967 | 0.7573 | 0.4543 | 0.6207 | 0.42 | -0.2007 | 0.4175 | 0.954 | khớp S-1 | GRKT-train |
-| assist2009 | train | 90993 | 12 | 0.8333 | 0.646 | 0.1054 | 0.95 | 0.704 | 0.7345 | 0.5645 | -0.17 | 0.5352 | 0.6667 | khớp S-1 | GRKT-train |
-| assist2009 | train | 90433 | 125 | 0.704 | 0.7045 | 0.2223 | 0.5937 | 0.1714 | 0.636 | 0.6365 | 0.0006 | 0.5293 | 0.848 | khớp S-1 | GRKT-train |
-| assist2009 | train | 90515 | 9 | 0.6667 | 0.6867 | 0.158 | 0.7778 | 0.5524 | 0.5139 | 0.5898 | 0.0759 | 0.4872 | 1.0 | khớp S-1 | GRKT-train |
-| assist2009 | train | 92355 | 9 | 1.0 | 0.7365 | 0.0766 |  |  | 0.5833 | 0.6062 | 0.0229 | 0.5149 | 0.8889 | khớp S-1 | GRKT-train |
+| assist2009 | train | 78903 | 199 | 0.804 | 0.7472 | 0.1622 | 0.6526 | 0.1699 | 0.651 | 0.7063 | 0.0553 | 0.5602 | 0.7889 | khớp S-1 | GRKT-train |
+| assist2009 | train | 96294 | 199 | 0.8543 | 0.7797 | 0.1105 | 0.7935 | 0.3972 | 0.6593 | 0.7199 | 0.0605 | 0.6262 | 0.7889 | khớp S-1 | GRKT-train |
+| assist2009 | train | 89444 | 31 | 0.5806 | 0.6598 | 0.2555 | 0.5812 | 0.1037 | 0.5726 | 0.6151 | 0.0425 | 0.4793 | 0.8387 | khớp S-1 | GRKT-train |
+| assist2009 | train | 84105 | 12 | 0.5 | 0.6077 | 0.3127 | 0.3056 | -0.354 | 0.6505 | 0.5911 | -0.0594 | 0.4927 | 0.9167 | khớp S-1 | GRKT-train |
+| assist2009 | train | 79279 | 9 | 0.7778 | 0.6756 | 0.2026 | 0.4286 | 0.0518 | 0.5854 | 0.5903 | 0.0049 | 0.5081 | 0.6667 | khớp S-1 | GRKT-train |
+| assist2009 | train | 91988 | 10 | 0.8 | 0.7987 | 0.0893 | 1.0 | 0.9053 | 0.6799 | 0.6151 | -0.0648 | 0.4987 | 0.9 | khớp S-1 | GRKT-train |
+| assist2009 | train | 80009 | 35 | 0.7143 | 0.6719 | 0.1775 | 0.728 | 0.3763 | 0.5265 | 0.6181 | 0.0916 | 0.5037 | 0.8571 | khớp S-1 | GRKT-train |
+| assist2009 | train | 87249 | 4 | 1.0 | 0.597 | 0.2242 |  |  | 0.4512 | 0.625 | 0.1738 | 0.5036 | 0.75 | khớp S-1 | GRKT-train |
+| assist2009 | train | 88228 | 8 | 1.0 | 0.8669 | 0.0199 |  |  | 0.5662 | 0.7205 | 0.1543 | 0.5025 | 1.0 | khớp S-1 | GRKT-train |
+| assist2009 | train | 87392 | 8 | 0.75 | 0.5653 | 0.1834 | 0.75 | 0.4515 | 0.5906 | 0.7544 | 0.1638 | 0.5001 | 0.875 | khớp S-1 | GRKT-train |
 
 ## 8. Đối chiếu yêu cầu và khoảng trống
 
@@ -211,18 +197,18 @@
 | §7 một phân tích nâng cao | quỹ đạo thật=có, calibration=có | Đạt |
 | §8 dashboard người học C2 | learner_dashboard_summary.csv=có | Đạt |
 | GAP F1 tiêu chí quỹ đạo không đóng băng | tách bảng THẬT vs KIỂM CHỨNG CÀI ĐẶT | Đạt |
-| GAP F2 seed checkpoint C1 | Checkpoint cũ KHÔNG tái lập bảng C1 -> khớp GAP F2; dùng đường nền train lại. | Đạt (đã đo; bảng chính dùng đường nền train lại) |
+| GAP F2 seed checkpoint C1 | EVAL_COMMITTED_CKPTS=False hoặc không có checkpoint -> bỏ qua. | Một phần |
 | GAP F3 artifact Junyi khớp mô tả | junyi users=3000.0, cap=3000 | Đạt (tập con, cap khớp) |
-| GAP F4 GRKT cùng ngân sách epoch với baseline | epochs_run=[11, 12, 14, 17, 20], cap=20, patience=5 | Đạt |
+| GAP F4 GRKT cùng ngân sách epoch với baseline | epochs_run=[9, 11, 13, 14, 20], cap=20, patience=5 | Đạt |
 | GAP F5 config/history/provenance | run_config=có, run_sessions=có, environment=có, learning_curves=có | Đạt |
 | GAP F6 biến thể đồ thị | assist2009 variants=['train', 'zero'] | Đạt |
 | GAP F7 dashboard C2 | có | Đạt |
 
 ## 9. Kết luận tự động
 
-- **assist2009**: mô hình tốt nhất theo Test AUC là `GRKT-train` (đồ thị `train`), AUC = **0.7972**.
+- **assist2009**: mô hình tốt nhất theo Test AUC là `GRKT-train` (đồ thị `train`), AUC = **0.7691**.
 - **junyi**: mô hình tốt nhất theo Test AUC là `GRKT-train` (đồ thị `train`), AUC = **0.7896**.
-- **Vai trò đồ thị trên assist2009**: ΔAUC = **+0.0132**; có lợi ích đo được.
+- **Vai trò đồ thị trên assist2009**: ΔAUC = **+0.0153**; có lợi ích đo được.
 - **Dashboard** đã có đủ xác suất từng bước, nhãn, mastery trước/sau lan truyền; Junyi chỉ là tập con nên không dùng để suy rộng.
 
 ## 10. Hạn chế phải nêu trong báo cáo
