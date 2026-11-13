@@ -1,4 +1,6 @@
 import hashlib
+import json
+import os
 import re
 import subprocess
 import sys
@@ -36,17 +38,37 @@ def materialize_lfs(path) -> Path:
             fields[key] = value.strip()
     oid = fields.get("oid", "").removeprefix("sha256:")
     size = int(fields.get("size", 0))
-    remote = _git("remote", "get-url", "origin")
-    # owner/repo from https://github.com/o/r.git, git@github.com:o/r.git or an SSH host alias
-    match = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?/?$", remote)
-    if not match:
-        raise RuntimeError(f"Cannot derive owner/repo from remote URL {remote!r} for {path}")
-    slug = match.group(1)
+    hint = (
+        "it is a Git LFS pointer. Install git-lfs and run `git lfs pull`, or set "
+        "LFS_REPO=<owner>/<repo> (and optionally LFS_REF=<commit>) so it can be downloaded."
+    )
+    slug = os.environ.get("LFS_REPO", "").strip()
+    if not slug:
+        try:
+            remote = _git("remote", "get-url", "origin")
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise RuntimeError(
+                f"Cannot read {path}: {hint} (no git remote 'origin': {exc})"
+            ) from exc
+        # owner/repo from https://github.com/o/r.git, git@github.com:o/r.git or an SSH host alias
+        match = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?/?$", remote)
+        if not match:
+            raise RuntimeError(
+                f"Cannot read {path}: {hint} (cannot derive owner/repo from {remote!r})"
+            )
+        slug = match.group(1)
+    ref = os.environ.get("LFS_REF", "").strip()
+    if not ref:
+        try:
+            ref = _git("rev-parse", "HEAD")
+        except (OSError, subprocess.CalledProcessError):
+            ref = "main"
     try:
-        ref = _git("rev-parse", "HEAD")
-    except Exception:
-        ref = "main"
-    rel = path.resolve().relative_to(repo_root().resolve()).as_posix()
+        rel = path.resolve().relative_to(repo_root().resolve()).as_posix()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Cannot read {path}: {hint} (file is outside the repo, so its LFS path is unknown)"
+        ) from exc
     url = f"https://media.githubusercontent.com/media/{slug}/{ref}/{rel}"
     print(f"[LFS] {path} is a pointer -> downloading {size} B from {url}")
     tmp = path.with_suffix(path.suffix + ".lfs-download")
@@ -69,6 +91,11 @@ def materialize_lfs(path) -> Path:
         )
     tmp.replace(path)
     return path
+
+
+def read_json(path):
+    """``json.loads`` on a file that may still be a Git LFS pointer (``*.json`` lives in LFS)."""
+    return json.loads(materialize_lfs(path).read_text(encoding="utf-8"))
 
 
 def ensure_gkt_on_path() -> Path:

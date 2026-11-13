@@ -23,6 +23,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 
+from level1.paths import read_json
 from level1.pipeline import (
     _epoch_loop,
     _forward,
@@ -147,7 +148,7 @@ def checkpoint_seed(ckpt_path) -> Optional[int]:
     meta = path.with_suffix(".json")
     if meta.exists():
         try:
-            payload = json.loads(meta.read_text(encoding="utf-8"))
+            payload = read_json(meta)
         except (OSError, ValueError):
             payload = {}
         fingerprint = payload.get("fingerprint") if isinstance(payload, dict) else None
@@ -156,7 +157,7 @@ def checkpoint_seed(ckpt_path) -> Optional[int]:
     sidecar = path.parent / "checkpoint_seeds.json"
     if sidecar.exists():
         try:
-            mapping = json.loads(sidecar.read_text(encoding="utf-8"))
+            mapping = read_json(sidecar)
         except (OSError, ValueError):
             mapping = {}
         if isinstance(mapping, dict):
@@ -272,11 +273,17 @@ def baseline_fingerprint(
     Không có nó, ``baselines/DKT.pt`` sinh từ split khác vẫn nạp được (cùng shape) và bảng so
     sánh trộn hai split — đúng loại lỗi ``_assert_align`` của GRKT chặn bên nhánh GRKT.
     """
+    from level1.paths import ensure_gkt_on_path
+
+    ensure_gkt_on_path()
+    from processing import PREP_VERSION
+
     counts = {
         s: len(_user_ids_from_subset(shared[f"{s}_loader"].dataset))
         for s in ("train", "val", "test")
     }
     return {
+        "prep_version": PREP_VERSION,
         "data_path": str(shared["data_path"]),
         "concept_num": int(shared["concept_num"]),
         "model_type": model_type,
@@ -297,6 +304,13 @@ def _check_baseline_fingerprint(
     if not previous or not current:
         return
     diff = {k: (previous.get(k), v) for k, v in current.items() if previous.get(k) != v}
+    if "prep_version" in diff and "prep_version" not in previous:
+        # Sidecar ghi trước khi fingerprint có prep_version: chỉ cảnh báo, không bắt train lại.
+        diff.pop("prep_version")
+        print(
+            f"  [cảnh báo] {name}: fingerprint cũ không có prep_version — không xác minh được "
+            f"checkpoint train trên tiền xử lý hiện tại ({current.get('prep_version')})."
+        )
     if diff:
         detail = ", ".join(f"{k}: {old} -> {new}" for k, (old, new) in diff.items())
         raise RuntimeError(
@@ -315,7 +329,7 @@ def load_retrained_baseline(
         return False
     meta_path = pt_path.with_suffix(".json")
     if meta_path.exists():
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta = read_json(meta_path)
         _check_baseline_fingerprint(meta.get("fingerprint"), fingerprint, pt_path.stem)
     else:
         print(

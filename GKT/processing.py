@@ -233,11 +233,8 @@ def prepare_interactions(df, min_seq_len=3, verbose=True):
     stats["users_out_of_order"] = 0
     stats["duplicate_rows_removed"] = 0
     if stats["has_order_id"]:
-        stats["users_out_of_order"] = int(
-            df.groupby("user_id", sort=False)["order_id"]
-            .apply(lambda s: bool((s.diff().dropna() < 0).any()))
-            .sum()
-        )
+        backwards = df.groupby("user_id", sort=False)["order_id"].diff() < 0
+        stats["users_out_of_order"] = int(backwards.groupby(df["user_id"]).any().sum())
         user_rank, _ = pd.factorize(df["user_id"])
         df = (
             df.assign(_user_rank=user_rank)
@@ -253,8 +250,8 @@ def prepare_interactions(df, min_seq_len=3, verbose=True):
     if verbose:
         print(
             "prepare_interactions: rows {rows_raw} -> {rows_kept}, users kept {users_kept}, "
-            "re-sorted users {users_out_of_order}, multi-skill duplicates removed "
-            "{duplicate_rows_removed}".format(**stats)
+            "re-sorted users {users_out_of_order}, rows sharing (user_id, order_id) removed "
+            "{duplicate_rows_removed} (exact duplicates + extra skills of multi-skill items)".format(**stats)
         )
     return df, stats
 

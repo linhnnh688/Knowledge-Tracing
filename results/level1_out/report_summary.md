@@ -166,6 +166,10 @@ Chi tiết đầy đủ: `cases.md` và `cases.json`.
   thành nhiều dòng cùng `order_id`. Từ `order-dedup-v1` chuỗi được sắp theo `order_id` và mỗi lượt
   chỉ giữ một dòng (kỹ năng có `skill_id` nhỏ nhất) — số liệu không so sánh trực tiếp được với
   các lần chạy trước bản này (chúng bị rò rỉ thứ tự + nhãn trùng).
+- Quy tắc "giữ `skill_id` nhỏ nhất" làm mất hẳn 11 kỹ năng chỉ xuất hiện như kỹ năng phụ của câu
+  nhiều kỹ năng (ASSIST2009: n_knows 123 → 112, tính cả padding). 176.103 dòng bị bỏ gồm cả dòng
+  lặp y hệt lẫn kỹ năng phụ, không chỉ "câu nhiều kỹ năng". Cách giữ đủ kỹ năng (gộp vào `knows`
+  của một bước) cần train lại toàn bộ nên chưa áp dụng.
 - Mỗi lượt chỉ còn một khái niệm nên đồ thị Transition thưa. Với dự đoán không có cạnh, GKT gần
   với self-update và không khác Zero graph về bản chất.
 - Nếu Shuffled ≈ Transition (khi bật biến thể đó trong `TRAIN_MODELS`), kết luận đúng là **chưa

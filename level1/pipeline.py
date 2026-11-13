@@ -113,7 +113,7 @@ def order_leak_lines(bundle, prep_stats=None):
             f"  sắp lại theo order_id: {prep.get('users_out_of_order')} người học có thứ tự file khác thời gian"
         )
         lines.append(
-            f"  gộp lượt trùng       : bỏ {prep.get('duplicate_rows_removed')} dòng trùng order_id (câu nhiều kỹ năng)"
+            f"  gộp lượt trùng       : bỏ {prep.get('duplicate_rows_removed')} dòng trùng (user_id, order_id): dòng lặp y hệt + kỹ năng phụ của câu nhiều kỹ năng, giữ skill_id nhỏ nhất"
         )
     if chk["checked"]:
         lines.append(

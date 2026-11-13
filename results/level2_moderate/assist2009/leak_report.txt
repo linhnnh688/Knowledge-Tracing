@@ -10,7 +10,7 @@ Số cạnh nếu dựng từ val : 11415 (khác train => đồ thị phụ thu�
   biến thể zero     : rel=     0 pre=     0
 Làm sạch log           : 525534 dòng -> 282619 dòng, 3852 người học
   sắp lại theo order_id: 2893 người học có thứ tự file khác thời gian
-  gộp lượt trùng       : bỏ 176103 dòng trùng order_id (câu nhiều kỹ năng)
+  gộp lượt trùng       : bỏ 176103 dòng trùng (user_id, order_id): dòng lặp y hệt + kỹ năng phụ của câu nhiều kỹ năng, giữ skill_id nhỏ nhất
 Thứ tự trong chuỗi     : 194492 bước dự đoán, order_id không tăng=0, lượt trùng=0 (phải = 0)
 Nhãn hiện tại/tương lai : không dùng. GRKT chỉ dùng knows[i+1] và times[i+1] (danh tính + thời điểm câu hỏi kế tiếp, KHÔNG dùng kết quả) cho giai đoạn học/quên.
 Padding                 : chỉ số 0 (khái niệm & câu hỏi); hàng/cột 0 của đồ thị luôn = 0.

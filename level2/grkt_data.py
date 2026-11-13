@@ -229,7 +229,7 @@ def build_grkt_data(
     # dòng trùng order_id (câu nhiều kỹ năng) — nếu không, thời gian học/quên của GRKT được
     # cộng dồn theo thứ tự sai và problem_id kế tiếp làm lộ nhãn của lượt trùng.
     ensure_gkt_on_path()
-    from processing import prepare_interactions
+    from processing import PREP_VERSION, prepare_interactions
 
     df, prep_stats = prepare_interactions(df, min_seq_len=min_seq_len, verbose=verbose)
     df["skill"], _ = pd.factorize(df["skill_id"], sort=True)
@@ -251,6 +251,10 @@ def build_grkt_data(
 
     sequences: List[UserSequence] = []
     positions = 0
+    # Kiểm tra thứ tự trên CHÍNH chuỗi GRKT (không suy ra từ Cấp độ 1): _assert_align chỉ so
+    # skill/đáp án, nên hai lượt cùng skill/đáp án bị đảo thứ tự sẽ lọt qua nếu chỉ dựa vào nó.
+    has_order = "order_id" in df.columns
+    order_check = {"targets": 0, "non_increasing": 0, "duplicate_attempts": 0}
     for user_id, series in df.groupby("user_id", sort=False):
         # 0/None = KHÔNG cắt, giống `if max_seq_len and len(feats) > max_seq_len` của Cấp độ 1
         limit = int(max_seq_len) if max_seq_len else len(series)
@@ -280,6 +284,12 @@ def build_grkt_data(
                 base_questions,
                 base_answers,
             )
+        if has_order:
+            o = series["order_id"].to_numpy()[:take]
+            step = np.diff(o)
+            order_check["targets"] += int(step.size)
+            order_check["non_increasing"] += int((step <= 0).sum())
+            order_check["duplicate_attempts"] += int((step == 0).sum())
         knows = [[int(s + 1)] for s in skills0]
         sequences.append(
             UserSequence(
@@ -321,6 +331,8 @@ def build_grkt_data(
             "max_seq_len_seen": max(s.length for s in sequences),
             **gap_stats,
             "prep": prep_stats,
+            "prep_version": PREP_VERSION,
+            "order_check": order_check if has_order else None,
         },
     )
     if verbose:
@@ -591,6 +603,12 @@ def leak_report(
             f"  biến thể {kind:9s}: rel={info['edges_rel']:6d} pre={info['edges_pre']:6d}"
         )
     lines.extend(order_leak_lines(bundle, data.stats.get("prep")))
+    oc = data.stats.get("order_check")
+    if oc:
+        lines.append(
+            f"Thứ tự trong chuỗi GRKT: {oc['targets']} bước dự đoán, order_id không tăng="
+            f"{oc['non_increasing']}, lượt trùng={oc['duplicate_attempts']} (phải = 0)"
+        )
     lines.append(
         "Nhãn hiện tại/tương lai : không dùng. GRKT chỉ dùng knows[i+1] và times[i+1] "
         "(danh tính + thời điểm câu hỏi kế tiếp, KHÔNG dùng kết quả) cho giai đoạn học/quên."

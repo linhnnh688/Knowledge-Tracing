@@ -149,6 +149,8 @@ def _paired_vs_zero(ms: pd.DataFrame) -> Optional[pd.DataFrame]:
 
     if "GRKT-zero" not in set(ms["model"]):
         return None
+    # Mỗi (mô hình, seed) đúng một dòng; nếu không .loc[common] trả nhiều dòng và ghép sai cặp.
+    ms = ms.drop_duplicates(subset=["model", "seed"], keep="last")
     zero = ms[ms["model"] == "GRKT-zero"].set_index("seed")
     rows = []
     for model in sorted(set(ms["model"]) - {"GRKT-zero"}):
@@ -160,14 +162,21 @@ def _paired_vs_zero(ms: pd.DataFrame) -> Optional[pd.DataFrame]:
             a = other.loc[common, metric].to_numpy(dtype=float)
             b = zero.loc[common, metric].to_numpy(dtype=float)
             d = a - b
+            # Hiệu số "hằng" so với sai số dấu phẩy động -> coi sd = 0 (không thì p ~ 1e-28 giả).
+            sd = 0.0 if np.allclose(d, d.mean()) else float(d.std(ddof=1))
             if np.allclose(d, 0):
                 p_val = 1.0
+            elif sd == 0.0:
+                # Hiệu số khác 0 nhưng giống hệt nhau mọi seed: t-test không xác định (p=NaN)
+                # và CI co về một điểm, trông "rất ý nghĩa". Báo NaN cho cả hai để người đọc
+                # không hiểu nhầm; per_seed_diff vẫn cho thấy giá trị thật.
+                p_val = float("nan")
             else:
                 p_val = float(stats.ttest_rel(a, b).pvalue)
             half = (
-                float(stats.t.ppf(0.975, len(d) - 1) * d.std(ddof=1) / np.sqrt(len(d)))
-                if len(d) > 1
-                else float("nan")
+                float(stats.t.ppf(0.975, len(d) - 1) * sd / np.sqrt(len(d)))
+                if sd > 0.0
+                else (0.0 if np.allclose(d, 0) else float("nan"))
             )
             rows.append(
                 {
@@ -468,6 +477,7 @@ def run_dataset(
                 deadline=deadline,
                 ckpt_every_min=ckpt_every_min,
                 verbose=verbose,
+                ckpt_name=final_ckpt.stem,
             )
         except TrainingPaused:
             # Hết ngân sách giữa biến thể này. Checkpoint của nó đã được train_grkt ghi trước
@@ -663,7 +673,10 @@ def run_dataset(
     if run_multi_seed:
         # Đa seed cho MỌI biến thể đồ thị (train trước): kết luận "đồ thị có ích" cần so
         # GRKT-train với GRKT-zero trên cùng các seed, không chỉ đa seed riêng GRKT-train.
-        ms_kinds = sorted(graphs, key=lambda k: (k != "train", variants.index(k)))
+        # graphs được dựng theo đúng thứ tự `variants`; chỉ cần đưa 'train' lên đầu.
+        ms_kinds = [k for k in graphs if k == "train"] + [k for k in graphs if k != "train"]
+        # Seed trùng trong SEEDS sẽ train lại cùng checkpoint và nhân đôi dòng khi ghép cặp.
+        ms_seeds = list(dict.fromkeys(int(x) for x in seeds))
         print(
             "\n>>> [C2-B8] Đa seed cho GRKT-%s (split cố định seed=%d) ..."
             % ("/".join(ms_kinds), split_seed)
@@ -671,8 +684,7 @@ def run_dataset(
         rows = []
         paused = None
         try:
-            for ms_kind, s in [(k, s) for k in ms_kinds for s in seeds]:
-                s = int(s)
+            for ms_kind, s in [(k, s) for k in ms_kinds for s in ms_seeds]:
                 # Cùng quy ước tên với grkt_api: seed 42 dùng lại checkpoint của lần chạy
                 # chính (khỏi train lại), seed khác có file riêng để resume đúng seed.
                 suffix = "" if s == split_seed else f"-seed{s}"
@@ -709,6 +721,7 @@ def run_dataset(
                     deadline=deadline,
                     ckpt_every_min=ckpt_every_min,
                     verbose=verbose,
+                    ckpt_name=seed_name,
                 )
                 # Bỏ hậu tố seed khỏi tên mô hình để groupby gộp đúng 3 seed thành MỘT dòng
                 # mean ± std; tên file checkpoint vẫn tách theo seed.

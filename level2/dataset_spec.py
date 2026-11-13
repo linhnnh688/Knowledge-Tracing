@@ -846,7 +846,9 @@ def _check_canonical_meta(target: Path, requested: dict, verbose: bool = True) -
             )
         return
     try:
-        previous = json.loads(meta_path.read_text(encoding="utf-8"))
+        from level1.paths import read_json
+
+        previous = read_json(meta_path)
     except (OSError, json.JSONDecodeError):
         return
     diff = {
