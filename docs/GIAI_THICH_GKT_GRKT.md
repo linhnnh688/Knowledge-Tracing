@@ -7,7 +7,7 @@ Tài liệu này giải thích **hai mô hình đang nằm trong repo**:
 | `GKT/` | **DKT** (baseline không đồ thị) và **GKT** (Graph-based Knowledge Tracing, Nakagawa et al., 2019) | `jhljx/Graph-based-Knowledge-Tracing` |
 | `GRKT/` | **GRKT** (Cui et al., KDD 2024): graph + retrieval + memory strengthening/forgetting | `JJCui96/GRKT`, đã package-hoá và sửa có kiểm soát |
 
-Đọc kèm: `GKT/README.md`, `README.md` (gốc repo, phần "Cấp độ 1"/"Cấp độ 2"), `KE_HOACH.md`.
+Đọc kèm: `GKT/README.md`, `README.md` (gốc repo, phần "Cấp độ 1"/"Cấp độ 2").
 
 ---
 
@@ -275,7 +275,7 @@ Cấu hình mặc định: **không** gradient clipping, dropout 0, BatchNorm tr
 | 8 | `GKT/models.py:153-155` (gọi trong vòng `forward`) | VAE/`_get_edges` được tính lại **mỗi timestep** dù input `emb_c` không đổi | thấp (hiệu năng) | Chậm; loss VAE lặp cùng một giá trị `S` lần |
 | 9 | `GKT/models.py:166-168` | `m_next` là **view** của `tmp_ht` rồi ghi in-place | thấp (dễ vỡ) | Nếu sau này tái sử dụng `tmp_ht` sẽ bị sửa nhầm |
 | 10 | `GKT` với `A=I` vs `A=0` | Hai cấu hình cho kết quả giống hệt | — | Đã chứng minh trong README gốc repo: cột `c≠q_t` đều bằng 0, ô `c=q_t` bị `self_features` ghi đè |
-| 11 | `GKT/outputs/*.csv` | Sinh từ `assistment_test15.csv` (15 học sinh, AUC ~0.52) | — | **Không dùng cho báo cáo**; số liệu báo cáo nằm ở `outputs/level1/` |
+| 11 | `GKT/outputs/*.csv` | Sinh từ `assistment_test15.csv` (15 học sinh, AUC ~0.52) | — | **Không dùng cho báo cáo** (đã xoá khỏi repo); số liệu báo cáo nằm ở `results/level1_out/` |
 
 ---
 
@@ -718,7 +718,7 @@ Bảng cấu hình mặc định:
 5. **GRKT**: `score_i` dự đoán câu `i`, nên `scores[:,1:]` mới khớp `corrs[:,1:]`.
 6. **GRKT**: `rel_map`/`pre_map` phải là 0/1 khi đưa vào (hoặc `thresh` đúng); `thresh=0` biến thành đồ thị đầy đủ.
 7. **GRKT**: đơn vị thời gian quyết định hành vi học/quên — dùng phút, không dùng `order_id`/ms thô.
-8. **Khi báo cáo**: không dùng số từ `GRKT/Training.py` (rò rỉ) và `GKT/outputs/*.csv` (smoke 15 học sinh).
+8. **Khi báo cáo**: không dùng số từ `GRKT/Training.py` (rò rỉ) và các output smoke 15 học sinh cũ.
 
 ---
 
