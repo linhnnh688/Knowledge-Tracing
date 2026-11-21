@@ -6,7 +6,7 @@ Tài liệu này phân tích chi tiết từng cell, cấu trúc thực nghiệm
 
 ## 1. Tổng quan Thiết kế và Mục tiêu
 
-Notebook `kaggle_level2_full.ipynb` được viết lại hoàn toàn nhằm giải quyết dứt điểm các khoảng trống kỹ thuật được nêu trong `GAP_LEVEL2.md`:
+Notebook `kaggle_level2_full.ipynb` được viết lại hoàn toàn nhằm giải quyết dứt điểm các khoảng trống kỹ thuật của Cấp độ 2 (tài liệu GAP_LEVEL2.md cũ, xem lịch sử git):
 
 | Mục tiêu thực nghiệm | Giải pháp trong `kaggle_level2_full.ipynb` |
 |---|---|

@@ -6,7 +6,7 @@ Tài liệu này phân tích chi tiết từng cell, cấu trúc thực nghiệm
 
 ## 1. Tổng quan Thiết kế và Mục tiêu
 
-Notebook `kaggle_level1_full.ipynb` được thiết kế nhằm giải quyết triệt để toàn bộ các khoảng trống khoa học được ghi nhận trong `GAP_LEVEL1.md`:
+Notebook `kaggle_level1_full.ipynb` được thiết kế nhằm giải quyết triệt để toàn bộ các khoảng trống khoa học của Cấp độ 1 (tài liệu GAP_LEVEL1.md cũ, xem lịch sử git):
 
 | Mục tiêu thực nghiệm | Giải pháp trong `kaggle_level1_full.ipynb` |
 |---|---|
@@ -164,7 +164,7 @@ flowchart TD
 ### §6. Ablation Đồ thị Lúc Suy luận ($A := 0$)
 
 #### Cell 6-23: Phép thử Đóng góp Thực tế của Đồ thị
-Đây là nội dung trả lời trực tiếp câu hỏi nghiên cứu **E3** trong `GAP_LEVEL1.md`:
+Đây là nội dung trả lời trực tiếp câu hỏi nghiên cứu **E3** (vai trò cấu trúc đồ thị):
 1. Giữ nguyên trọng số đã học của mô hình đồ thị, tạm thời gán ma trận kề $A := 0$ khi suy luận trên test set qua hàm `predict_with_graph(..., zero_graph=True)`.
 2. Đo lường:
    $$\Delta \text{AUC} = \text{AUC}(A := 0) - \text{AUC}(A \text{ gốc})$$

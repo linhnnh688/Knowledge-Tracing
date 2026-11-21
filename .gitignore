@@ -224,3 +224,8 @@ GKT/data/assistments_2009_2010.csv
 
 # Local IDE / agent settings
 .qoder/
+
+# Gói tải về từ Kaggle / bản nén báo cáo — không commit
+/*.zip
+# Báo cáo LaTeX làm riêng, không đưa vào repo
+/report/
